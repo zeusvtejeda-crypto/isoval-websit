@@ -35,9 +35,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link rel="preload" as="font" type="font/woff2" href="https://fonts.gstatic.com/s/bigshouldersdisplay/v24/fC1_PZJEZG-e9gHhdI4-NBbfd2ys3SjJCx1czNDuDJAM2w.woff2" crossorigin/>
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;600;700&family=Jost:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap"/>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;600;700&family=Jost:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
-<noscript><link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;600;700&family=Jost:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet"/></noscript>
+<!-- Big Shoulders Display se sirve aparte con display=optional: h1-h4 y .iso-graphic dependen de su métrica;
+     "optional" evita el reflow tardío (swap) que desplazaba el gráfico decorativo del hero (CLS). -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;600;700&display=optional"/>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap"/>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;600;700&display=optional" rel="stylesheet" media="print" onload="this.media='all'"/>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
+<noscript><link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;600;700&display=optional" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet"/></noscript>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -73,7 +77,7 @@
         { "@type": "Place", "name": "Riviera Nayarit" },
         { "@type": "City", "name": "Puerto Vallarta" }
       ],
-      "sameAs": ["https://instagram.com/isoval.arq"],
+      "sameAs": ["https://instagram.com/isovalinc"],
       "description": "Estudio de arquitectura y construcción en Tepic, Nayarit. Precisión desde el primer trazo hasta la obra terminada.",
       "hasOfferCatalog": {
         "@type": "OfferCatalog",
@@ -1083,7 +1087,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
           <h3>Contacto</h3>
           <a href="tel:+523111614155">311 161 4155</a>
           <a href="mailto:isovalinc@gmail.com">isovalinc@gmail.com</a>
-          <a href="https://instagram.com/isoval.arq" target="_blank" rel="noopener noreferrer">@isoval.arq</a>
+          <a href="https://instagram.com/isovalinc" target="_blank" rel="noopener noreferrer">@isovalinc</a>
         </div>
       </div>
     </div>
