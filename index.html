@@ -318,7 +318,7 @@ em{font-style:normal;color:var(--teal);}
 .res-list b{color:var(--ink);font-weight:600;}
 
 /* ═══ SECTION generic ═══ */
-section{padding:120px 0;}
+section{padding:120px 0;scroll-margin-top:88px;}
 @media(max-width:768px){section{padding:76px 0;}}
 .s-head{max-width:640px;margin-bottom:64px;}
 .s-title{font-size:clamp(30px,4vw,46px);}
@@ -483,6 +483,12 @@ form.ct-form{display:flex;flex-direction:column;gap:16px;}
 .ct-form label{font-family:var(--font-m);font-size:10.5px;color:#8A8E90;letter-spacing:.05em;text-transform:uppercase;}
 .ct-form .btn{margin-top:10px;align-self:flex-start;border-color:var(--teal);color:var(--teal);}
 .ct-form .btn:hover{background:var(--teal);color:#fff;}
+.ct-form .btn[disabled]{opacity:.6;cursor:default;}
+.ct-form .btn[disabled]:hover{transform:none;background:transparent;color:var(--teal);}
+.ct-honeypot{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;}
+.ct-status{font-family:var(--font-m);font-size:12.5px;letter-spacing:.02em;min-height:1.3em;color:#7FBFC7;margin-top:-4px;}
+.ct-status.is-error{color:#E8A15C;}
+.ct-privacy{font-family:var(--font-m);font-size:10.5px;line-height:1.5;color:#6C7172;max-width:420px;}
 @media(max-width:900px){.ct-grid{grid-template-columns:1fr;gap:44px;}}
 
 /* ═══ FOOTER ═══ */
@@ -502,15 +508,12 @@ footer{background:#141617;color:#8A8E90;padding:70px 0 30px;}
 .wa-bubble{
   position:fixed;bottom:26px;right:26px;width:58px;height:58px;background:#25D366;border-radius:50%;
   display:flex;align-items:center;justify-content:center;z-index:300;box-shadow:0 8px 22px rgba(0,0,0,.22);
-  transition:transform .4s var(--ease-fluid);
-}
-.wa-bubble::before{
-  content:'';position:absolute;inset:0;border-radius:50%;background:#25D366;z-index:-1;
-  animation:waPulse 2.6s ease-out infinite;
+  transform:scale(.8);opacity:0;animation:waIn .6s var(--ease-pop) 1.2s both;
+  transition:transform .3s var(--ease-fluid);
 }
 .wa-bubble:hover{transform:scale(1.08);}
 .wa-bubble svg{width:28px;height:28px;fill:#fff;}
-@keyframes waPulse{0%{transform:scale(1);opacity:.55;}100%{transform:scale(1.9);opacity:0;}}
+@keyframes waIn{to{transform:scale(1);opacity:1;}}
 
 /* ═══ SKIP LINK (accesibilidad teclado) ═══ */
 .skip-link{position:absolute;top:-48px;left:12px;background:var(--ink);color:var(--paper);padding:12px 18px;z-index:9999;font-family:var(--font-m);font-size:13px;letter-spacing:.03em;transition:top .25s var(--ease-fluid);border-radius:0 0 2px 2px;}
@@ -664,7 +667,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;}
   html{scroll-behavior:auto;}
-  .blueprint::before,.wa-bubble::before,.iso-graphic,.hero-photo{animation:none!important;}
+  .blueprint::before,.iso-graphic,.hero-photo{animation:none!important;}
+  .wa-bubble{animation:none!important;opacity:1!important;transform:scale(1)!important;}
 }
 </style>
 </head>
@@ -1044,7 +1048,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
         <label for="ctMensaje">Cuéntanos brevemente</label>
         <textarea id="ctMensaje" name="mensaje" rows="3" placeholder="Ubicación, tipo de espacio, presupuesto estimado..."></textarea>
       </div>
+      <input type="checkbox" name="botcheck" class="ct-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">
       <button type="submit" class="btn solid">Enviar mensaje →</button>
+      <p class="ct-status" id="ctStatus" role="status" aria-live="polite"></p>
+      <p class="ct-privacy">Tus datos se usan solo para responder tu proyecto — nunca se comparten con terceros.</p>
     </form>
   </div>
 </section>
@@ -1240,9 +1247,11 @@ function initNav(){
   var lastY=window.scrollY;
   window.addEventListener('scroll',function(){
     var y=window.scrollY;
-    if(y>140 && y>lastY){ nav.classList.add('nav-hide'); }
-    else{ nav.classList.remove('nav-hide'); }
+    var delta=y-lastY;
     nav.classList.toggle('nav-scrolled', y>40);
+    if(Math.abs(delta)<8){ return; }
+    if(y>140 && delta>0){ nav.classList.add('nav-hide'); }
+    else{ nav.classList.remove('nav-hide'); }
     lastY=y;
   },{passive:true});
 }
@@ -1324,11 +1333,59 @@ function initProyectos(){
 
 function initContactForm(){
   var form=document.getElementById('ctForm');
+  var status=document.getElementById('ctStatus');
+  var btn=form.querySelector('button[type="submit"]');
+  var WEB3FORMS_KEY=''; /* PENDIENTE: pegar access key gratis de https://web3forms.com */
+  var WA_NUMBER='523111614155';
+
+  function setStatus(msg,isError){
+    status.textContent=msg;
+    status.classList.toggle('is-error',!!isError);
+  }
+
+  function toWhatsApp(fd){
+    var txt='Hola, quiero iniciar un proyecto con ISOVAL%0A'+
+      'Nombre: '+encodeURIComponent(fd.get('nombre')||'')+'%0A'+
+      'Contacto: '+encodeURIComponent(fd.get('contacto')||'')+'%0A'+
+      'Tipo: '+encodeURIComponent(fd.get('tipo')||'')+'%0A'+
+      'Mensaje: '+encodeURIComponent(fd.get('mensaje')||'');
+    window.location.href='https://wa.me/'+WA_NUMBER+'?text='+txt;
+  }
+
   form.addEventListener('submit',function(e){
     e.preventDefault();
     var fd=new FormData(form);
-    var body='Nombre: '+fd.get('nombre')+'%0AContacto: '+fd.get('contacto')+'%0ATipo: '+fd.get('tipo')+'%0AMensaje: '+fd.get('mensaje');
-    window.location.href='mailto:isovalinc@gmail.com?subject=Nuevo%20proyecto%20desde%20isoval.com.mx&body='+body;
+    if(fd.get('botcheck')){ return; }
+
+    if(!WEB3FORMS_KEY){
+      setStatus('Te llevamos a WhatsApp para enviar tu mensaje…',false);
+      toWhatsApp(fd);
+      return;
+    }
+
+    fd.append('access_key',WEB3FORMS_KEY);
+    fd.append('subject','Nuevo proyecto desde isoval.com.mx');
+    btn.disabled=true;
+    setStatus('Enviando…',false);
+
+    fetch('https://api.web3forms.com/submit',{
+      method:'POST',
+      body:fd,
+      headers:{'Accept':'application/json'}
+    }).then(function(r){ return r.json(); }).then(function(data){
+      btn.disabled=false;
+      if(data.success){
+        setStatus('¡Listo! Te contactaremos pronto.',false);
+        form.reset();
+      } else {
+        setStatus('No se pudo enviar. Te llevamos a WhatsApp…',true);
+        toWhatsApp(fd);
+      }
+    }).catch(function(){
+      btn.disabled=false;
+      setStatus('No se pudo enviar. Te llevamos a WhatsApp…',true);
+      toWhatsApp(fd);
+    });
   });
 }
 
