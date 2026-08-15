@@ -1342,7 +1342,7 @@ function initContactForm(){
   var form=document.getElementById('ctForm');
   var status=document.getElementById('ctStatus');
   var btn=form.querySelector('button[type="submit"]');
-  var WEB3FORMS_KEY=''; /* PENDIENTE: pegar access key gratis de https://web3forms.com */
+  var WEB3FORMS_KEY='53943688-e8f9-4862-935d-9e24524d495c';
   var WA_NUMBER='523111614155';
 
   function setStatus(msg,isError){
@@ -1371,7 +1371,8 @@ function initContactForm(){
     }
 
     fd.append('access_key',WEB3FORMS_KEY);
-    fd.append('subject','Nuevo proyecto desde isoval.com.mx');
+    fd.append('subject','Nuevo prospecto ISOVAL — '+(fd.get('nombre')||'sin nombre')+' ('+(fd.get('tipo')||'sin especificar')+')');
+    fd.append('from_name','Formulario isoval.com.mx');
     btn.disabled=true;
     setStatus('Enviando…',false);
 
