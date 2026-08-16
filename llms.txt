@@ -4,12 +4,23 @@
 
 ISOVAL diseña y construye proyectos residenciales y comerciales con precisión técnica, desde el plano ejecutivo hasta la entrega. Un solo responsable de principio a fin.
 
+## Secciones del sitio
+
+- [Servicios](https://isoval.com.mx/#servicios): diseño arquitectónico y construcción integral.
+- [Proceso](https://isoval.com.mx/#proceso): las 5 etapas del proyecto, de diagnóstico a entrega.
+- [Proyectos](https://isoval.com.mx/#proyectos): portafolio de obra en Nayarit.
+- [Nosotros](https://isoval.com.mx/#nosotros): equipo, forma de trabajo y compromisos.
+- [Preguntas frecuentes](https://isoval.com.mx/#faq): zonas, tiempos, presupuesto y cómo empezar.
+- [Contacto](https://isoval.com.mx/#contacto): formulario y datos directos.
+
 ## Servicios
 
-- **Diseño Arquitectónico**: diseño residencial y comercial, diseño de interiores, renders y visualización 3D, planos y memoria descriptiva. De la idea al plano ejecutivo, listo para construirse sin ambigüedades.
-- **Construcción Integral**: construcción residencial, edificios y locales comerciales, remodelaciones, acabados y supervisión de obra con control de calidad de principio a fin.
+- [Diseño Arquitectónico](https://isoval.com.mx/#servicios): diseño residencial y comercial, diseño de interiores, renders y visualización 3D, planos y memoria descriptiva. De la idea al plano ejecutivo, listo para construirse sin ambigüedades.
+- [Construcción Integral](https://isoval.com.mx/#servicios): construcción residencial, edificios y locales comerciales, remodelaciones, acabados y supervisión de obra con control de calidad de principio a fin.
 
 ## Proceso (5 etapas)
+
+Detalle en [isoval.com.mx/#proceso](https://isoval.com.mx/#proceso):
 
 1. **Diagnóstico** — visitamos el sitio, entendemos el contexto y definimos alcance y presupuesto.
 2. **Diseño** — anteproyecto, planos y renders; se ajusta hasta que el proyecto sea exactamente el del cliente.
@@ -36,9 +47,11 @@ Proyectos en Puerto Vallarta se evalúan caso por caso.
 
 ## Proyectos
 
-Portafolio en Nayarit: Casa Vista Montaña (diseño interior residencial, Tepic), Comedor Doble Altura (arquitectura interior, Tepic), Jardín & Alberca (paisajismo exterior, Nayarit), Alberca & Paisaje (construcción exterior, Riviera Nayarit), Pérgola Lounge (construcción exterior, Nayarit), Terraza Bar (remodelación exterior, Tepic), Sala Tropical (diseño interior, Nayarit) y Proyecto Riviera (construcción, Riviera Nayarit).
+Portafolio en Nayarit ([ver galería](https://isoval.com.mx/#proyectos)): Casa Vista Montaña (diseño interior residencial, Tepic), Comedor Doble Altura (arquitectura interior, Tepic), Jardín & Alberca (paisajismo exterior, Nayarit), Alberca & Paisaje (construcción exterior, Riviera Nayarit), Pérgola Lounge (construcción exterior, Nayarit), Terraza Bar (remodelación exterior, Tepic), Sala Tropical (diseño interior, Nayarit) y Proyecto Riviera (construcción, Riviera Nayarit).
 
 ## Preguntas frecuentes
+
+Todas las respuestas en [isoval.com.mx/#faq](https://isoval.com.mx/#faq):
 
 - **¿Qué zonas cubren?** Tepic, Bahía de Banderas y Riviera Nayarit de forma activa. Puerto Vallarta caso por caso.
 - **¿Manejan diseño y construcción juntos, o por separado?** Ambos, con el mismo equipo. También proyectos solo de diseño o solo de construcción si ya tienes planos.
@@ -48,9 +61,13 @@ Portafolio en Nayarit: Casa Vista Montaña (diseño interior residencial, Tepic)
 
 ## Contacto
 
-- Sitio web: https://isoval.com.mx/
-- Teléfono: +52 311 161 4155
-- WhatsApp: https://wa.me/523111614155
-- Email: isovalinc@gmail.com
-- Instagram: https://instagram.com/isoval.arq
+- [Sitio web](https://isoval.com.mx/): isoval.com.mx
+- [WhatsApp](https://wa.me/523111614155): +52 311 161 4155
+- [Teléfono](tel:+523111614155): +52 311 161 4155
+- [Email](mailto:isovalinc@gmail.com): isovalinc@gmail.com
+- [Instagram](https://instagram.com/isovalinc): @isovalinc
 - Ubicación: Tepic, Nayarit, México
+
+## Opcional
+
+- [Sitemap](https://isoval.com.mx/sitemap.xml): índice de URLs del sitio.

@@ -716,7 +716,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 </nav>
 
 <!-- ═══ MOBILE MENU ═══ -->
-<div id="mobileMenu" aria-hidden="true">
+<div id="mobileMenu" inert>
   <a href="#servicios">Servicios</a>
   <a href="#proceso">Proceso</a>
   <a href="#proyectos">Proyectos</a>
@@ -1269,14 +1269,14 @@ function initMobileMenu(){
   toggle.addEventListener('click',function(){
     var open=toggle.classList.toggle('open');
     menu.classList.toggle('open',open);
-    menu.setAttribute('aria-hidden',!open);
+    menu.inert=!open;
     document.body.style.overflow=open?'hidden':'';
   });
   menu.querySelectorAll('a').forEach(function(a){
     a.addEventListener('click',function(){
       toggle.classList.remove('open');
       menu.classList.remove('open');
-      menu.setAttribute('aria-hidden','true');
+      menu.inert=true;
       document.body.style.overflow='';
     });
   });
