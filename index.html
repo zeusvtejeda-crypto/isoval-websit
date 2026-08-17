@@ -31,7 +31,9 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/imgs/favicon-32.png"/>
 <link rel="icon" type="image/png" sizes="16x16" href="/imgs/favicon-16.png"/>
 <link rel="apple-touch-icon" sizes="180x180" href="/imgs/apple-touch-icon.png"/>
-<link rel="preload" as="image" href="/imgs/facade.webp" type="image/webp" fetchpriority="high"/>
+<!-- Solo en escritorio: ahí .hero-photo es el elemento LCP. En móvil el LCP es el h1,
+     y precargar 93 KB en prioridad alta le robaba ancho de banda al texto (FCP/LCP 2,9 s). -->
+<link rel="preload" as="image" href="/imgs/facade.webp" type="image/webp" fetchpriority="high" media="(min-width:1025px)"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link rel="preload" as="font" type="font/woff2" href="https://fonts.gstatic.com/s/bigshouldersdisplay/v24/fC1_PZJEZG-e9gHhdI4-NBbfd2ys3SjJCx1czNDuDJAM2w.woff2" crossorigin/>
@@ -299,6 +301,8 @@ em{font-style:normal;color:var(--teal);}
 .hero-photo{
   position:absolute;bottom:0;left:20px;width:78%;height:360px;background-size:cover;background-position:center;
   animation:heroReveal 1.1s var(--ease-fluid) .35s both;
+  background-image:url('/imgs/facade.jpg');
+  background-image:image-set(url('/imgs/facade.webp') type('image/webp'),url('/imgs/facade.jpg') type('image/jpeg'));
 }
 @keyframes heroReveal{from{opacity:0;transform:translateY(18px);}to{opacity:1;transform:translateY(0);}}
 .hero-photo .frame-tag{font-size:10px;}
@@ -311,6 +315,10 @@ em{font-style:normal;color:var(--teal);}
 @media(max-width:600px){
   #hero{padding:130px 0 60px;}
   .hero-stats{gap:24px;}
+  /* En teléfono el hueco mide ~380px: 1400px era 3,7x de más (92 KB -> 35 KB).
+     Las tablets siguen con la grande porque ahí el hueco llega a ~960px. */
+  .hero-photo{background-image:url('/imgs/facade-sm.webp');
+    background-image:image-set(url('/imgs/facade-sm.webp') type('image/webp'),url('/imgs/facade.jpg') type('image/jpeg'));}
 }
 .scroll-cue{
   position:absolute;left:50%;bottom:36px;transform:translateX(-50%);display:flex;flex-direction:column;
@@ -772,7 +780,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
       </div>
     </div>
     <div class="hero-visual">
-      <div class="hero-photo frame" style="background-image:url('/imgs/facade.jpg');background-image:image-set(url('/imgs/facade.webp') type('image/webp'),url('/imgs/facade.jpg') type('image/jpeg'));">
+      <div class="hero-photo frame">
         <span class="fb1"></span><span class="fb2"></span>
         <span class="frame-tag">PROYECTO 04 — TEPIC, NAY.</span>
       </div>
