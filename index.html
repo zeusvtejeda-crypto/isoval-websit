@@ -147,12 +147,29 @@
   --teal-glow:rgba(43,125,137,.16);
   --silver:#B7BBBE;
   --silver-glow:rgba(183,187,190,.4);
-  --font-d:'Big Shoulders Display',sans-serif;
-  --font-b:'Jost',sans-serif;
+  --font-d:'Big Shoulders Display','BSD fallback',sans-serif;
+  --font-b:'Jost','Jost fallback',sans-serif;
   --font-m:'IBM Plex Mono',monospace;
   --container:1240px;
   --ease-fluid:cubic-bezier(.16,1,.3,1);
   --ease-pop:cubic-bezier(.34,1.56,.64,1);
+}
+/* Respaldos con métricas ajustadas (CLS).
+   Big Shoulders Display es una condensada: el mismo titular mide 1152px donde Arial
+   mide 1712px. Sin esto el h1 del hero se pinta en 3 líneas con la fuente de respaldo
+   y salta a 2 al cargar la real, encogiendo el hero 73px y desplazando toda la página.
+   size-adjust iguala el ancho para que el salto de línea sea idéntico en ambos estados. */
+@font-face{
+  font-family:'BSD fallback';
+  src:local('Arial'),local('Helvetica'),local('Liberation Sans'),local('Nimbus Sans');
+  size-adjust:67.27%;
+  font-weight:100 900;
+}
+@font-face{
+  font-family:'Jost fallback';
+  src:local('Arial'),local('Helvetica'),local('Liberation Sans'),local('Nimbus Sans');
+  size-adjust:95.58%;
+  font-weight:100 900;
 }
 html{scroll-behavior:smooth;}
 body{
