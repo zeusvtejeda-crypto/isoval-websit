@@ -344,10 +344,41 @@ em{font-style:normal;color:var(--teal);}
 .res-title{font-size:clamp(26px,3.2vw,38px);margin-bottom:20px;}
 .res-lead{color:var(--ink-soft);line-height:1.7;font-size:16.5px;max-width:740px;}
 .res-cta{display:flex;gap:12px;flex-wrap:wrap;margin:26px 0 34px;align-items:center;}
-.res-list{border-top:1px solid var(--line);}
-.res-list li{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--line);color:var(--ink-soft);line-height:1.62;font-size:15px;}
-.res-list li::before{content:'';width:6px;height:6px;margin-top:9px;background:var(--teal);border-radius:50%;flex-shrink:0;}
-.res-list b{color:var(--ink);font-weight:600;}
+/* atajos: índice visual de la página */
+.res-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;border-top:1px solid var(--line);padding-top:34px;}
+.res-card{
+  position:relative;display:flex;flex-direction:column;padding:22px 20px 20px;
+  background:var(--white);border:1px solid var(--line);text-decoration:none;overflow:hidden;
+  transition:translate .5s var(--ease-fluid),border-color .5s var(--ease-fluid),box-shadow .5s var(--ease-fluid);
+}
+.res-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--teal);
+  transform:scaleX(0);transform-origin:left;transition:transform .5s var(--ease-fluid);
+}
+.res-card:hover{translate:0 -4px;border-color:var(--line-strong);box-shadow:0 12px 28px rgba(27,30,31,.07);}
+.res-card:hover::before{transform:scaleX(1);}
+.res-card:focus-visible{outline:2px solid var(--teal-a11y);outline-offset:3px;}
+.res-card-n{font-family:var(--font-m);font-size:11px;letter-spacing:.14em;color:var(--silver);}
+.res-card-i{width:26px;height:26px;color:var(--teal);margin:13px 0 15px;flex-shrink:0;}
+.res-card-k{font-family:var(--font-d);font-size:21px;font-weight:600;line-height:1.14;color:var(--ink);margin-bottom:8px;}
+.res-card-v{font-size:13.5px;line-height:1.55;color:var(--ink-soft);margin-bottom:18px;flex:1;}
+.res-card-go{
+  font-family:var(--font-m);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--teal-a11y);display:inline-flex;align-items:center;gap:7px;margin-top:auto;
+}
+.res-card-go i{font-style:normal;transition:transform .4s var(--ease-fluid);}
+.res-card:hover .res-card-go i{transform:translateX(5px);}
+/* entrada escalonada — solo si el usuario acepta movimiento */
+@media(prefers-reduced-motion:no-preference){
+  .res-cards .res-card{opacity:0;}
+  .res-inner.in .res-card{animation:resCardIn .55s var(--ease-fluid) forwards;}
+  .res-inner.in .res-card:nth-child(2){animation-delay:.08s;}
+  .res-inner.in .res-card:nth-child(3){animation-delay:.16s;}
+  .res-inner.in .res-card:nth-child(4){animation-delay:.24s;}
+}
+@keyframes resCardIn{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
+@media(max-width:1024px){.res-cards{grid-template-columns:repeat(2,1fr);gap:10px;}}
+@media(max-width:600px){.res-cards{padding-top:26px;}.res-card{padding:18px 16px 16px;}.res-card-k{font-size:19px;}.res-card-v{font-size:13px;margin-bottom:14px;}}
 
 /* ═══ SECTION generic ═══ */
 section{padding:120px 0;scroll-margin-top:88px;}
@@ -812,13 +843,36 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
           <span class="share-label">Compartir</span>
         </button>
       </div>
-      <ul class="res-list">
-        <li><b>Dos servicios, un solo responsable:</b> diseño arquitectónico (residencial y comercial, interiores, renders y visualización 3D, planos y memoria descriptiva) y construcción integral (obra residencial, edificios y locales comerciales, remodelaciones, acabados y supervisión de obra).</li>
-        <li><b>Dónde trabajamos:</b> con base en Tepic. Bahía de Banderas y Riviera Nayarit de forma activa; Puerto Vallarta (zona norte) bajo agenda, caso por caso.</li>
-        <li><b>Cómo trabajamos:</b> el mismo equipo diseña y construye, el presupuesto ejecutivo se cierra antes de iniciar obra y el cronograma se fija en la fase de planeación.</li>
-        <li><b>Proceso en cinco etapas:</b> diagnóstico, diseño, planeación, construcción y entrega llave en mano.</li>
-        <li><b>Cómo se contrata:</b> escríbenos por WhatsApp al 311 161 4155, llámanos o llena el formulario de contacto. La visita o consulta inicial es sin costo.</li>
-      </ul>
+      <nav class="res-cards" aria-label="Resumen de la página">
+        <a class="res-card" href="#servicios">
+          <span class="res-card-n">01</span>
+          <svg class="res-card-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg>
+          <span class="res-card-k">Diseño y obra</span>
+          <span class="res-card-v">Un mismo equipo del primer trazo a la entrega de llaves.</span>
+          <span class="res-card-go">Ver servicios<i aria-hidden="true">→</i></span>
+        </a>
+        <a class="res-card" href="#ubicacion">
+          <span class="res-card-n">02</span>
+          <svg class="res-card-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 21s7-5.3 7-11a7 7 0 10-14 0c0 5.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+          <span class="res-card-k">Tepic y Riviera Nayarit</span>
+          <span class="res-card-v">Bahía de Banderas activa; Puerto Vallarta a consulta.</span>
+          <span class="res-card-go">Ver zonas<i aria-hidden="true">→</i></span>
+        </a>
+        <a class="res-card" href="#proceso">
+          <span class="res-card-n">03</span>
+          <svg class="res-card-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+          <span class="res-card-k">Cinco etapas</span>
+          <span class="res-card-v">Diagnóstico, diseño, planeación, obra y entrega llave en mano.</span>
+          <span class="res-card-go">Ver proceso<i aria-hidden="true">→</i></span>
+        </a>
+        <a class="res-card" href="#contacto">
+          <span class="res-card-n">04</span>
+          <svg class="res-card-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 9 9 0 01-3.3-.6L3 21l1.7-5a8.2 8.2 0 01-.7-3.4 8.4 8.4 0 018.5-8.4 8.4 8.4 0 019 8.4z"/></svg>
+          <span class="res-card-k">Consulta sin costo</span>
+          <span class="res-card-v">La primera visita o asesoría no tiene costo ni compromiso.</span>
+          <span class="res-card-go">Cómo empezar<i aria-hidden="true">→</i></span>
+        </a>
+      </nav>
     </div>
   </div>
 </section>
