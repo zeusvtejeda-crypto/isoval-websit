@@ -1,0 +1,32 @@
+# Cabeceras de seguridad para Cloudflare Pages.
+#
+# GitHub Pages IGNORA este archivo por completo — ahi la unica proteccion es la
+# CSP por <meta http-equiv> que vive en el <head> del index.html. Este archivo
+# solo empieza a servir cuando isoval.com.mx apunte a Cloudflare Pages.
+#
+# Lo que gana el sitio al migrar, y que un <meta> NO puede dar:
+#   · frame-ancestors 'none' + X-Frame-Options: DENY  -> clickjacking
+#   · Strict-Transport-Security                       -> fuerza HTTPS
+#
+# La CSP de aqui es la MISMA que la del <meta> mas frame-ancestors. Cuando las
+# dos esten activas el navegador aplica la interseccion, asi que no se pisan.
+# Si algun dia cambia una, cambiar la otra: la del <meta> esta en index.html.
+#
+# connect-src deja pasar api.web3forms.com por el fetch() del formulario de
+# contacto. El 'unsafe-inline' es por el <style> y los <script> que van dentro
+# del propio index.html (sin hashes a proposito: cualquier edicion al HTML los
+# invalidaria y la pagina quedaria en blanco sin aviso).
+
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://api.web3forms.com; manifest-src 'self'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=63072000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: accelerometer=(), autoplay=(), camera=(), display-capture=(), encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), usb=(), xr-spatial-tracking=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  X-Permitted-Cross-Domain-Policies: none
+
+/imgs/*
+  Cache-Control: public, max-age=31536000, immutable
