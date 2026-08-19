@@ -8,6 +8,22 @@
 <head>
 <meta name="google-site-verification" content="vTk9rzoiDsJtr6PPO4258uxxXLT_A-oFnCy3wEzRQVk" />
 <meta charset="UTF-8"/>
+<!--
+  CSP por <meta> porque GitHub Pages NO puede mandar cabeceras personalizadas.
+  Va aqui arriba a proposito: la politica solo cubre lo que se carga DESPUES de
+  esta linea, asi que nada de moverla debajo de los <link> de fuentes.
+
+  connect-src permite api.web3forms.com por el fetch() del formulario de
+  contacto; style-src y font-src, Google Fonts. El 'unsafe-inline' es por el
+  <style> y los <script> que viven dentro de este mismo archivo.
+
+  OJO — lo que un <meta> NO puede hacer (el navegador lo ignora aqui):
+  frame-ancestors, report-uri y sandbox. O sea que clickjacking y HSTS siguen
+  sin cubrirse. Para eso hay que prender la nube naranja de Cloudflare con
+  SSL/TLS en "Full" y meter las cabeceras por Response Header Rules.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-src 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://api.web3forms.com; manifest-src 'self'; upgrade-insecure-requests"/>
+<meta name="referrer" content="strict-origin-when-cross-origin"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>ISOVAL — Arquitectura & Construcción · Tepic, Nayarit</title>
 <meta name="description" content="ISOVAL — Estudio de arquitectura y construcción en Tepic, Nayarit. Precisión desde el primer trazo hasta la obra terminada."/>
