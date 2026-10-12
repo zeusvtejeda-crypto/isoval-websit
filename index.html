@@ -76,7 +76,13 @@
       "@type": "GeneralContractor",
       "@id": "https://isoval.com.mx/#business",
       "name": "ISOVAL",
-      "image": "https://isoval.com.mx/imgs/facade.jpg",
+      "image": [
+        { "@type": "ImageObject", "url": "https://isoval.com.mx/imgs/facade.jpg", "caption": "Fachada de proyecto residencial de ISOVAL en Tepic, Nayarit" },
+        { "@type": "ImageObject", "url": "https://isoval.com.mx/imgs/celosia-1.jpg", "caption": "Casa Celosía — fachada, diseño integral residencial en Nayarit" },
+        { "@type": "ImageObject", "url": "https://isoval.com.mx/imgs/sol-1.jpg", "caption": "Casa Puertas del Sol — fachada, proyecto residencial de 256 m² en Xalisco, Nayarit" },
+        { "@type": "ImageObject", "url": "https://isoval.com.mx/imgs/puga-1.jpg", "caption": "Casa Puga — alberca y jardín, proyecto residencial en Francisco I. Madero, Tepic" },
+        { "@type": "ImageObject", "url": "https://isoval.com.mx/imgs/riviera.jpg", "caption": "Proyecto Riviera — construcción real en Riviera Nayarit" }
+      ],
       "logo": "https://isoval.com.mx/imgs/logo.png",
       "url": "https://isoval.com.mx/",
       "telephone": "+523111614155",
@@ -657,6 +663,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 /* El texto del hero se pinta de inmediato: cualquier opacity:0 o clip inicial aquí
    retrasa FCP/LCP porque es el contenido más grande sobre el pliegue. */
 .hero-h1 .ln{display:block;padding-bottom:.05em;}
+.hero-h1 .eyebrow{line-height:18px;}
 .hero-h1 .ln>span{display:block;}
 
 /* iso-graphic blueprint draw-in — decorativo, detrás del texto */
@@ -820,8 +827,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
   </div>
   <div class="wrap hero-grid">
     <div>
-      <div class="eyebrow">TEPIC · NAYARIT — ARQUITECTURA &amp; CONSTRUCCIÓN</div>
-      <h1 class="hero-h1"><span class="ln"><span>Del trazo exacto</span></span><span class="ln"><span>a la obra <em>terminada</em>.</span></span></h1>
+      <h1 class="hero-h1"><span class="eyebrow">TEPIC · NAYARIT — ARQUITECTOS &amp; CONSTRUCCIÓN</span><span class="ln"><span>Del trazo exacto</span></span><span class="ln"><span>a la obra <em>terminada</em>.</span></span></h1>
       <p class="hero-sub hero-rise d1">Diseñamos y construimos con precisión de plano técnico: cada proyecto empieza como una línea isométrica y termina como un espacio real, sin desvíos entre uno y otro.</p>
       <div class="hero-ctas hero-rise d2">
         <a href="#contacto" class="btn solid">Iniciar proyecto →</a>
@@ -1043,7 +1049,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 <section id="nosotros">
   <div class="wrap nos-grid">
     <div class="nos-photo-wrap reveal">
-      <div class="nos-photo" style="background-image:url('/imgs/patio.jpg');background-image:image-set(url('/imgs/patio.webp') type('image/webp'),url('/imgs/patio.jpg') type('image/jpeg'));"></div>
+      <div class="nos-photo lazy-bg" data-bg="patio"></div>
       <div class="note note-1">Acabados de autor</div>
       <div class="note note-2">Luz natural, todo el año</div>
     </div>
@@ -1052,6 +1058,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
       <h2 class="s-title" style="margin-bottom:22px;">Rigor técnico.<br>Sensibilidad de <em>diseño</em>.</h2>
       <p>ISOVAL es un despacho de arquitectos y constructora con sede en Tepic, Nayarit. Combinamos la precisión de un plano isométrico —cada medida, cada trazo, cada detalle calculado— con la sensibilidad de diseño que convierte un plano en un lugar donde de verdad se quiere estar.</p>
       <p>Un mismo equipo acompaña el proyecto desde el primer boceto hasta la entrega de llaves, para que lo que se dibuja sea exactamente lo que se construye.</p>
+      <p>Trabajamos casas, remodelaciones y espacios comerciales en Tepic, Xalisco, Bahía de Banderas y la Riviera Nayarit. Cada proyecto sigue cinco etapas —diagnóstico, diseño, planeación, construcción y entrega— y el presupuesto ejecutivo se cierra antes de iniciar obra, así que el cliente sabe qué va a pagar y qué va a recibir. Si ya tienes proyecto, también podemos solo construirlo; si apenas tienes el terreno, empezamos por el diseño.</p>
       <div class="nos-tags">
         <span>Diseño propio</span>
         <span>Construcción propia</span>
@@ -1092,7 +1099,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 <section id="ubicacion" style="padding-bottom:0;">
   <div class="wrap">
     <div class="ubi-grid reveal">
-      <div class="ubi-photo" style="background-image:url('/imgs/dorada.jpg');"></div>
+      <div class="ubi-photo lazy-bg" data-bg="dorada"></div>
       <div class="ubi-info">
         <div class="eyebrow">Cobertura</div>
         <h2 class="s-title" style="font-size:32px;margin-bottom:16px;">Trabajamos en<br>todo <em>Nayarit</em>.</h2>
@@ -1240,6 +1247,7 @@ function boot(){
   try{ initFaq(); }catch(e){}
   try{ initProyectos(); }catch(e){}
   try{ initContactForm(); }catch(e){}
+  try{ initLazyBg(); }catch(e){}
   try{ initProgress(); }catch(e){}
   try{ initCounters(); }catch(e){}
   try{ initSpotlight(); }catch(e){}
@@ -1408,6 +1416,22 @@ function initMobileMenu(){
       document.body.style.overflow='';
     });
   });
+}
+
+function initLazyBg(){
+  var els=document.querySelectorAll('.lazy-bg');
+  function load(el){
+    var n=el.getAttribute('data-bg');
+    el.style.backgroundImage=(n==='patio')
+      ?"image-set(url('/imgs/patio.webp') type('image/webp'),url('/imgs/patio.jpg') type('image/jpeg'))"
+      :"url('/imgs/"+n+".jpg')";
+    if(!el.style.backgroundImage) el.style.backgroundImage="url('/imgs/"+n+".jpg')";
+  }
+  if(!('IntersectionObserver' in window)){ els.forEach(load); return; }
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ if(e.isIntersecting){ load(e.target); io.unobserve(e.target); } });
+  },{rootMargin:'600px 0px'});
+  els.forEach(function(el){ io.observe(el); });
 }
 
 function initReveal(){
