@@ -88,16 +88,32 @@ export function isWithinShiftWindow(shift: ShiftTimes, ...times: Array<DateLike 
 }
 
 /**
- * Una solicitud de corrección solo puede aprobarse si la guardia no está
- * cancelada y la asignación sigue activa: no se ofrece en otros casos.
+ * Estados de asignación que una solicitud aprobada regresa a «Asignado»: la
+ * persona sí asistió y pide el registro que faltó (review_correction).
+ */
+export const REVERTIBLE_ABSENCE_STATUSES = ["ausencia_justificada", "inasistencia_confirmada"] as const;
+export type RevertibleAbsenceStatus = (typeof REVERTIBLE_ABSENCE_STATUSES)[number];
+
+export function isRevertibleAbsence(status: string | null | undefined): status is RevertibleAbsenceStatus {
+  return (REVERTIBLE_ABSENCE_STATUSES as readonly string[]).includes(status ?? "");
+}
+
+/**
+ * Una solicitud de corrección solo puede aprobarse si la guardia y la
+ * asignación no están canceladas (mismas reglas que request_correction): no se
+ * ofrece en otros casos. Una ausencia o inasistencia sí se puede impugnar.
  */
 export function correctionRequestBlock(shiftStatus: string | null | undefined, assignmentStatus: string | null | undefined): string | null {
   if (shiftStatus === "cancelada") return "La guardia está cancelada: no se pueden solicitar correcciones de esta guardia.";
-  if (assignmentStatus && assignmentStatus !== "asignado") {
-    const label = ASSIGNMENT_STATUS_LABELS[assignmentStatus as keyof typeof ASSIGNMENT_STATUS_LABELS] ?? assignmentStatus;
-    return `La asignación no está activa (${label}): no se pueden solicitar correcciones de esta guardia.`;
-  }
+  if (assignmentStatus === "cancelado") return "La asignación está cancelada: no se pueden solicitar correcciones de esta guardia.";
   return null;
+}
+
+/** Aviso para el trabajador antes de impugnar una ausencia o inasistencia (null en otros estados). */
+export function absenceRequestHint(assignmentStatus: string | null | undefined): string | null {
+  if (!isRevertibleAbsence(assignmentStatus)) return null;
+  const label = ASSIGNMENT_STATUS_LABELS[assignmentStatus];
+  return `Esta guardia está registrada como «${label}». Si sí asististe, solicita el registro con tus horas reales de entrada y salida. Si coordinación lo aprueba, la guardia deja de contar como «${label}».`;
 }
 
 /**
@@ -136,13 +152,19 @@ export type CurrentSession = { check_in_at: string; check_out_at: string | null;
 export type CorrectionContext = {
   shift?: (ShiftTimes & { status?: string | null }) | null;
   assignmentStatus?: string | null;
+  /** Motivo registrado del estado de la asignación (p. ej., de la inasistencia). */
+  assignmentStatusReason?: string | null;
 };
 
 /** Contexto a partir de una solicitud cargada con su asignación y guardia. */
 export function correctionContext(item: {
-  assignment: { status?: string | null; shift: (ShiftTimes & { status?: string | null }) | null } | null;
+  assignment: { status?: string | null; status_reason?: string | null; shift: (ShiftTimes & { status?: string | null }) | null } | null;
 }): CorrectionContext {
-  return { shift: item.assignment?.shift ?? null, assignmentStatus: item.assignment?.status ?? null };
+  return {
+    shift: item.assignment?.shift ?? null,
+    assignmentStatus: item.assignment?.status ?? null,
+    assignmentStatusReason: item.assignment?.status_reason ?? null,
+  };
 }
 
 export type CorrectionView = {
@@ -153,6 +175,11 @@ export type CorrectionView = {
   /** Cómo quedaría el registro si se aprueba. */
   result: { checkIn: string | null; checkOut: string | null };
   warnings: string[];
+  /**
+   * Aviso para quien revisa: aprobar regresa la asignación de una ausencia o
+   * inasistencia a «Asignado» (null si no aplica).
+   */
+  revertNote: string | null;
   /** Se puede aprobar sin que la base de datos lo rechace por datos incompletos. */
   canApprove: boolean;
 };
@@ -191,16 +218,25 @@ export function describeCorrection(request: CorrectionRequestTimes, session: Cur
     canApprove = false;
   }
 
-  const { shift, assignmentStatus } = context;
+  const { shift, assignmentStatus, assignmentStatusReason } = context;
+  let revertNote: string | null = null;
   if (kind === "nuevo") {
-    // add_manual_attendance: guardia no cancelada y asignación activa.
+    // add_manual_attendance: guardia y asignación no canceladas.
     if (shift?.status === "cancelada") {
       warnings.push("La guardia está cancelada: no se puede agregar un registro. Recházala con una nota.");
       canApprove = false;
     }
-    if (assignmentStatus && assignmentStatus !== "asignado") {
-      warnings.push("La asignación ya no está activa: no se puede agregar un registro. Recházala con una nota.");
+    if (assignmentStatus === "cancelado") {
+      warnings.push("La asignación está cancelada: no se puede agregar un registro. Recházala con una nota.");
       canApprove = false;
+    } else if (isRevertibleAbsence(assignmentStatus)) {
+      // review_correction regresa la asignación a «Asignado» antes de agregar el registro.
+      const label = ASSIGNMENT_STATUS_LABELS[assignmentStatus];
+      const reason = assignmentStatusReason?.trim();
+      revertNote =
+        `La asignación está registrada como «${label}»${reason ? ` (motivo: ${reason})` : ""}. ` +
+        `Si apruebas, deja de contar como «${label}», vuelve a «Asignado» y se agrega el registro solicitado. ` +
+        "El cambio queda en la bitácora con el motivo de la solicitud y tus notas de revisión.";
     }
   }
   if (shift && !isWithinShiftWindow(shift, resultIn, resultOut)) {
@@ -221,6 +257,7 @@ export function describeCorrection(request: CorrectionRequestTimes, session: Cur
     },
     result: { checkIn: fmt(resultIn, tz), checkOut: fmt(resultOut, tz) },
     warnings,
+    revertNote,
     canApprove,
   };
 }

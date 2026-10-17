@@ -71,9 +71,17 @@ export type MyShiftView = {
   checkInBlock: CheckInBlock | null;
   canCheckOut: boolean;
   checkOutBlock: CheckOutBlock | null;
+  /**
+   * La entrada abierta de OTRA asignación pasó el margen tras su término: su
+   * salida ya no se registra con la hora actual, solo con una corrección.
+   */
+  openElsewhereNeedsReview: boolean;
 };
 
 const MINUTE = 60_000;
+
+/** Entrada sin salida más allá del margen: el servidor ya no acepta la salida con la hora actual. */
+export const NEEDS_REVIEW_TEXT = "Entrada sin salida pendiente de revisión: solicita una corrección con tu hora real de salida en «Mi historial».";
 
 function isOpen(s: OwnSession): boolean {
   return s.record_status === "vigente" && s.check_out_at == null;
@@ -81,7 +89,11 @@ function isOpen(s: OwnSession): boolean {
 
 export function buildMyShifts(rows: MyAssignmentRow[], sessions: OwnSession[], now: Date, rules: WorkerRules): MyShiftView[] {
   const nowMs = now.getTime();
+  const graceMs = Math.max(0, rules.graceMinutes) * MINUTE;
   const globalOpen = sessions.find(isOpen) ?? null;
+  // Si no se cargó su guardia no se sabe si ya requiere revisión.
+  const globalOpenRow = globalOpen ? rows.find((r) => r.assignment_id === globalOpen.assignment_id) : undefined;
+  const globalOpenNeedsReview = globalOpenRow != null && nowMs > Date.parse(globalOpenRow.ends_at) + graceMs;
 
   const byAssignment = new Map<string, OwnSession[]>();
   for (const s of sessions) {
@@ -131,7 +143,7 @@ export function buildMyShifts(rows: MyAssignmentRow[], sessions: OwnSession[], n
 
     let checkOutBlock: CheckOutBlock | null = null;
     if (!openSession) checkOutBlock = "no_open_session";
-    else if (nowMs > endMs + Math.max(0, rules.graceMinutes) * MINUTE) checkOutBlock = "needs_review";
+    else if (nowMs > endMs + graceMs) checkOutBlock = "needs_review";
 
     views.push({
       row,
@@ -145,6 +157,7 @@ export function buildMyShifts(rows: MyAssignmentRow[], sessions: OwnSession[], n
       checkInBlock,
       canCheckOut: checkOutBlock == null,
       checkOutBlock,
+      openElsewhereNeedsReview: globalOpen != null && globalOpen.assignment_id !== row.assignment_id && globalOpenNeedsReview,
     });
   }
   return views.sort((a, b) => Date.parse(a.row.starts_at) - Date.parse(b.row.starts_at));
@@ -193,6 +206,26 @@ export function recentViews(views: MyShiftView[], excludeId: string | null): MyS
     .sort((a, b) => Date.parse(b.row.starts_at) - Date.parse(a.row.starts_at));
 }
 
+/** Subtítulo de «Mi guardia de hoy» según el momento de la guardia destacada. */
+export function featuredTimingText(view: MyShiftView): string {
+  switch (view.timing) {
+    case "proxima":
+      return "Tu próxima guardia";
+    case "en_curso":
+      return "Guardia en curso";
+    case "terminada":
+      if (!view.openSession) return "Guardia terminada";
+      return view.checkOutBlock === "needs_review" ? NEEDS_REVIEW_TEXT : "Guardia terminada con entrada abierta: registra tu salida";
+  }
+}
+
+/** Indicación para la entrada abierta que se muestra aparte (otra guardia). */
+export function openElsewhereText(view: MyShiftView): string {
+  return view.checkOutBlock === "needs_review"
+    ? `${NEEDS_REVIEW_TEXT} Mientras siga abierta no se puede registrar una nueva entrada; si tienes guardia ahora, avisa a coordinación para que corrija ese registro.`
+    : "Registra la salida de esa guardia antes de registrar una nueva entrada.";
+}
+
 export function checkInBlockText(view: MyShiftView): string | null {
   const tz = view.row.facility_timezone;
   switch (view.checkInBlock) {
@@ -207,7 +240,9 @@ export function checkInBlockText(view: MyShiftView): string | null {
     case "inactive":
       return `Tu asignación tiene el estado «${ASSIGNMENT_STATUS_LABELS[view.row.assignment_status]}»; no se puede registrar entrada.`;
     case "open_elsewhere":
-      return "Tienes una entrada abierta en otra guardia. Registra primero la salida de esa guardia.";
+      return view.openElsewhereNeedsReview
+        ? "Tienes una entrada abierta en otra guardia, sin salida y pendiente de revisión: solicita una corrección con tu hora real de salida en «Mi historial». Mientras siga abierta no se puede registrar una nueva entrada."
+        : "Tienes una entrada abierta en otra guardia. Registra primero la salida de esa guardia.";
     case "not_yet_open":
       return `El registro de entrada abre el ${formatDate(view.opensAt, tz)} a las ${formatTime(view.opensAt, tz)} (hora de la sede).`;
     case "ended":

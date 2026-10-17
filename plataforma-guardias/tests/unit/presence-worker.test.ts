@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  NEEDS_REVIEW_TEXT,
   buildMyShifts,
   checkInBlockText,
   checkOutBlockText,
+  featuredTimingText,
   openElsewhere,
+  openElsewhereText,
   pickFeatured,
   recentViews,
   registrableViews,
@@ -153,6 +156,64 @@ describe("buildMyShifts / pickFeatured", () => {
     expect(by.vieja.checkInBlock).toBe("ended");
     expect(pickFeatured(views)).toBeNull();
     expect(recentViews(views, null).map((v) => v.row.assignment_id)).toEqual(["vieja"]);
+  });
+});
+
+describe("entrada sin salida pendiente de revisión", () => {
+  it("no pide registrar una salida que el servidor ya rechazaría", () => {
+    const views = buildMyShifts([yesterday, today, tomorrow], [session("s1", "ayer", "2026-10-16T15:02:00Z")], NOW, RULES);
+    const featured = pickFeatured(views)!;
+    expect(featured.row.assignment_id).toBe("hoy");
+    expect(featured.openElsewhereNeedsReview).toBe(true);
+    const text = checkInBlockText(featured)!;
+    expect(text).toMatch(/pendiente de revisión/);
+    expect(text).toContain("solicita una corrección con tu hora real de salida en «Mi historial»");
+    expect(text).not.toMatch(/Registra primero la salida/);
+
+    // Aviso aparte de la entrada abierta en la otra guardia.
+    const other = openElsewhere(views, "hoy")!;
+    expect(other.checkOutBlock).toBe("needs_review");
+    expect(other.openElsewhereNeedsReview).toBe(false);
+    expect(openElsewhereText(other)).toContain(NEEDS_REVIEW_TEXT);
+    expect(openElsewhereText(other)).not.toMatch(/Registra la salida de esa guardia/);
+    // La de mañana tampoco pide registrar la salida.
+    expect(checkInBlockText(views.find((v) => v.row.assignment_id === "manana")!)).toMatch(/pendiente de revisión/);
+  });
+
+  it("destacada: guardia terminada con entrada abierta, dentro y fuera del margen", () => {
+    const ended = row("termino", "2026-10-17T07:00:00Z", "2026-10-17T15:00:00Z"); // terminó hace 60 min
+    const within = buildMyShifts([ended, tomorrow], [session("s3", "termino", "2026-10-17T07:01:00Z")], NOW, RULES);
+    const w = pickFeatured(within)!;
+    expect(w.checkOutBlock).toBeNull();
+    expect(featuredTimingText(w)).toBe("Guardia terminada con entrada abierta: registra tu salida");
+    expect(openElsewhereText(w)).toBe("Registra la salida de esa guardia antes de registrar una nueva entrada.");
+    const next = within.find((v) => v.row.assignment_id === "manana")!;
+    expect(next.openElsewhereNeedsReview).toBe(false);
+    expect(checkInBlockText(next)).toBe("Tienes una entrada abierta en otra guardia. Registra primero la salida de esa guardia.");
+
+    // Mismo caso 5 h después: pasó el margen de 240 min.
+    const later = buildMyShifts([ended, tomorrow], [session("s3", "termino", "2026-10-17T07:01:00Z")], new Date("2026-10-17T20:00:00Z"), RULES);
+    const l = pickFeatured(later)!;
+    expect(l.row.assignment_id).toBe("termino");
+    expect(l.checkOutBlock).toBe("needs_review");
+    expect(featuredTimingText(l)).toBe(NEEDS_REVIEW_TEXT);
+    expect(NEEDS_REVIEW_TEXT).toBe("Entrada sin salida pendiente de revisión: solicita una corrección con tu hora real de salida en «Mi historial».");
+    expect(checkInBlockText(later.find((v) => v.row.assignment_id === "manana")!)).toMatch(/pendiente de revisión/);
+  });
+
+  it("textos de cada momento de la guardia destacada", () => {
+    const views = buildMyShifts([today, tomorrow], [], NOW, RULES);
+    expect(featuredTimingText(views.find((v) => v.row.assignment_id === "hoy")!)).toBe("Guardia en curso");
+    expect(featuredTimingText(views.find((v) => v.row.assignment_id === "manana")!)).toBe("Tu próxima guardia");
+    const old = buildMyShifts([yesterday], [], NOW, RULES)[0];
+    expect(featuredTimingText(old)).toBe("Guardia terminada");
+  });
+
+  it("si no se cargó la guardia de la entrada abierta, conserva el texto general", () => {
+    const views = buildMyShifts([today], [session("sx", "otra-guardia", "2026-10-15T15:00:00Z")], NOW, RULES);
+    expect(views[0].checkInBlock).toBe("open_elsewhere");
+    expect(views[0].openElsewhereNeedsReview).toBe(false);
+    expect(checkInBlockText(views[0])).toMatch(/Registra primero la salida/);
   });
 });
 

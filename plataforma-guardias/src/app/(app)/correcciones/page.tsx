@@ -45,6 +45,7 @@ export default async function CorreccionesPage({ searchParams }: { searchParams:
   const sede = rawSede && isGuid(rawSede) ? rawSede.toLowerCase() : null;
   const reviewedId = readParam(sp, "revisada");
   const result = parseReviewResult(readParam(sp, "resultado"));
+  const reverted = result === "aprobada" && readParam(sp, "revertida") === "1";
 
   const supabase = await createClient();
   const [list, pendingCount, facilities, reviewed] = await Promise.all([
@@ -80,7 +81,9 @@ export default async function CorreccionesPage({ searchParams }: { searchParams:
           <p>
             {reviewed.worker?.full_name ?? "La persona"} · {reviewed.facility?.official_name ?? "Sede"}.{" "}
             {result === "aprobada"
-              ? "Se creó la versión corregida del registro; la versión original queda en el historial."
+              ? reverted
+                ? "La asignación volvió a «Asignado» y se agregó el registro solicitado; el cambio de estado queda en la bitácora."
+                : "Se creó la versión corregida del registro; la versión original queda en el historial."
               : "El registro no cambió. La persona verá tus notas de revisión."}
           </p>
           <p className="mt-1">

@@ -175,7 +175,7 @@ export const DETAIL_COLUMNS: ColumnDef[] = [
   { key: "incidencias", header: "Incidencias (señales para revisión)", short: "Incidencias", kind: "text", width: 40, pdf: false, value: (r) => r.incidentLabels.join("; ") || null },
   {
     key: "observaciones",
-    header: "Observaciones (notas de los registros vigentes)",
+    header: "Observaciones (notas de la asignación y de los registros vigentes)",
     short: "Observaciones",
     kind: "text",
     width: 40,

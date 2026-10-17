@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { loadMyShifts } from "@/lib/presence/my-shifts";
-import { openElsewhere, pickFeatured, recentViews, upcomingViews } from "@/lib/presence/worker";
+import { featuredTimingText, openElsewhere, openElsewhereText, pickFeatured, recentViews, upcomingViews } from "@/lib/presence/worker";
 import { NOT_LINKED_MESSAGE } from "@/lib/presence/texts";
 import { DEFAULT_TIMEZONE, formatDateTime, formatShiftRange } from "@/lib/time";
 import { PageHeader } from "@/components/ui/page-header";
@@ -15,12 +15,6 @@ import { LastUpdated } from "@/components/layout/connection-status";
 import { buttonsPropsFor, MyShiftDetails, MyShiftListItem } from "@/components/attendance/my-shift";
 
 export const metadata: Metadata = { title: "Mi guardia" };
-
-const TIMING_TEXT = {
-  proxima: "Tu próxima guardia",
-  en_curso: "Guardia en curso",
-  terminada: "Guardia terminada con entrada abierta: registra tu salida",
-} as const;
 
 export default async function MiGuardiaPage() {
   const user = await requireUser();
@@ -70,14 +64,14 @@ export default async function MiGuardiaPage() {
               {formatShiftRange(elsewhere.row.starts_at, elsewhere.row.ends_at, elsewhere.row.facility_timezone)}. Entrada:{" "}
               {formatDateTime(elsewhere.openSession.check_in_at, elsewhere.row.facility_timezone)} (hora de la sede).
             </p>
-            <p className="mt-1 text-sm">Registra la salida de esa guardia antes de registrar una nueva entrada.</p>
+            <p className="mt-1 text-sm">{openElsewhereText(elsewhere)}</p>
           </div>
         ) : null}
         <AttendanceButtons {...buttonsPropsFor(elsewhere)} showCheckIn={false} />
       </div>
 
       <Card>
-        <CardHeader title="Mi guardia de hoy" description={featured ? TIMING_TEXT[featured.timing] : undefined} />
+        <CardHeader title="Mi guardia de hoy" description={featured ? featuredTimingText(featured) : undefined} />
         {featured ? (
           <MyShiftDetails view={featured} />
         ) : (

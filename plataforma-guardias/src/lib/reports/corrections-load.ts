@@ -10,6 +10,7 @@ export type CorrectionListItem = CorrectionRow & {
   assignment: {
     id: string;
     status: Database["public"]["Enums"]["assignment_status"];
+    status_reason: string | null;
     shift: {
       id: string;
       title: string | null;
@@ -27,7 +28,7 @@ const CORRECTION_SELECT = [
   "*",
   "worker:workers!correction_requests_worker_id_fkey(id, full_name, internal_code)",
   "facility:facilities!correction_requests_facility_id_fkey(id, official_name, timezone)",
-  "assignment:shift_assignments!correction_requests_assignment_id_fkey(id, status, shift:shifts!shift_assignments_shift_id_fkey(id, title, meeting_point, starts_at, ends_at, status))",
+  "assignment:shift_assignments!correction_requests_assignment_id_fkey(id, status, status_reason, shift:shifts!shift_assignments_shift_id_fkey(id, title, meeting_point, starts_at, ends_at, status))",
   "session:attendance_sessions!correction_requests_session_id_fkey(id, check_in_at, check_out_at, record_status)",
   "resulting:attendance_sessions!correction_requests_resulting_session_id_fkey(id, check_in_at, check_out_at)",
 ].join(", ");

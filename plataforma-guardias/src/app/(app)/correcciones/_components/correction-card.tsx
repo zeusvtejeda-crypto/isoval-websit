@@ -160,6 +160,12 @@ export function CorrectionCard({
         ) : null}
       </div>
 
+      {item.status === "pendiente" && view.revertNote ? (
+        <Alert tone="info" title="Aprobar revierte el estado de la asignación" className="mt-3">
+          <p>{view.revertNote}</p>
+        </Alert>
+      ) : null}
+
       {item.status === "pendiente" && view.warnings.length ? (
         <Alert tone="warning" className="mt-3">
           {view.warnings.map((w) => (

@@ -78,7 +78,10 @@ export type ReportRow = {
   openSession: boolean;
   needsReview: boolean;
   incidentLabels: string[];
-  /** Notas de las sesiones vigentes, en orden de entrada. */
+  /**
+   * Observaciones: primero las notas de la asignación («Asignación: …») y luego
+   * las de las sesiones vigentes, en orden de entrada.
+   */
   observations: string[];
   /** Justificaciones (incident_notes) de la asignación; vacío hasta `attachIncidentNotes`. */
   justifications: Justification[];
@@ -144,6 +147,15 @@ export function sessionObservations(sessions: readonly SessionNoteLike[] | null 
     if (!out.includes(note)) out.push(note);
   }
   return out;
+}
+
+/** Prefijo de las notas de la asignación (shift_assignments.notes) en las observaciones. */
+export const ASSIGNMENT_NOTE_PREFIX = "Asignación: ";
+
+/** Notas de la asignación como observación («Asignación: …»), o null si no hay. */
+export function assignmentObservation(notes: string | null | undefined): string | null {
+  const note = notes?.trim();
+  return note ? `${ASSIGNMENT_NOTE_PREFIX}${note}` : null;
 }
 
 /** Texto de una justificación: «Tipo: nota», con aclaraciones si aplica. */
@@ -243,7 +255,7 @@ export function buildReportRows(shifts: ShiftWithAttendance[], options: BuildRow
         openSession: s.openSession != null,
         needsReview: s.needsReview,
         incidentLabels: s.incidents.map((i) => INCIDENT_LABELS[i.type]),
-        observations: sessionObservations(a.sessions),
+        observations: [assignmentObservation(a.assignment.notes), ...sessionObservations(a.sessions)].filter((o): o is string => o != null),
         justifications: [],
         summary: s,
       });

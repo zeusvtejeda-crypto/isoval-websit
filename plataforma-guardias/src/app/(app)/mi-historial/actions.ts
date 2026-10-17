@@ -60,7 +60,8 @@ export async function requestCorrection(_prev: CorrectionState, formData: FormDa
   const shift = assignment.shift;
   const timeZone = shift?.facility?.timezone;
   if (!shift || !timeZone) return fail("No se pudo determinar la zona horaria de la sede.");
-  // Coordinación no podría aprobarla: guardia cancelada o asignación inactiva.
+  // Coordinación no podría aprobarla: guardia o asignación cancelada. Una ausencia
+  // o inasistencia sí se impugna (al aprobarse vuelve a «Asignado»).
   const blocked = correctionRequestBlock(shift.status, assignment.status);
   if (blocked) return fail(blocked);
 

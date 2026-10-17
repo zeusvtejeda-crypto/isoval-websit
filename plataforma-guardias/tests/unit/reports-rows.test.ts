@@ -5,6 +5,8 @@ import { inflateSync } from "node:zlib";
 import { summarizeAttendance, type AssignmentStatus, type SessionInput, type ShiftStatus } from "@/lib/attendance/calc";
 import type { AssignmentRow, SessionRow, ShiftRow, ShiftWithAttendance } from "@/lib/attendance/load";
 import {
+  ASSIGNMENT_NOTE_PREFIX,
+  assignmentObservation,
   attachIncidentNotes,
   buildReportRows,
   justificationText,
@@ -51,6 +53,8 @@ type AssignmentFixture = {
   sessions?: Array<Omit<SessionInput, "id">>;
   /** Notas de cada sesión (mismo índice que `sessions`). */
   sessionNotes?: Array<string | null>;
+  /** Notas de la asignación (shift_assignments.notes). */
+  notes?: string | null;
 };
 
 let seq = 0;
@@ -96,7 +100,7 @@ function makeShift(options: {
       status_reason: null,
       status_changed_by: null,
       status_changed_at: null,
-      notes: null,
+      notes: a.notes ?? null,
       change_reason: null,
       created_by: null,
       created_at: options.startsAt,
@@ -437,6 +441,7 @@ describe("buildReportRows: tiempo entre salida y regreso, observaciones y justif
           { checkInAt: "2026-10-16T19:30:00Z", checkOutAt: "2026-10-16T19:45:00Z", recordStatus: "corregido" },
         ],
         sessionNotes: ["Salida a comer", "  Regreso por acceso norte  ", "Nota de una versión corregida"],
+        notes: "  Cubre el acceso norte  ",
       },
       { id: "g2", workerId: W2, workerName: "Beto", sessions: [{ checkInAt: "2026-10-16T15:20:00Z", checkOutAt: "2026-10-16T23:00:00Z" }] },
     ],
@@ -459,11 +464,12 @@ describe("buildReportRows: tiempo entre salida y regreso, observaciones y justif
     expect(pdfCell(gap, g2)).toBe("0:00");
   });
 
-  it("las observaciones son las notas de las sesiones vigentes, en orden", () => {
-    expect(g1.observations).toEqual(["Salida a comer", "Regreso por acceso norte"]);
+  it("las observaciones son las notas de la asignación y luego las de las sesiones vigentes, en orden", () => {
+    expect(g1.observations).toEqual(["Asignación: Cubre el acceso norte", "Salida a comer", "Regreso por acceso norte"]);
     expect(g2.observations).toEqual([]);
     const obs = DETAIL_COLUMNS.find((c) => c.key === "observaciones")!;
-    expect(xlsxCell(obs, g1)).toBe("Salida a comer\nRegreso por acceso norte");
+    expect(obs.header).toBe("Observaciones (notas de la asignación y de los registros vigentes)");
+    expect(xlsxCell(obs, g1)).toBe("Asignación: Cubre el acceso norte\nSalida a comer\nRegreso por acceso norte");
     expect(xlsxCell(obs, g2)).toBeNull();
     expect(pdfCell(obs, g2)).toBe("—");
     // Sin repetir notas iguales; ignora vacías.
@@ -475,6 +481,25 @@ describe("buildReportRows: tiempo entre salida y regreso, observaciones y justif
         { notes: "Anulada", record_status: "anulado", check_in_at: "2026-10-16T14:00:00Z" },
       ]),
     ).toEqual(["Igual"]);
+    // Notas de la asignación: con prefijo, sin espacios sobrantes; vacías se omiten.
+    expect(ASSIGNMENT_NOTE_PREFIX).toBe("Asignación: ");
+    expect(assignmentObservation(" Llevar gafete \n")).toBe("Asignación: Llevar gafete");
+    expect(assignmentObservation("   ")).toBeNull();
+    expect(assignmentObservation(null)).toBeNull();
+    expect(assignmentObservation(undefined)).toBeNull();
+  });
+
+  it("incluye las notas de la asignación aunque no haya registros (p. ej., una inasistencia)", () => {
+    const absent = makeShift({
+      facility: FAC_A,
+      startsAt: "2026-10-16T15:00:00Z",
+      endsAt: "2026-10-16T23:00:00Z",
+      now: NOW,
+      assignments: [{ id: "n1", workerId: W3, workerName: "Ciro", status: "inasistencia_confirmada", notes: "Avisó por teléfono" }],
+    });
+    const [row] = buildReportRows([absent], { now: NOW });
+    expect(row.observations).toEqual(["Asignación: Avisó por teléfono"]);
+    expect(pdfCell(DETAIL_COLUMNS.find((c) => c.key === "observaciones")!, row)).toBe("Asignación: Avisó por teléfono");
   });
 
   it("agrega las justificaciones (incident_notes) por asignación, en el orden del catálogo", () => {
@@ -561,6 +586,7 @@ describe("render de Excel y PDF", () => {
           { checkInAt: "2026-10-16T19:45:00Z", checkOutAt: "2026-10-16T23:30:00Z" },
         ],
         sessionNotes: ["Salió a farmacia", null],
+        notes: "Apoyo en triage",
       },
     ],
   });
@@ -599,7 +625,8 @@ describe("render de Excel y PDF", () => {
     expect(texts).toContain("7.42");
     expect(texts).toContain("0.75");
     expect(all).toContain("Tiempo entre salida y regreso (no cuenta) (h)");
-    expect(all).toContain("Observaciones (notas de los registros vigentes)");
+    expect(all).toContain("Observaciones (notas de la asignación y de los registros vigentes)");
+    expect(all).toContain("Asignación: Apoyo en triage");
     expect(all).toContain("Justificación (incidencia: nota)");
     expect(all).toContain("Salió a farmacia");
     expect(all).toContain("Llegada tardía: Retraso del transporte");

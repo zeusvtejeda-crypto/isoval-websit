@@ -3,9 +3,11 @@ import {
   OWN_REVIEW_DB_MESSAGES,
   OWN_REVIEW_MESSAGE,
   SHIFT_WINDOW_MESSAGE,
+  absenceRequestHint,
   correctionContext,
   correctionRequestBlock,
   describeCorrection,
+  isRevertibleAbsence,
   isWithinShiftWindow,
   ownReviewBlock,
   parseCorrectionTab,
@@ -121,15 +123,42 @@ describe("describeCorrection: reglas de la base de datos", () => {
     expect(early.canApprove).toBe(false);
   });
 
-  it("un registro nuevo no se aprueba en guardias canceladas ni asignaciones inactivas", () => {
+  it("un registro nuevo no se aprueba en guardias ni asignaciones canceladas", () => {
     const req = { session_id: null, requested_check_in_at: "2026-10-17T15:00:00Z", requested_check_out_at: "2026-10-17T23:00:00Z" };
-    expect(describeCorrection(req, null, MZT, { shift, assignmentStatus: "asignado" }).canApprove).toBe(true);
+    const active = describeCorrection(req, null, MZT, { shift, assignmentStatus: "asignado" });
+    expect(active.canApprove).toBe(true);
+    expect(active.revertNote).toBeNull();
     const cancelled = describeCorrection(req, null, MZT, { shift: { ...shift, status: "cancelada" }, assignmentStatus: "asignado" });
     expect(cancelled.canApprove).toBe(false);
-    expect(cancelled.warnings.join(" ")).toMatch(/cancelada/);
-    const inactive = describeCorrection(req, null, MZT, { shift, assignmentStatus: "ausencia_justificada" });
-    expect(inactive.canApprove).toBe(false);
-    expect(inactive.warnings.join(" ")).toMatch(/no está activa/);
+    expect(cancelled.warnings.join(" ")).toMatch(/guardia está cancelada/);
+    const cancelledAssignment = describeCorrection(req, null, MZT, { shift, assignmentStatus: "cancelado" });
+    expect(cancelledAssignment.canApprove).toBe(false);
+    expect(cancelledAssignment.warnings.join(" ")).toMatch(/asignación está cancelada/);
+    expect(cancelledAssignment.revertNote).toBeNull();
+  });
+
+  it("un registro nuevo sobre una ausencia o inasistencia se aprueba y avisa que revierte el estado", () => {
+    const req = { session_id: null, requested_check_in_at: "2026-10-17T15:00:00Z", requested_check_out_at: "2026-10-17T23:00:00Z" };
+    const absent = describeCorrection(req, null, MZT, {
+      shift,
+      assignmentStatus: "inasistencia_confirmada",
+      assignmentStatusReason: "  No se presentó según el responsable ",
+    });
+    expect(absent.canApprove).toBe(true);
+    expect(absent.warnings).toEqual([]);
+    expect(absent.revertNote).toBe(
+      "La asignación está registrada como «Inasistencia confirmada» (motivo: No se presentó según el responsable). " +
+        "Si apruebas, deja de contar como «Inasistencia confirmada», vuelve a «Asignado» y se agrega el registro solicitado. " +
+        "El cambio queda en la bitácora con el motivo de la solicitud y tus notas de revisión.",
+    );
+    const justified = describeCorrection(req, null, MZT, { shift, assignmentStatus: "ausencia_justificada" });
+    expect(justified.canApprove).toBe(true);
+    expect(justified.revertNote).toMatch(/^La asignación está registrada como «Ausencia justificada»\. Si apruebas/);
+    // Con la guardia cancelada no se aprueba (la base de datos la rechaza).
+    expect(describeCorrection(req, null, MZT, { shift: { ...shift, status: "cancelada" }, assignmentStatus: "ausencia_justificada" }).canApprove).toBe(false);
+    // Faltan horas: sigue sin poder aprobarse.
+    const partial = describeCorrection({ ...req, requested_check_out_at: null }, null, MZT, { shift, assignmentStatus: "inasistencia_confirmada" });
+    expect(partial.canApprove).toBe(false);
   });
 
   it("sin contexto se comporta como antes", () => {
@@ -138,8 +167,13 @@ describe("describeCorrection: reglas de la base de datos", () => {
   });
 
   it("obtiene el contexto de una solicitud cargada", () => {
-    expect(correctionContext({ assignment: { status: "asignado", shift } })).toEqual({ shift, assignmentStatus: "asignado" });
-    expect(correctionContext({ assignment: null })).toEqual({ shift: null, assignmentStatus: null });
+    expect(correctionContext({ assignment: { status: "asignado", shift } })).toEqual({ shift, assignmentStatus: "asignado", assignmentStatusReason: null });
+    expect(correctionContext({ assignment: { status: "inasistencia_confirmada", status_reason: "No llegó", shift } })).toEqual({
+      shift,
+      assignmentStatus: "inasistencia_confirmada",
+      assignmentStatusReason: "No llegó",
+    });
+    expect(correctionContext({ assignment: null })).toEqual({ shift: null, assignmentStatus: null, assignmentStatusReason: null });
   });
 
   it("calcula la ventana de la guardia (±12 h, extremos incluidos)", () => {
@@ -154,14 +188,29 @@ describe("describeCorrection: reglas de la base de datos", () => {
 });
 
 describe("solicitudes que no se ofrecen", () => {
-  it("no se solicitan correcciones de guardias canceladas ni asignaciones inactivas", () => {
+  it("no se solicitan correcciones de guardias ni asignaciones canceladas", () => {
     expect(correctionRequestBlock("finalizada", "asignado")).toBeNull();
     expect(correctionRequestBlock("programada", "asignado")).toBeNull();
-    expect(correctionRequestBlock("cancelada", "asignado")).toMatch(/cancelada/);
-    expect(correctionRequestBlock("finalizada", "cancelado")).toBe(
-      "La asignación no está activa (Asignación cancelada): no se pueden solicitar correcciones de esta guardia.",
+    expect(correctionRequestBlock("cancelada", "asignado")).toBe("La guardia está cancelada: no se pueden solicitar correcciones de esta guardia.");
+    expect(correctionRequestBlock("cancelada", "inasistencia_confirmada")).toMatch(/guardia está cancelada/);
+    expect(correctionRequestBlock("finalizada", "cancelado")).toBe("La asignación está cancelada: no se pueden solicitar correcciones de esta guardia.");
+  });
+
+  it("una ausencia justificada o una inasistencia confirmada sí se impugna", () => {
+    expect(correctionRequestBlock("finalizada", "inasistencia_confirmada")).toBeNull();
+    expect(correctionRequestBlock("finalizada", "ausencia_justificada")).toBeNull();
+    expect(isRevertibleAbsence("inasistencia_confirmada")).toBe(true);
+    expect(isRevertibleAbsence("ausencia_justificada")).toBe(true);
+    expect(isRevertibleAbsence("asignado")).toBe(false);
+    expect(isRevertibleAbsence("cancelado")).toBe(false);
+    expect(isRevertibleAbsence(null)).toBe(false);
+    expect(absenceRequestHint("inasistencia_confirmada")).toBe(
+      "Esta guardia está registrada como «Inasistencia confirmada». Si sí asististe, solicita el registro con tus horas reales de entrada y salida. " +
+        "Si coordinación lo aprueba, la guardia deja de contar como «Inasistencia confirmada».",
     );
-    expect(correctionRequestBlock("finalizada", "inasistencia_confirmada")).toMatch(/Inasistencia confirmada/);
+    expect(absenceRequestHint("ausencia_justificada")).toContain("«Ausencia justificada»");
+    expect(absenceRequestHint("asignado")).toBeNull();
+    expect(absenceRequestHint("cancelado")).toBeNull();
   });
 
   it("separación de funciones: nadie salvo administración revisa lo propio", () => {

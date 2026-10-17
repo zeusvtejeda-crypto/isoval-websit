@@ -42,10 +42,11 @@ const WORKER_DEFAULT_DAYS = 30;
 
 function AssignmentStatusNote({ item, actors, tz }: { item: AssignmentWithAttendance; actors: ActorContext; tz: string }) {
   const a = item.assignment;
-  if (a.status === "asignado") return null;
+  // «Asignado» con motivo: el estado se restableció (p. ej., al aprobar una corrección de una inasistencia).
+  if (a.status === "asignado" && !a.status_reason) return null;
   return (
     <p className="text-sm text-gray-700">
-      {ASSIGNMENT_STATUS_LABELS[a.status]}
+      {a.status === "asignado" ? "Estado restablecido a «Asignado»" : ASSIGNMENT_STATUS_LABELS[a.status]}
       {a.status_reason ? `: ${a.status_reason}` : ""}
       {a.status_changed_by ? ` · Registrado por ${afterPreposition(actorLabel(a.status_changed_by, actors))}` : ""}
       {a.status_changed_at ? ` el ${formatDateTime(a.status_changed_at, tz)}` : ""}
@@ -202,6 +203,9 @@ export default async function HistorialTrabajadorPage({ params, searchParams }: 
                     <p className="text-sm text-gray-600">Punto de reunión: {r.meetingPoint}</p>
                     {r.substituteForName ? <p className="text-sm text-gray-700">Sustituye a: {r.substituteForName}</p> : null}
                     {item ? <AssignmentStatusNote item={item} actors={actors} tz={r.timeZone} /> : null}
+                    {item?.assignment.notes?.trim() ? (
+                      <p className="whitespace-pre-line text-sm text-gray-700">Notas de la asignación: {item.assignment.notes.trim()}</p>
+                    ) : null}
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Badge tone={ATTENDANCE_STATUS_TONE[r.status]}>{r.statusLabel}</Badge>

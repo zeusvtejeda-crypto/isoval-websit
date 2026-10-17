@@ -19,7 +19,7 @@ import { addDays, isIsoDay } from "@/lib/presence/periods";
 import { daysInclusive, INCIDENT_TYPES, MAX_RANGE_DAYS as EXPORT_MAX_DAYS } from "@/lib/reports/params";
 import { loadIncidentNotes, type IncidentNoteRow } from "@/lib/reports/load";
 import { GAP_LABEL } from "@/lib/reports/document";
-import { SHIFT_WINDOW_HOURS, correctionRequestBlock, shiftWindow } from "@/lib/reports/corrections";
+import { SHIFT_WINDOW_HOURS, absenceRequestHint, correctionRequestBlock, shiftWindow } from "@/lib/reports/corrections";
 import { NOT_LINKED_MESSAGE, PRESENCE_DISCLAIMER } from "@/lib/presence/texts";
 import { PageHeader } from "@/components/ui/page-header";
 import { LastUpdated } from "@/components/layout/connection-status";
@@ -218,8 +218,10 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
                 label: `Entrada ${formatDateTime(s.check_in_at, tz)} · ${s.check_out_at ? `Salida ${formatDateTime(s.check_out_at, tz)}` : "sin salida"}`,
                 pending: pendingSessions.has(s.id),
               }));
-            // La base de datos solo aprueba correcciones de guardias no canceladas con asignación activa.
+            // La base de datos no acepta correcciones de guardias o asignaciones canceladas; una
+            // ausencia o inasistencia sí se impugna con las horas reales.
             const requestBlock = correctionRequestBlock(item.shift.status, mine.assignment.status);
+            const absenceHint = absenceRequestHint(mine.assignment.status);
             const allowed = shiftWindow(item.shift);
             const allowedMax = allowed.end.getTime() < now.getTime() ? allowed.end : now;
             const justifications = notesByAssignment.get(mine.assignment.id) ?? [];
@@ -234,12 +236,17 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
                       Punto de reunión: {item.shift.meeting_point}
                       {mine.assignment.assigned_point ? ` · Punto asignado: ${mine.assignment.assigned_point}` : ""}
                     </p>
+                    {mine.assignment.notes?.trim() ? (
+                      <p className="whitespace-pre-line text-sm text-gray-700">Notas de la asignación: {mine.assignment.notes.trim()}</p>
+                    ) : null}
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <Badge tone={ATTENDANCE_STATUS_TONE[mine.summary.status]}>{ATTENDANCE_STATUS_LABELS[mine.summary.status]}</Badge>
-                    {mine.assignment.status !== "asignado" && mine.assignment.status_reason ? (
+                    {mine.assignment.status_reason ? (
                       <span className="text-sm text-gray-600">
-                        {ASSIGNMENT_STATUS_LABELS[mine.assignment.status]}: {mine.assignment.status_reason}
+                        {/* «Asignado» con motivo: el estado se restableció (p. ej., al aprobar una corrección). */}
+                        {mine.assignment.status === "asignado" ? "Estado restablecido a «Asignado»" : ASSIGNMENT_STATUS_LABELS[mine.assignment.status]}:{" "}
+                        {mine.assignment.status_reason}
                       </span>
                     ) : null}
                     {cancelled && item.shift.cancel_reason ? <span className="text-sm text-gray-600">Motivo: {item.shift.cancel_reason}</span> : null}
@@ -297,7 +304,8 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
                 ) : (
                   <details className="mt-4 rounded-xl border border-gray-200 px-3">
                     <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-brand-900">Solicitar corrección</summary>
-                    <div className="pb-4 pt-1">
+                    <div className="space-y-3 pb-4 pt-1">
+                      {absenceHint ? <p className="text-sm text-gray-800">{absenceHint}</p> : null}
                       <CorrectionForm
                         assignmentId={mine.assignment.id}
                         timeZone={tz}

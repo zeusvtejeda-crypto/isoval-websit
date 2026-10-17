@@ -16,7 +16,7 @@ import { renderPdf } from "@/lib/reports/pdf";
  *   usuario: RLS limita lo que cada rol puede exportar.
  * - Rol trabajador: SIEMPRE se exportan solo sus propios registros.
  * - Rango máximo de 93 días (400 si se excede).
- * - Incluye observaciones (notas de los registros vigentes) y justificaciones
+ * - Incluye observaciones (notas de la asignación y de los registros vigentes) y justificaciones
  *   (incident_notes, leídas también con RLS).
  */
 const MIME = {
