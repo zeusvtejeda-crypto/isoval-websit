@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ATTENDANCE_DEFAULTS,
   RETENTION_DEFAULTS,
+  attendanceSettingsFormSchema,
   attendanceSettingsSchema,
   demoTotal,
   describeAppliedRetention,
@@ -10,6 +11,7 @@ import {
   mergeSettingValue,
   parseDemoPurgeResult,
   parseRetentionImpact,
+  privacyNoticeFormSchema,
   privacyNoticeSchema,
   readAttendanceSettings,
   readAttendanceSettingsForm,
@@ -17,8 +19,10 @@ import {
   readPrivacyNoticeForm,
   readRetention,
   readRetentionForm,
+  retentionFormSchema,
   retentionImpactIsEmpty,
   retentionSchema,
+  splitReason,
 } from "@/lib/admin/settings";
 
 function form(entries: Record<string, string>): FormData {
@@ -88,6 +92,7 @@ describe("conservación de datos", () => {
       sessions: 10,
       audit_rows: 0,
       worker_private_rows: 2,
+      audit_rows_redacted: 5,
     });
     expect(impact).toEqual({
       executed: false,
@@ -98,24 +103,29 @@ describe("conservación de datos", () => {
       sessions: 10,
       auditRows: 0,
       workerPrivateRows: 2,
+      auditRowsRedacted: 5,
     });
     expect(retentionImpactIsEmpty(impact!)).toBe(false);
     // Los datos privados de trabajadores inactivos también cuentan como impacto.
-    expect(retentionImpactIsEmpty({ ...impact!, shifts: 0, sessions: 0 })).toBe(false);
-    expect(retentionImpactIsEmpty({ ...impact!, shifts: 0, sessions: 0, workerPrivateRows: 0 })).toBe(true);
+    expect(retentionImpactIsEmpty({ ...impact!, shifts: 0, sessions: 0, auditRowsRedacted: 0 })).toBe(false);
+    // Y también las copias en la bitácora que se redactarían.
+    expect(retentionImpactIsEmpty({ ...impact!, shifts: 0, sessions: 0, workerPrivateRows: 0 })).toBe(false);
+    expect(retentionImpactIsEmpty({ ...impact!, shifts: 0, sessions: 0, workerPrivateRows: 0, auditRowsRedacted: 0 })).toBe(true);
     expect(parseRetentionImpact("x")).toBeNull();
   });
 
   it("tolera respuestas de la versión anterior de la función", () => {
     const impact = parseRetentionImpact({ executed: true, shifts: 1, sessions: 2, audit_rows: 3 });
     expect(impact?.workerPrivateRows).toBe(0);
+    expect(impact?.auditRowsRedacted).toBe(0);
     expect(impact?.inactiveWorkerCutoff).toBeNull();
   });
 
   it("resume lo eliminado al aplicar", () => {
-    const impact = parseRetentionImpact({ executed: true, shifts: 1, sessions: 12, audit_rows: 0, worker_private_rows: 3 })!;
+    const impact = parseRetentionImpact({ executed: true, shifts: 1, sessions: 12, audit_rows: 0, worker_private_rows: 3, audit_rows_redacted: 40 })!;
     expect(describeAppliedRetention(impact)).toBe(
-      "Política aplicada. Se eliminaron 1 guardia, 12 registros de entrada y salida, 0 eventos de bitácora y los datos privados de 3 trabajadores inactivos. Quedó constancia en la bitácora.",
+      "Política aplicada. Se eliminaron 1 guardia, 12 registros de entrada y salida, 0 eventos de bitácora y los datos privados de 3 trabajadores inactivos; " +
+        "se borró el contenido de 40 eventos de bitácora que los copiaban. Quedó constancia en la bitácora.",
     );
   });
 });
@@ -157,5 +167,38 @@ describe("datos de demostración y utilidades", () => {
   it("conserva claves desconocidas al guardar", () => {
     expect(mergeSettingValue({ a: 1, title: "x" }, { title: "y" })).toEqual({ a: 1, title: "y" });
     expect(mergeSettingValue(null, { title: "y" })).toEqual({ title: "y" });
+  });
+});
+
+describe("motivo del cambio en la configuración", () => {
+  const privacy = { title: "Aviso", body: "Texto del aviso con suficiente longitud.", legal_review_status: "pendiente" };
+
+  it("los tres formularios exigen motivo de al menos 5 caracteres", () => {
+    const cases = [
+      privacyNoticeFormSchema.safeParse(readPrivacyNoticeForm(form(privacy))),
+      retentionFormSchema.safeParse(readRetentionForm(form({ attendance_months: "24", audit_months: "60", inactive_worker_months: "24", reason: "abc" }))),
+      attendanceSettingsFormSchema.safeParse(
+        readAttendanceSettingsForm(form({ checkin_window_before_minutes: "60", open_session_grace_minutes: "120", reason: "    " })),
+      ),
+    ];
+    for (const r of cases) {
+      expect(r.success).toBe(false);
+      if (!r.success) expect(r.error.issues.map((i) => i.path[0])).toEqual(["reason"]);
+    }
+  });
+
+  it("el motivo va a la bitácora y no se mezcla con el valor guardado", () => {
+    const r = retentionFormSchema.safeParse(
+      readRetentionForm(form({ attendance_months: "24", audit_months: "60", inactive_worker_months: "18", reason: "  Acuerdo del comité  " })),
+    );
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    const { reason, value } = splitReason(r.data);
+    expect(reason).toBe("Acuerdo del comité");
+    expect(value).toEqual({ attendance_months: 24, audit_months: 60, inactive_worker_months: 18 });
+    expect(mergeSettingValue({ attendance_months: 12, extra: true }, value)).not.toHaveProperty("reason");
+
+    const p = privacyNoticeFormSchema.safeParse(readPrivacyNoticeForm(form({ ...privacy, reason: "Revisión jurídica pendiente" })));
+    expect(p.success && splitReason(p.data).value).toEqual({ ...privacy, responsible: null, contact: null });
   });
 });

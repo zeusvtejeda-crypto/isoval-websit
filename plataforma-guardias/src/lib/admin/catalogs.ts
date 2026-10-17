@@ -8,7 +8,7 @@ import { friendlyDbError } from "@/lib/actions";
 import { isValidTimezone } from "@/lib/time";
 import { MEXICO_TIMEZONES, isMexicoTimezone, matchMexicoTimezone } from "@/lib/validation/facility";
 import { normalizeSearch } from "./accounts";
-import { readText } from "./form";
+import { changeReasonSchema, readText } from "./form";
 
 export const CATALOGS_PATH = "/administracion/catalogos";
 
@@ -104,14 +104,17 @@ const optionalTimezone = z
   })
   .transform((value) => value ?? null);
 
+// Todo cambio de catálogo lleva motivo: queda en la bitácora (change_reason).
 export const stateCoverageSchema = z.object({
   state_id: stateIdSchema,
   enabled: z.enum(["1", "0"], { error: "Valor de cobertura inválido." }).transform((v) => v === "1"),
+  reason: changeReasonSchema,
 });
 
 export const stateTimezoneSchema = z.object({
   state_id: stateIdSchema,
   default_timezone: requiredTimezone,
+  reason: changeReasonSchema,
 });
 
 export const municipalityTimezoneSchema = z.object({
@@ -121,6 +124,7 @@ export const municipalityTimezoneSchema = z.object({
     .int({ error: "El municipio no es válido." })
     .positive({ error: "El municipio no es válido." }),
   timezone: optionalTimezone,
+  reason: changeReasonSchema,
 });
 
 export const newMunicipalitySchema = z.object({
@@ -138,6 +142,7 @@ export const newMunicipalitySchema = z.object({
     .max(MUNICIPALITY_NAME_MAX, { error: `El nombre admite hasta ${MUNICIPALITY_NAME_MAX} caracteres.` }),
   timezone: optionalTimezone,
   allow_duplicate_name: z.boolean(),
+  reason: changeReasonSchema,
 });
 export type NewMunicipalityInput = z.infer<typeof newMunicipalitySchema>;
 
@@ -153,11 +158,11 @@ function checked(formData: FormData, key: string): boolean {
 }
 
 export function readStateCoverageForm(formData: FormData) {
-  return { state_id: readText(formData, "state_id"), enabled: readText(formData, "enabled") };
+  return { state_id: readText(formData, "state_id"), enabled: readText(formData, "enabled"), reason: readText(formData, "reason") };
 }
 
 export function readStateTimezoneForm(formData: FormData) {
-  return { state_id: readText(formData, "state_id"), default_timezone: readText(formData, "default_timezone") };
+  return { state_id: readText(formData, "state_id"), default_timezone: readText(formData, "default_timezone"), reason: readText(formData, "reason") };
 }
 
 export function readMunicipalityTimezoneForm(formData: FormData) {
@@ -165,6 +170,7 @@ export function readMunicipalityTimezoneForm(formData: FormData) {
     state_id: readText(formData, "state_id"),
     municipality_id: readText(formData, "municipality_id"),
     timezone: readText(formData, "timezone"),
+    reason: readText(formData, "reason"),
   };
 }
 
@@ -175,6 +181,7 @@ export function readNewMunicipalityForm(formData: FormData) {
     name: cleanMunicipalityName(readText(formData, "name")),
     timezone: readText(formData, "timezone"),
     allow_duplicate_name: checked(formData, "allow_duplicate_name"),
+    reason: readText(formData, "reason"),
   };
 }
 

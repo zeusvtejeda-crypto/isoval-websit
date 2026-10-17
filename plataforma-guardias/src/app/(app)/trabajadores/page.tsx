@@ -3,7 +3,6 @@ import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getMunicipalities, labelRepeatedMunicipalities, getStates } from "@/lib/data/catalogs";
 import {
-  NO_FACILITY,
   WORKERS_PAGE_SIZE,
   hasActiveFilters,
   parseWorkerFilters,
@@ -30,10 +29,7 @@ export default async function TrabajadoresPage({ searchParams }: { searchParams:
     getStates(supabase),
     getAreaSuggestions(supabase),
   ]);
-  const filters = parseWorkerFilters(sp, {
-    facilityIds: user.isAdmin ? null : facilities.map((f) => f.id),
-    allowNoFacility: user.isAdmin,
-  });
+  const filters = parseWorkerFilters(sp, { facilityIds: user.isAdmin ? null : facilities.map((f) => f.id) });
 
   const notices: string[] = [];
   if (filters.stateId && !states.some((s) => s.id === filters.stateId)) {
@@ -67,7 +63,7 @@ export default async function TrabajadoresPage({ searchParams }: { searchParams:
               <LinkButton href="/trabajadores/importar" variant="outline">
                 Importar archivo
               </LinkButton>
-              <LinkButton href={filters.facility && filters.facility !== NO_FACILITY ? `/trabajadores/nuevo?sede=${filters.facility}` : "/trabajadores/nuevo"}>
+              <LinkButton href={filters.facility ? `/trabajadores/nuevo?sede=${filters.facility}` : "/trabajadores/nuevo"}>
                 Nuevo trabajador
               </LinkButton>
             </>
@@ -89,7 +85,7 @@ export default async function TrabajadoresPage({ searchParams }: { searchParams:
           municipalities={municipalities.map((m) => ({ id: m.id, name: m.name }))}
           facilities={facilities.map((f) => ({ id: f.id, official_name: f.official_name }))}
           areas={areas}
-          allowNoFacility={user.isAdmin}
+          allFacilities={user.isAdmin}
           canSearchPrivate={user.canManage}
         />
 

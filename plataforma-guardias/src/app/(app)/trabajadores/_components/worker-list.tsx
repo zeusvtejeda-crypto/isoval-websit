@@ -28,10 +28,8 @@ function AccountLabel({ account, visible }: { account: WorkerListItem["account"]
 
 const dash = <span className="text-gray-400">—</span>;
 
-/** Sin sede, o con una sede que RLS no deja ver (p. ej. inactiva y fuera del alcance). */
-function facilityFallback(w: WorkerListItem): string {
-  return w.facilityId ? "Instalación no visible para tu cuenta" : "Sin instalación";
-}
+/** Todo trabajador tiene sede; si falta es porque RLS no deja verla (p. ej. inactiva y fuera del alcance). */
+const FACILITY_HIDDEN = "Instalación no visible para tu cuenta";
 
 /** Tabla en escritorio y tarjetas en móvil. No muestra teléfono ni número de trabajador. */
 export function WorkerList({ items }: { items: WorkerListItem[] }) {
@@ -54,7 +52,7 @@ export function WorkerList({ items }: { items: WorkerListItem[] }) {
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                 <div className="col-span-2">
                   <dt className="text-gray-500">Sede</dt>
-                  <dd className="text-gray-900">{w.facility?.official_name ?? facilityFallback(w)}</dd>
+                  <dd className="text-gray-900">{w.facility?.official_name ?? FACILITY_HIDDEN}</dd>
                 </div>
                 <div>
                   <dt className="text-gray-500">Área</dt>
@@ -102,7 +100,7 @@ export function WorkerList({ items }: { items: WorkerListItem[] }) {
                 </Link>
               </Td>
               <Td className="whitespace-nowrap">{w.internal_code}</Td>
-              <Td className="min-w-48">{w.facility?.official_name ?? <span className="text-gray-600">{facilityFallback(w)}</span>}</Td>
+              <Td className="min-w-48">{w.facility?.official_name ?? <span className="text-gray-600">{FACILITY_HIDDEN}</span>}</Td>
               <Td>{w.area ?? dash}</Td>
               <Td>{w.position ?? dash}</Td>
               <Td className="whitespace-nowrap">{w.usual_shift ?? dash}</Td>

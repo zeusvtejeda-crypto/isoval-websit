@@ -222,7 +222,7 @@ function cardProps(item: AssignmentWithAttendance, opts: { now?: Date; shiftStat
 const noop = async (): Promise<ActionResult> => ({ ok: true });
 /** Coordinación sin trabajador vinculado (no es su propia asistencia). */
 const coordinator = { isAdmin: false, workerId: null };
-const actions: AssignmentActions = { changeStatus: noop, remove: noop, correct: noop, voidSession: noop, manual: noop, incidentNote: noop };
+const actions: AssignmentActions = { changeStatus: noop, update: noop, remove: noop, correct: noop, voidSession: noop, manual: noop, incidentNote: noop };
 
 describe("vistas de guardias", () => {
   it("calendario: la guardia nocturna aparece en su día de inicio con «+1 día»", () => {
@@ -394,7 +394,8 @@ describe("vistas de guardias", () => {
     expect(screen.getByText("Cubre a una persona no visible para tu cuenta")).toBeInTheDocument();
     cleanup();
     render(<AssignmentCard {...cardProps(buildCustom({}))} />);
-    expect(screen.queryByText(/Cubre a/)).not.toBeInTheDocument();
+    // Sin la etiqueta del formulario «Editar asignación» («Cubre a (sustitución)»).
+    expect(screen.queryByText(/^Cubre a (?!\(sustitución\))/)).not.toBeInTheDocument();
   });
 
   it("entrada sin salida fuera del margen: no ofrece «Registrar salida» y destaca «Corregir registro»", () => {
@@ -501,5 +502,31 @@ describe("vistas de guardias", () => {
     const correctIn = document.querySelector('input[name="check_in"][id^="c-in-"]') as HTMLInputElement;
     expect(correctIn).toHaveAttribute("min", "2026-10-17T10:00");
     expect(screen.getAllByText(/Las horas deben estar entre 17\/10\/2026 10:00 y 18\/10\/2026 18:00/).length).toBeGreaterThan(0);
+  });
+
+  it("«Editar asignación» para coordinación; oculto en la propia asignación y en solo lectura", () => {
+    const item = buildCustom({ substitute: { id: "w9", full_name: "[DEMO] Pedro Ruiz" }, substituteId: "w9" });
+    item.assignment = { ...item.assignment, assigned_point: "Puerta norte", notes: "Trae radio" };
+    const substituteOptions = {
+      assigned: [{ id: "w1", full_name: "[DEMO] Ana" }],
+      facility: [{ id: "w3", full_name: "[DEMO] María", internal_code: "T-3", facility_id: FACILITY }],
+    };
+    const { unmount } = render(<AssignmentCard {...cardProps(item)} substituteOptions={substituteOptions} />);
+    expect(screen.getByText("Editar asignación")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Punto asignado/)).toHaveValue("Puerta norte");
+    const sub = screen.getByLabelText(/^Cubre a \(sustitución\)/) as HTMLSelectElement;
+    expect(sub).toHaveValue("w9");
+    expect(Array.from(sub.options).map((o) => o.value)).toEqual(["", "w9", "w3"]);
+    expect(document.querySelector('textarea[id^="e-notes-"]')).toHaveValue("Trae radio");
+    unmount();
+
+    // Su propia asignación (no administración): no la edita.
+    const own = render(<AssignmentCard {...cardProps(item)} substituteOptions={substituteOptions} viewer={{ isAdmin: false, workerId: "w1" }} />);
+    expect(screen.queryByText("Editar asignación")).not.toBeInTheDocument();
+    own.unmount();
+
+    // Auditoría (solo lectura).
+    render(<AssignmentCard {...cardProps(item)} canManage={false} />);
+    expect(screen.queryByText("Editar asignación")).not.toBeInTheDocument();
   });
 });

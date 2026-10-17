@@ -16,6 +16,7 @@ import {
 } from "@/lib/admin/settings";
 import { invalidProps, useActionForm } from "@/lib/admin/use-action-form";
 import { savePrivacyNotice } from "../actions";
+import { ReasonField } from "../../_components/reason-field";
 
 export function PrivacyNoticeForm({ notice }: { notice: PrivacyNotice }) {
   const { state, formAction, pending, onSubmit, fieldError } = useActionForm(savePrivacyNotice, {
@@ -79,6 +80,7 @@ export function PrivacyNoticeForm({ notice }: { notice: PrivacyNotice }) {
           ))}
         </Select>
       </Field>
+      <ReasonField id="pn-reason" state={state} error={err("reason")} />
       <FormMessage state={state} />
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={pending} aria-disabled={pending}>

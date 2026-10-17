@@ -6,6 +6,8 @@ import { Checkbox, Field, FormMessage, Input, Select } from "@/components/ui/for
 import { MUNICIPALITY_NAME_MAX, TIMEZONE_CHOICES, effectiveTimezone, timezoneChoiceLabel } from "@/lib/admin/catalogs";
 import { invalidProps, useActionForm } from "@/lib/admin/use-action-form";
 import { createMunicipality, saveMunicipalityTimezone } from "../actions";
+import { ReasonField } from "../../_components/reason-field";
+import { CompactReasonInput } from "./state-forms";
 
 type MunicipalityProps = { id: number; name: string; inegiCode: string; timezone: string | null };
 
@@ -73,7 +75,8 @@ export function MunicipalityTimezoneEditor({
               {error}
             </p>
           ) : null}
-          {state && !state.ok && !error ? <FormMessage state={state} /> : null}
+          <CompactReasonInput id={`${id}-reason`} error={fieldError("reason")} />
+          {state && !state.ok && !error && !fieldError("reason") ? <FormMessage state={state} /> : null}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" size="sm" className="min-h-11" disabled={pending} aria-disabled={pending}>
               {pending ? "Guardando…" : "Guardar"}
@@ -185,6 +188,13 @@ export function NewMunicipalityForm({ stateId, stateName, stateTimezone }: { sta
           ) : null}
         </div>
       ) : null}
+      <ReasonField
+        id="new-mun-reason"
+        state={state}
+        error={fieldError("reason")}
+        label="Motivo del alta"
+        hint="Por ejemplo, la publicación del INEGI o el decreto de creación. Queda en la bitácora."
+      />
       <FormMessage state={state} />
       <Button type="submit" disabled={pending} aria-disabled={pending}>
         {pending ? "Agregando…" : "Agregar municipio"}

@@ -199,6 +199,28 @@ describe("DirectoryExplorer", () => {
     expect(items[1].querySelector('svg[data-icon="stethoscope"]')).not.toBeNull();
   });
 
+  it("una categoría inactiva que aún usa una instalación pública se puede elegir en el filtro", async () => {
+    const user = userEvent.setup();
+    // Así llegan de loadDirectoryData: activas más las inactivas en uso.
+    const lookups: DirectoryLookups = {
+      ...LOOKUPS,
+      categories: [...LOOKUPS.categories, { id: 9, slug: "archivo-historico", name: "Archivo histórico", color: "#6b7280", icon: "building", active: false }],
+    };
+    const facilities = FACILITIES.map((f, i) => (i === 2 ? { ...f, categoryId: 9 } : f));
+    render(<DirectoryExplorer facilities={facilities} lookups={lookups} initialParams={parseDirectoryParams({})} />);
+    const select = screen.getByRole("combobox", { name: "Categoría" });
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Todas las categorías",
+      "Hospitales",
+      "Unidades de Medicina Familiar",
+      "Archivo histórico",
+    ]);
+    await user.selectOptions(select, "archivo-historico");
+    expect(await screen.findByText("1 instalación encontrada")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Instalación sin coordenadas" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?categoria=archivo-historico");
+  });
+
   it("distingue con la clave INEGI los municipios de nombre repetido en el filtro", () => {
     const lookups: DirectoryLookups = {
       ...LOOKUPS,

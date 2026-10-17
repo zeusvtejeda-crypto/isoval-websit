@@ -90,13 +90,18 @@ export async function municipalityId(code = "017"): Promise<number> {
   return r.rows[0].id;
 }
 
+/**
+ * Instalación de prueba: marcada como dato de demostración para que el
+ * directorio público la etiquete y public.purge_demo_data() la elimine.
+ * Sigue visible (is_public) porque algunas pruebas revisan la vista pública.
+ */
 export async function createFacilitySuper(name?: string): Promise<string> {
   const cat = await categoryId();
   const mun = await municipalityId();
   const r = await asSuper((c) =>
     c.query(
-      `insert into public.facilities (official_name, category_id, state_id, municipality_id, latitude, longitude, source)
-       values ($1, $2, 18, $3, 21.5, -104.9, 'Prueba automatizada') returning id`,
+      `insert into public.facilities (official_name, category_id, state_id, municipality_id, latitude, longitude, source, is_demo)
+       values ($1, $2, 18, $3, 21.5, -104.9, 'Prueba automatizada', true) returning id`,
       [name ?? `Instalación de prueba ${suffix()}`, cat, mun],
     ),
   );
@@ -106,7 +111,9 @@ export async function createFacilitySuper(name?: string): Promise<string> {
 export async function createWorkerSuper(facilityId: string, name?: string): Promise<string> {
   const r = await asSuper((c) =>
     c.query(
-      `insert into public.workers (full_name, state_id, facility_id) values ($1, 18, $2) returning id`,
+      // Marcado como demostración, igual que las instalaciones de prueba: no se
+      // confunde con personal real y purge_demo_data() lo elimina.
+      `insert into public.workers (full_name, state_id, facility_id, is_demo) values ($1, 18, $2, true) returning id`,
       [name ?? `Persona de prueba ${suffix()}`, facilityId],
     ),
   );

@@ -4,6 +4,7 @@ import { startTransition, useActionState, type FormEvent } from "react";
 import type { ActionResult } from "@/lib/actions";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input } from "@/components/ui/form";
+import { ReasonField } from "../../_components/reason-field";
 
 type SimpleAction = (prev: ActionResult | null, formData: FormData) => Promise<ActionResult>;
 
@@ -19,7 +20,9 @@ function useSubmit(action: SimpleAction, confirmMessage?: string) {
   return { state, formAction, pending, onSubmit };
 }
 
-/** Activar o desactivar (en lugar de borrar). */
+const reasonError = (state: ActionResult | null) => (state && !state.ok ? (state.fieldErrors?.reason ?? null) : null);
+
+/** Activar o desactivar (en lugar de borrar), con motivo. */
 export function CategoryActiveForm({ action, categoryId, active, inUse }: { action: SimpleAction; categoryId: number; active: boolean; inUse: number }) {
   const { state, formAction, pending, onSubmit } = useSubmit(
     action,
@@ -29,6 +32,13 @@ export function CategoryActiveForm({ action, categoryId, active, inUse }: { acti
     <form action={formAction} onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="category_id" value={categoryId} />
       <input type="hidden" name="active" value={active ? "0" : "1"} />
+      <ReasonField
+        id="category-active-reason"
+        state={state}
+        error={reasonError(state)}
+        label={active ? "Motivo de la desactivación" : "Motivo de la activación"}
+        hint="Queda en la bitácora."
+      />
       <FormMessage state={state} />
       <Button type="submit" variant={active ? "outline" : "primary"} disabled={pending} aria-disabled={pending}>
         {pending ? "Guardando…" : active ? "Desactivar categoría" : "Activar categoría"}
@@ -44,6 +54,7 @@ export function CategoryDeleteForm({ action, categoryId }: { action: SimpleActio
   return (
     <form action={formAction} onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="category_id" value={categoryId} />
+      <ReasonField id="category-delete-reason" state={state} error={reasonError(state)} label="Motivo de la eliminación" hint="Queda en la bitácora con los datos eliminados." />
       <Field label="Escribe ELIMINAR para confirmar" htmlFor="category-delete-confirm" required error={err}>
         <Input id="category-delete-confirm" name="confirm" required autoComplete="off" pattern="ELIMINAR" aria-invalid={err ? true : undefined} />
       </Field>

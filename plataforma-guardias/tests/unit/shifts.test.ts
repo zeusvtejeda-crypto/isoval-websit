@@ -35,6 +35,7 @@ import {
   isOpenSessionStale,
   isOwnRecordLocked,
   isScheduleLocked,
+  maxStaffBelowAssigned,
   validateCapturedTimes,
 } from "@/lib/shifts/rules";
 import {
@@ -45,6 +46,7 @@ import {
   readForm,
   shiftFormSchema,
   SHIFT_FORM_FIELDS,
+  updateAssignmentSchema,
 } from "@/lib/shifts/schemas";
 import { collectActorIds, describeActor } from "@/lib/shifts/actors";
 
@@ -464,5 +466,33 @@ describe("reglas de la BD reflejadas en la interfaz", () => {
     expect(coverLabel({ full_name: "Ana López" }, "w1")).toBe("Cubre a Ana López");
     expect(coverLabel(null, "w1")).toBe("Cubre a una persona no visible para tu cuenta");
     expect(coverLabel(null, null)).toBeNull();
+  });
+});
+
+describe("cupo máximo y corrección de asignaciones", () => {
+  it("el cupo máximo no queda por debajo de las asignaciones activas", () => {
+    expect(maxStaffBelowAssigned(undefined, 4)).toBeNull();
+    expect(maxStaffBelowAssigned(null, 4)).toBeNull();
+    expect(maxStaffBelowAssigned(4, 4)).toBeNull();
+    expect(maxStaffBelowAssigned(1, 2)).toMatch(/^La guardia tiene 2 personas asignadas: el cupo máximo no puede ser menor\./);
+    expect(maxStaffBelowAssigned(0, 1)).toMatch(/^La guardia tiene 1 persona asignada:/);
+  });
+
+  it("editar asignación: motivo obligatorio y campos opcionales", () => {
+    const keys = ["assignment_id", "assigned_point", "substitute_for_worker_id", "notes", "reason"] as const;
+    const ok = updateAssignmentSchema.safeParse(
+      readForm(fd({ assignment_id: "d3000000-0000-4000-8000-000000000001", assigned_point: " ", notes: "", reason: " Cubre una incapacidad " }), keys),
+    );
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.data).toEqual({ assignment_id: "d3000000-0000-4000-8000-000000000001", reason: "Cubre una incapacidad" });
+    const bad = updateAssignmentSchema.safeParse(readForm(fd({ assignment_id: "x", substitute_for_worker_id: "y", reason: "ok" }), keys));
+    expect(bad.success).toBe(false);
+    if (!bad.success) {
+      expect(fieldErrorsFrom(bad.error)).toEqual({
+        assignment_id: "Asignación inválida.",
+        substitute_for_worker_id: "Persona sustituida inválida.",
+        reason: "Indica el motivo del cambio (mínimo 5 caracteres).",
+      });
+    }
   });
 });

@@ -13,6 +13,8 @@ import {
   REASON_MIN,
   ROLE_HINTS,
   USERS_BASE_PATH,
+  reasonRequired,
+  roleAllowsWorker,
   roleUsesFacilityScopes,
   type FacilityChoice,
   type WorkerOption,
@@ -37,11 +39,26 @@ type FieldsProps = {
   fieldError: (field: string) => string | null;
   /** La persona edita su propia cuenta: no puede cambiar su rol. */
   lockRole?: boolean;
+  onWorkerChange?: (workerId: string) => void;
+  onScopesChange?: (facilityIds: string[]) => void;
 };
 
-function AccountFields({ idPrefix, roleOptions, workerOptions, facilityChoices, role, onRoleChange, defaults, fieldError, lockRole }: FieldsProps) {
+function AccountFields({
+  idPrefix,
+  roleOptions,
+  workerOptions,
+  facilityChoices,
+  role,
+  onRoleChange,
+  defaults,
+  fieldError,
+  lockRole,
+  onWorkerChange,
+  onScopesChange,
+}: FieldsProps) {
   const id = (name: string) => `${idPrefix}-${name}`;
   const scoped = roleUsesFacilityScopes(role);
+  const allowsWorker = roleAllowsWorker(role);
   return (
     <>
       <Field label="Nombre visible" htmlFor={id("display_name")} required error={fieldError("display_name")} hint="Así aparecerá en la plataforma y en la bitácora.">
@@ -81,21 +98,44 @@ function AccountFields({ idPrefix, roleOptions, workerOptions, facilityChoices, 
         {lockRole ? <input type="hidden" name="role" value={role} /> : null}
       </Field>
 
-      <Field
-        label="Trabajador vinculado"
-        htmlFor={id("worker_id")}
-        error={fieldError("worker_id")}
-        hint={
-          role === "trabajador"
-            ? "Necesario para que la persona vea y registre sus guardias. Solo aparecen trabajadores activos sin cuenta."
-            : "Solo si esta persona también cubre guardias. Solo aparecen trabajadores activos sin cuenta."
-        }
-      >
-        <WorkerPicker id={id("worker_id")} options={workerOptions} defaultValue={defaults.worker_id} error={fieldError("worker_id")} />
-      </Field>
+      {/* Oculto y deshabilitado (no se envía) para auditoría; se conserva la elección si cambia el rol otra vez. */}
+      <div hidden={!allowsWorker}>
+        <Field
+          label="Trabajador vinculado"
+          htmlFor={id("worker_id")}
+          error={allowsWorker ? fieldError("worker_id") : null}
+          hint={
+            role === "trabajador"
+              ? "Necesario para que la persona vea y registre sus guardias. Solo aparecen trabajadores activos sin cuenta."
+              : "Solo si esta persona también cubre guardias. Solo aparecen trabajadores activos sin cuenta."
+          }
+        >
+          <WorkerPicker
+            id={id("worker_id")}
+            options={workerOptions}
+            defaultValue={defaults.worker_id}
+            error={allowsWorker ? fieldError("worker_id") : null}
+            disabled={!allowsWorker}
+            onValueChange={onWorkerChange}
+          />
+        </Field>
+      </div>
+      {!allowsWorker ? (
+        <p className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-700">
+          La auditoría es de solo lectura: no se vincula a un trabajador, así que no registra asistencia ni solicita correcciones.
+          {idPrefix === "edit" && defaults.worker_id ? " Al guardar se quitará el vínculo con el trabajador actual." : ""}
+        </p>
+      ) : null}
+      {fieldError("worker_id") && !allowsWorker ? <p className="text-sm font-medium text-red-700">{fieldError("worker_id")}</p> : null}
 
       <div hidden={!scoped}>
-        <FacilityPicker idPrefix={idPrefix} choices={facilityChoices} defaultSelected={defaults.facility_ids} error={scoped ? fieldError("facility_ids") : null} />
+        <FacilityPicker
+          idPrefix={idPrefix}
+          choices={facilityChoices}
+          defaultSelected={defaults.facility_ids}
+          error={scoped ? fieldError("facility_ids") : null}
+          onSelectionChange={onScopesChange}
+        />
       </div>
       {role === "admin" ? <p className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-700">Administración tiene alcance sobre todas las sedes; no requiere asignación.</p> : null}
     </>
@@ -215,7 +255,18 @@ export function EditAccountForm({
     },
   });
   const [role, setRole] = useState<AppRole>(defaults.role);
-  const roleChanged = role !== defaults.role;
+  const [worker, setWorker] = useState(defaults.worker_id ?? "");
+  const [scopes, setScopes] = useState<string[]>(defaults.facility_ids);
+  // Misma regla que el servidor: el motivo es obligatorio si cambian el rol, el trabajador o las sedes.
+  const needsReason = reasonRequired(
+    { role: defaults.role, active: true, worker_id: defaults.worker_id, facility_ids: defaults.facility_ids },
+    {
+      role,
+      active: true,
+      worker_id: roleAllowsWorker(role) ? worker || null : null,
+      facility_ids: roleUsesFacilityScopes(role) ? scopes : [],
+    },
+  );
   // Tras guardar se vacía el motivo para que no se reutilice en el siguiente cambio.
   const [reasonKey, setReasonKey] = useState(0);
   const [handled, setHandled] = useState(state);
@@ -237,19 +288,25 @@ export function EditAccountForm({
         defaults={defaults}
         fieldError={fieldError}
         lockRole={lockRole}
+        onWorkerChange={setWorker}
+        onScopesChange={setScopes}
       />
       <Field
         label="Motivo del cambio"
         htmlFor="edit-reason"
-        required={roleChanged}
+        required={needsReason}
         error={fieldError("reason")}
-        hint={roleChanged ? "Obligatorio al cambiar el rol. Queda en la bitácora." : "Obligatorio si cambias el rol. Queda en la bitácora."}
+        hint={
+          needsReason
+            ? "Obligatorio: cambian los permisos de la cuenta (rol, trabajador vinculado o sedes). Queda en la bitácora."
+            : "Obligatorio si cambias el rol, el trabajador vinculado o las sedes. Queda en la bitácora."
+        }
       >
         <Textarea
           key={reasonKey}
           id="edit-reason"
           name="reason"
-          required={roleChanged}
+          required={needsReason}
           minLength={REASON_MIN}
           maxLength={REASON_MAX}
           rows={2}

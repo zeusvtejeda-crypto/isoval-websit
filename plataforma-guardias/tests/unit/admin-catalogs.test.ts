@@ -89,49 +89,72 @@ describe("zona horaria", () => {
 });
 
 describe("formularios de entidades", () => {
+  const reason = "Cobertura por convenio nuevo";
+
   it("cobertura activa: lee el valor enviado por el interruptor", () => {
-    const on = stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "20", enabled: "1" })));
-    expect(on.success && on.data).toEqual({ state_id: 20, enabled: true });
-    const off = stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "18", enabled: "0" })));
-    expect(off.success && off.data).toEqual({ state_id: 18, enabled: false });
-    expect(stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "18", enabled: "si" }))).success).toBe(false);
-    expect(stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "0", enabled: "1" }))).success).toBe(false);
-    expect(stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "x", enabled: "1" }))).success).toBe(false);
+    const on = stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "20", enabled: "1", reason })));
+    expect(on.success && on.data).toEqual({ state_id: 20, enabled: true, reason });
+    const off = stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "18", enabled: "0", reason })));
+    expect(off.success && off.data).toEqual({ state_id: 18, enabled: false, reason });
+    expect(stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "18", enabled: "si", reason }))).success).toBe(false);
+    expect(stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "0", enabled: "1", reason }))).success).toBe(false);
+    expect(stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "x", enabled: "1", reason }))).success).toBe(false);
   });
 
   it("zona por omisión: obligatoria y de México", () => {
-    const ok = stateTimezoneSchema.safeParse(readStateTimezoneForm(form({ state_id: "2", default_timezone: "America/Tijuana" })));
-    expect(ok.success && ok.data).toEqual({ state_id: 2, default_timezone: "America/Tijuana" });
-    const empty = stateTimezoneSchema.safeParse(readStateTimezoneForm(form({ state_id: "2", default_timezone: "  " })));
+    const ok = stateTimezoneSchema.safeParse(readStateTimezoneForm(form({ state_id: "2", default_timezone: "America/Tijuana", reason })));
+    expect(ok.success && ok.data).toEqual({ state_id: 2, default_timezone: "America/Tijuana", reason });
+    const empty = stateTimezoneSchema.safeParse(readStateTimezoneForm(form({ state_id: "2", default_timezone: "  ", reason })));
     expect(empty.success).toBe(false);
-    const bad = stateTimezoneSchema.safeParse(readStateTimezoneForm(form({ state_id: "2", default_timezone: "UTC" })));
+    const bad = stateTimezoneSchema.safeParse(readStateTimezoneForm(form({ state_id: "2", default_timezone: "UTC", reason })));
     expect(bad.success).toBe(false);
     if (!bad.success) expect(bad.error.issues[0].path).toEqual(["default_timezone"]);
+  });
+
+  it("todo cambio de entidad exige motivo de al menos 5 caracteres (bitácora)", () => {
+    for (const r of [
+      stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "20", enabled: "1" }))),
+      stateCoverageSchema.safeParse(readStateCoverageForm(form({ state_id: "20", enabled: "1", reason: " abc " }))),
+      stateTimezoneSchema.safeParse(readStateTimezoneForm(form({ state_id: "2", default_timezone: "America/Tijuana" }))),
+    ]) {
+      expect(r.success).toBe(false);
+      if (!r.success) expect(r.error.issues.map((i) => i.path[0])).toEqual(["reason"]);
+    }
   });
 });
 
 describe("formularios de municipios", () => {
+  const reason = "Publicación del INEGI";
+
   it("zona del municipio: vacía significa «igual que la entidad»", () => {
-    const inherit = municipalityTimezoneSchema.safeParse(readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "20", timezone: "" })));
-    expect(inherit.success && inherit.data).toEqual({ state_id: 18, municipality_id: 20, timezone: null });
+    const inherit = municipalityTimezoneSchema.safeParse(
+      readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "20", timezone: "", reason })),
+    );
+    expect(inherit.success && inherit.data).toEqual({ state_id: 18, municipality_id: 20, timezone: null, reason });
     const own = municipalityTimezoneSchema.safeParse(
-      readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "20", timezone: "America/Bahia_Banderas" })),
+      readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "20", timezone: "America/Bahia_Banderas", reason })),
     );
     expect(own.success && own.data.timezone).toBe("America/Bahia_Banderas");
-    expect(municipalityTimezoneSchema.safeParse(readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "-1" }))).success).toBe(false);
+    expect(municipalityTimezoneSchema.safeParse(readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "-1", reason }))).success).toBe(false);
     expect(
-      municipalityTimezoneSchema.safeParse(readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "3", timezone: "Asia/Tokyo" }))).success,
+      municipalityTimezoneSchema.safeParse(readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "3", timezone: "Asia/Tokyo", reason })))
+        .success,
     ).toBe(false);
+    const noReason = municipalityTimezoneSchema.safeParse(readMunicipalityTimezoneForm(form({ state_id: "18", municipality_id: "20", timezone: "" })));
+    expect(noReason.success).toBe(false);
+    if (!noReason.success) expect(noReason.error.issues.map((i) => i.path[0])).toEqual(["reason"]);
   });
 
   it("alta: normaliza clave y nombre, zona opcional", () => {
-    const r = newMunicipalitySchema.safeParse(readNewMunicipalityForm(form({ state_id: "20", inegi_code: " 7", name: "  San   Juan  Mixtepec ", timezone: "" })));
+    const r = newMunicipalitySchema.safeParse(
+      readNewMunicipalityForm(form({ state_id: "20", inegi_code: " 7", name: "  San   Juan  Mixtepec ", timezone: "", reason })),
+    );
     expect(r.success).toBe(true);
     if (r.success) {
-      expect(r.data).toEqual({ state_id: 20, inegi_code: "007", name: "San Juan Mixtepec", timezone: null, allow_duplicate_name: false });
+      expect(r.data).toEqual({ state_id: 20, inegi_code: "007", name: "San Juan Mixtepec", timezone: null, allow_duplicate_name: false, reason });
     }
     const dup = newMunicipalitySchema.safeParse(
-      readNewMunicipalityForm(form({ state_id: "20", inegi_code: "209", name: "San Juan Mixtepec", allow_duplicate_name: "on" })),
+      readNewMunicipalityForm(form({ state_id: "20", inegi_code: "209", name: "San Juan Mixtepec", allow_duplicate_name: "on", reason })),
     );
     expect(dup.success && dup.data.allow_duplicate_name).toBe(true);
   });
@@ -144,7 +167,7 @@ describe("formularios de municipios", () => {
     expect(zero.success).toBe(false);
     const missing = newMunicipalitySchema.safeParse(readNewMunicipalityForm(form({ state_id: "20" })));
     expect(missing.success).toBe(false);
-    if (!missing.success) expect(missing.error.issues.map((i) => i.path[0])).toEqual(expect.arrayContaining(["inegi_code", "name"]));
+    if (!missing.success) expect(missing.error.issues.map((i) => i.path[0])).toEqual(expect.arrayContaining(["inegi_code", "name", "reason"]));
   });
 
   it("limpia espacios del nombre sin tocar acentos", () => {

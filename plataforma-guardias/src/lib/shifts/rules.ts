@@ -25,6 +25,19 @@ export const FACILITY_LOCKED_NOTICE =
 export const OUTSIDE_WINDOW_MESSAGE = "Las horas deben estar dentro del horario de la guardia (máximo 12 h antes del inicio o después del término)";
 export const FUTURE_TIME_MESSAGE = "No se pueden registrar horas futuras.";
 
+/** Una persona no puede tener dos guardias asignadas que se traslapan (app.check_assignment). */
+export const CONSECUTIVE_SHIFTS_NOTE = "Las guardias consecutivas sí se permiten.";
+
+/**
+ * El cupo máximo no puede quedar por debajo de las asignaciones activas
+ * (app.check_shift_staffing). Devuelve el mensaje o null si es válido.
+ */
+export function maxStaffBelowAssigned(maxStaff: number | null | undefined, assigned: number): string | null {
+  if (maxStaff == null || assigned <= maxStaff) return null;
+  const people = assigned === 1 ? "1 persona asignada" : `${assigned} personas asignadas`;
+  return `La guardia tiene ${people}: el cupo máximo no puede ser menor. Quita o cancela asignaciones antes de reducirlo.`;
+}
+
 type DateLike = Date | string;
 const toMs = (value: DateLike) => (value instanceof Date ? value.getTime() : Date.parse(value));
 

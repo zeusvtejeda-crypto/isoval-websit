@@ -6,8 +6,7 @@ import { canManageFacility, requireAdmin, requireManager } from "@/lib/auth";
 import { friendlyDbError, type ActionResult } from "@/lib/actions";
 import { createClient } from "@/lib/supabase/server";
 import {
-  employeeNumberKey,
-  escapeLike,
+  EMPLOYEE_NUMBER_TAKEN,
   invalidResult,
   readFields,
   readWorkerForm,
@@ -41,24 +40,18 @@ async function clearReasonIfSame(
 }
 
 /**
- * Alta o edición de un trabajador. Escribe workers y después worker_private
- * (solo si hay datos privados o ya existía la fila). Al guardar redirige a la ficha.
+ * Alta o edición de un trabajador. El alta crea el registro y sus datos
+ * privados en una sola transacción (create_worker). La edición escribe workers
+ * y después worker_private (solo si hay datos privados o ya existía la fila).
+ * Al guardar redirige a la ficha.
  */
 export async function saveWorker(_prev: SaveResult | null, formData: FormData): Promise<SaveResult> {
   const user = await requireManager();
   const parsed = workerFormSchema.safeParse(readWorkerForm(formData));
   if (!parsed.success) return invalidResult(parsed.error);
   const v = parsed.data;
-  const isEdit = Boolean(v.id);
 
-  if (!v.facility_id && !user.isAdmin) {
-    return {
-      ok: false,
-      message: "Elige la instalación de adscripción.",
-      fieldErrors: { facility_id: "Coordinación solo puede registrar trabajadores en sus sedes." },
-    };
-  }
-  if (v.facility_id && !canManageFacility(user, v.facility_id)) {
+  if (!canManageFacility(user, v.facility_id)) {
     return { ok: false, message: "No puedes registrar trabajadores en esa instalación.", fieldErrors: { facility_id: "Instalación fuera de tus sedes." } };
   }
 
@@ -82,9 +75,7 @@ export async function saveWorker(_prev: SaveResult | null, formData: FormData): 
     v.municipality_id
       ? supabase.from("municipalities").select("id, state_id").eq("id", v.municipality_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    v.facility_id
-      ? supabase.from("facilities").select("id, active").eq("id", v.facility_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
+    supabase.from("facilities").select("id, active").eq("id", v.facility_id).maybeSingle(),
   ]);
   const catalogError = stateRes.error ?? municipalityRes.error ?? facilityRes.error;
   if (catalogError) return { ok: false, message: friendlyDbError(catalogError) };
@@ -92,64 +83,71 @@ export async function saveWorker(_prev: SaveResult | null, formData: FormData): 
   if (v.municipality_id && (!municipalityRes.data || municipalityRes.data.state_id !== v.state_id)) {
     return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { municipality_id: "El municipio no corresponde al estado elegido." } };
   }
-  if (v.facility_id) {
-    if (!facilityRes.data) {
-      return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { facility_id: "La instalación no existe o no está disponible." } };
-    }
-    const unchanged = current?.facility_id === v.facility_id;
-    if (!facilityRes.data.active && !unchanged) {
-      return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { facility_id: "La instalación está inactiva." } };
-    }
+  if (!facilityRes.data) {
+    return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { facility_id: "La instalación no existe o no está disponible." } };
+  }
+  if (!facilityRes.data.active && current?.facility_id !== v.facility_id) {
+    return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { facility_id: "La instalación está inactiva." } };
   }
 
-  // Número de trabajador repetido (entre los registros visibles; el índice único cubre el resto).
+  // Número de trabajador repetido en cualquier sede, también en las que la cuenta
+  // no ve (la función solo responde sí/no). El índice único cubre las carreras.
   const employeeNumber = v.employee_number ?? null;
   if (employeeNumber) {
-    const { data: dupes, error } = await supabase
-      .from("worker_private")
-      .select("worker_id, employee_number")
-      .ilike("employee_number", escapeLike(employeeNumber))
-      .limit(5);
+    const { data: taken, error } = await supabase.rpc("employee_number_taken", { p_number: employeeNumber, p_except_worker: v.id });
     if (error) return { ok: false, message: friendlyDbError(error) };
-    const key = employeeNumberKey(employeeNumber);
-    if ((dupes ?? []).some((d) => d.worker_id !== v.id && employeeNumberKey(d.employee_number) === key)) {
-      return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { employee_number: "Ese número de trabajador ya está registrado." } };
-    }
+    if (taken) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { employee_number: EMPLOYEE_NUMBER_TAKEN } };
   }
 
+  // Alta: registro y datos privados juntos; si algo falla no queda nada creado.
+  if (!v.id) {
+    const { data: newId, error } = await supabase.rpc("create_worker", {
+      p_full_name: v.full_name,
+      p_state_id: v.state_id,
+      p_facility_id: v.facility_id,
+      p_municipality_id: v.municipality_id,
+      p_area: v.area,
+      p_position: v.position,
+      p_usual_shift: v.usual_shift,
+      p_active: v.active,
+      p_employee_number: v.employee_number,
+      p_phone: v.phone,
+      p_change_reason: v.change_reason ?? "Alta de trabajador",
+    });
+    if (error || !newId) {
+      const message = friendlyDbError(error, "No se pudo registrar el trabajador.");
+      if (error?.code === "23505" && /número de trabajador/.test(message)) {
+        return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { employee_number: message } };
+      }
+      return { ok: false, message };
+    }
+    revalidatePath("/trabajadores");
+    revalidatePath(`/trabajadores/${newId}`);
+    redirect(`/trabajadores/${newId}?guardado=1`);
+  }
+
+  const workerId = v.id;
+  const reason = v.change_reason ?? null;
   const values = {
     full_name: v.full_name,
     state_id: v.state_id,
     municipality_id: v.municipality_id ?? null,
-    facility_id: v.facility_id ?? null,
+    facility_id: v.facility_id,
     area: v.area ?? null,
     position: v.position ?? null,
     usual_shift: v.usual_shift ?? null,
     active: v.active,
   };
-  const reason = v.change_reason ?? (isEdit ? null : "Alta de trabajador");
 
-  let workerId: string;
-  if (v.id) {
-    const clearError = await clearReasonIfSame(supabase, "workers", v.id, current?.change_reason, reason);
-    if (clearError) return { ok: false, message: friendlyDbError(clearError, "No se pudo guardar el trabajador.") };
-    const { data, error } = await supabase
-      .from("workers")
-      .update({ ...values, change_reason: reason })
-      .eq("id", v.id)
-      .select("id");
-    if (error) return { ok: false, message: friendlyDbError(error, "No se pudo guardar el trabajador.") };
-    if (!data || data.length === 0) return { ok: false, message: "No tienes permiso para modificar este registro." };
-    workerId = v.id;
-  } else {
-    const { data, error } = await supabase
-      .from("workers")
-      .insert({ ...values, change_reason: reason })
-      .select("id")
-      .single();
-    if (error || !data) return { ok: false, message: friendlyDbError(error, "No se pudo registrar el trabajador.") };
-    workerId = data.id;
-  }
+  const clearError = await clearReasonIfSame(supabase, "workers", workerId, current?.change_reason, reason);
+  if (clearError) return { ok: false, message: friendlyDbError(clearError, "No se pudo guardar el trabajador.") };
+  const { data, error } = await supabase
+    .from("workers")
+    .update({ ...values, change_reason: reason })
+    .eq("id", workerId)
+    .select("id");
+  if (error) return { ok: false, message: friendlyDbError(error, "No se pudo guardar el trabajador.") };
+  if (!data || data.length === 0) return { ok: false, message: "No tienes permiso para modificar este registro." };
 
   // Datos privados: solo si hay datos o ya existía la fila.
   const phone = v.phone ?? null;
@@ -174,7 +172,6 @@ export async function saveWorker(_prev: SaveResult | null, formData: FormData): 
   revalidatePath(`/trabajadores/${workerId}`);
 
   if (privateError) {
-    if (!isEdit) redirect(`/trabajadores/${workerId}/editar?aviso=datos-privados`);
     return {
       ok: false,
       message: `Se guardaron los datos generales, pero no el número de trabajador ni el teléfono: ${friendlyDbError(privateError)}`,

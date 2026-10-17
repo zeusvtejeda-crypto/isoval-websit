@@ -76,6 +76,10 @@ describe("FacilityForm", () => {
     expect(screen.getByLabelText("Marcar como datos de demostración")).not.toBeChecked();
     expect(screen.getByLabelText("Visible en el directorio público")).toBeChecked();
     expect(screen.getByRole("option", { name: "Archivo (inactiva)" })).toBeDisabled();
+    // El municipio es obligatorio: no hay opción «Sin municipio».
+    expect(screen.getByLabelText(/Municipio/)).toBeRequired();
+    expect(screen.queryByRole("option", { name: "Sin municipio" })).toBeNull();
+    expect(screen.getByRole("option", { name: "Elige el municipio…" })).toBeDisabled();
   });
 
   it("la zona horaria sigue al municipio y al estado", async () => {

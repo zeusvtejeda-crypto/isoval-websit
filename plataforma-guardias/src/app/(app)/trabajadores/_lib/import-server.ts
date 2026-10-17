@@ -4,6 +4,7 @@ import type { SessionUser } from "@/lib/auth";
 import { friendlyDbError } from "@/lib/actions";
 import { chunk, fetchAll } from "@/lib/data/fetch-all";
 import { getMunicipalities, getStates } from "@/lib/data/catalogs";
+import { employeeNumberKey } from "@/lib/validation/worker";
 import type {
   ExistingWorkerRef,
   ImportApplyResult,
@@ -15,9 +16,16 @@ import type {
 
 /**
  * Catálogos y trabajadores visibles para la cuenta (RLS) con los que se
- * validan las filas del archivo.
+ * validan las filas del archivo. Los números de trabajador del archivo que la
+ * cuenta no ve se comprueban aparte (employee_numbers_taken: solo sí/no), para
+ * detectar los que ya pertenecen a alguien de otra sede.
  */
-export async function loadImportContext(supabase: ServerSupabase, user: SessionUser, mode: WorkerImportMode): Promise<WorkerImportContext> {
+export async function loadImportContext(
+  supabase: ServerSupabase,
+  user: SessionUser,
+  mode: WorkerImportMode,
+  fileEmployeeNumbers: string[] = [],
+): Promise<WorkerImportContext> {
   const [states, municipalities, facilities, workers, privates] = await Promise.all([
     getStates(supabase),
     getMunicipalities(supabase),
@@ -40,6 +48,15 @@ export async function loadImportContext(supabase: ServerSupabase, user: SessionU
     return { ...w, employee_number: p?.employee_number ?? null, phone: p?.phone ?? null };
   });
 
+  const visibleNumbers = new Set(privates.map((p) => employeeNumberKey(p.employee_number)).filter(Boolean));
+  const hidden = [...new Set(fileEmployeeNumbers.map(employeeNumberKey))].filter((k): k is string => !!k && !visibleNumbers.has(k));
+  const takenEmployeeNumbers: string[] = [];
+  for (const batch of chunk(hidden, 1000)) {
+    const { data, error } = await supabase.rpc("employee_numbers_taken", { p_numbers: batch });
+    if (error) throw new Error(error.message);
+    takenEmployeeNumbers.push(...(data ?? []));
+  }
+
   return {
     mode,
     scope: { isAdmin: user.isAdmin, facilityIds: user.facilityIds },
@@ -47,6 +64,7 @@ export async function loadImportContext(supabase: ServerSupabase, user: SessionU
     municipalities: municipalities.map((m) => ({ id: m.id, state_id: m.state_id, name: m.name, inegi_code: m.inegi_code })),
     facilities,
     existing,
+    takenEmployeeNumbers,
   };
 }
 
@@ -66,10 +84,25 @@ async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) => Promi
   await Promise.all(workers);
 }
 
+type CreateRowResult = { ok: boolean; code?: string; message?: string };
+
+/** Resultado por fila de create_workers (mismo orden que las filas enviadas). */
+function parseCreateResults(data: unknown): CreateRowResult[] {
+  if (!Array.isArray(data)) return [];
+  return data.map((item) => {
+    const o = (item ?? {}) as Record<string, unknown>;
+    return {
+      ok: o.ok === true,
+      code: typeof o.code === "string" ? o.code : undefined,
+      message: typeof o.message === "string" ? o.message : undefined,
+    };
+  });
+}
+
 /**
- * Aplica las filas válidas: crea (en lotes, con id generado aquí para enlazar
- * los datos privados) y actualiza (una por una). Si un lote falla se reintenta
- * fila por fila para identificar cuál no se pudo guardar.
+ * Aplica las filas válidas: crea en lotes con create_workers (cada alta con sus
+ * datos privados es atómica: si el número de trabajador ya existe, aunque sea
+ * en otra sede, no queda nada creado) y actualiza una por una.
  */
 export async function applyWorkerImport(
   supabase: ServerSupabase,
@@ -79,40 +112,21 @@ export async function applyWorkerImport(
   const out = new Map<number, AppliedRow>();
 
   // --- Altas ---
-  const creates = rows
-    .filter((r): r is WorkerImportRowResult & { create: NonNullable<WorkerImportRowResult["create"]> } => r.status === "nueva" && !!r.create)
-    .map((r) => ({ r, id: crypto.randomUUID() }));
-  const created: typeof creates = [];
-
+  const creates = rows.filter(
+    (r): r is WorkerImportRowResult & { create: NonNullable<WorkerImportRowResult["create"]> } => r.status === "nueva" && !!r.create,
+  );
   for (const batch of chunk(creates, BATCH_SIZE)) {
-    const payload = batch.map(({ r, id }) => ({ id, ...r.create, change_reason: reason }));
-    const { error } = await supabase.from("workers").insert(payload);
-    if (!error) {
-      created.push(...batch);
-      continue;
-    }
-    for (const item of batch) {
-      const { error: rowError } = await supabase.from("workers").insert({ id: item.id, ...item.r.create, change_reason: reason });
-      if (rowError) out.set(item.r.row, { result: "fallo", message: friendlyDbError(rowError, "No se pudo crear el registro.") });
-      else created.push(item);
-    }
-  }
-  for (const item of created) out.set(item.r.row, { result: "creada" });
-
-  const createdPrivate = created.filter((c) => c.r.privateData);
-  for (const batch of chunk(createdPrivate, BATCH_SIZE)) {
-    const payload = batch.map(({ r, id }) => ({ worker_id: id, ...r.privateData!, change_reason: reason }));
-    const { error } = await supabase.from("worker_private").insert(payload);
-    if (!error) continue;
-    for (const item of batch) {
-      const { error: rowError } = await supabase.from("worker_private").insert({ worker_id: item.id, ...item.r.privateData!, change_reason: reason });
-      if (rowError) {
-        out.set(item.r.row, {
-          result: "creada",
-          message: `Se creó el registro, pero no se guardaron el número de trabajador ni el teléfono: ${friendlyDbError(rowError)} Corrígelo desde la ficha del trabajador.`,
-        });
+    const payload = batch.map((r) => ({ ...r.create, employee_number: r.privateData?.employee_number ?? null, phone: r.privateData?.phone ?? null }));
+    const { data, error } = await supabase.rpc("create_workers", { p_rows: payload, p_change_reason: reason });
+    const results = error ? [] : parseCreateResults(data);
+    batch.forEach((r, i) => {
+      const res = results[i];
+      if (res?.ok) out.set(r.row, { result: "creada" });
+      else {
+        const cause = error ?? (res ? { code: res.code, message: res.message } : null);
+        out.set(r.row, { result: "fallo", message: friendlyDbError(cause, "No se pudo crear el registro.") });
       }
-    }
+    });
   }
 
   // --- Actualizaciones ---

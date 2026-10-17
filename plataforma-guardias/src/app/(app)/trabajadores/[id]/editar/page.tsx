@@ -6,23 +6,16 @@ import { isUuid, matchUsualShift } from "@/lib/validation/worker";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { LinkButton } from "@/components/ui/button";
-import { Alert, EmptyState } from "@/components/ui/states";
+import { EmptyState } from "@/components/ui/states";
 import { WorkerForm, type WorkerFormDefaults } from "../../_components/worker-form";
 import { saveWorker } from "../../actions";
 import { getWorkerDetail, getWorkerFormCatalogs, getWorkerPrivate } from "../../_lib/queries";
 
 export const metadata = { title: "Editar trabajador" };
 
-export default async function EditarTrabajadorPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function EditarTrabajadorPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireManager();
   const { id } = await params;
-  const sp = await searchParams;
   if (!isUuid(id)) notFound();
 
   const supabase = await createClient();
@@ -81,12 +74,6 @@ export default async function EditarTrabajadorPage({
       {back}
       <PageHeader title="Editar trabajador" description={`${worker.full_name} · ${worker.internal_code}`} />
       <div className="max-w-3xl space-y-4">
-        {sp.aviso === "datos-privados" ? (
-          <Alert tone="warning" title="Registro creado con un pendiente">
-            El trabajador se registró, pero no se guardaron el número de trabajador ni el teléfono (por ejemplo, porque ese número ya está
-            registrado). Revísalos y vuelve a guardar.
-          </Alert>
-        ) : null}
         <Card>
           <WorkerForm
             action={saveWorker}
@@ -95,7 +82,7 @@ export default async function EditarTrabajadorPage({
             states={catalogs.states.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled }))}
             municipalities={catalogs.municipalities.map((m) => ({ id: m.id, state_id: m.state_id, name: m.name }))}
             facilities={catalogs.facilities.map((f) => ({ id: f.id, official_name: f.official_name }))}
-            allowNoFacility={user.isAdmin}
+            allFacilities={user.isAdmin}
             showPrivate
             cancelHref={`/trabajadores/${worker.id}`}
           />

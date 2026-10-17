@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { friendlyDbError, type ActionResult } from "@/lib/actions";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type ServerSupabase } from "@/lib/supabase/server";
+import { clearStoredReason } from "@/lib/reason";
 import { categoryActiveSchema, categoryDeleteSchema, categoryFormSchema, invalidResult, normalizeText, readCategoryForm, readFields } from "@/lib/validation/facility";
 
 const CATEGORIES_PATH = "/administracion/categorias";
@@ -13,6 +14,16 @@ function revalidateCategories() {
   revalidatePath(CATEGORIES_PATH, "layout");
   revalidatePath("/administracion/instalaciones", "layout");
   revalidatePath("/directorio", "layout");
+}
+
+/**
+ * Un motivo igual al guardado lo borraría app.touch_row() y la bitácora
+ * quedaría sin motivo: en ese caso se limpia antes de escribir.
+ */
+async function prepareReason(supabase: ServerSupabase, id: number, stored: string | null | undefined, reason: string): Promise<string | null> {
+  if (stored !== reason) return null;
+  const error = await clearStoredReason(supabase, "facility_categories", id);
+  return error ? friendlyDbError(error, "No se pudo guardar la categoría.") : null;
 }
 
 /**
@@ -26,9 +37,10 @@ export async function saveCategory(_prev: ActionResult | null, formData: FormDat
   const v = parsed.data;
 
   const supabase = await createClient();
-  const { data: all, error: readError } = await supabase.from("facility_categories").select("id, name, slug");
+  const { data: all, error: readError } = await supabase.from("facility_categories").select("id, name, slug, change_reason");
   if (readError) return { ok: false, message: friendlyDbError(readError) };
-  if (v.id && !(all ?? []).some((c) => c.id === v.id)) return { ok: false, message: "La categoría no existe o fue eliminada." };
+  const current = v.id ? (all ?? []).find((c) => c.id === v.id) : undefined;
+  if (v.id && !current) return { ok: false, message: "La categoría no existe o fue eliminada." };
 
   const others = (all ?? []).filter((c) => c.id !== v.id);
   const nameClash = others.find((c) => normalizeText(c.name) === normalizeText(v.name));
@@ -46,9 +58,12 @@ export async function saveCategory(_prev: ActionResult | null, formData: FormDat
     color: v.color,
     sort_order: v.sort_order,
     active: v.active,
+    change_reason: v.reason,
   };
 
   if (v.id) {
+    const reasonIssue = await prepareReason(supabase, v.id, current?.change_reason, v.reason);
+    if (reasonIssue) return { ok: false, message: reasonIssue };
     const { data, error } = await supabase.from("facility_categories").update(values).eq("id", v.id).select("id");
     if (error) return { ok: false, message: friendlyDbError(error, "No se pudo guardar la categoría.") };
     if (!data || data.length === 0) return { ok: false, message: "No tienes permiso para modificar esta categoría." };
@@ -62,15 +77,22 @@ export async function saveCategory(_prev: ActionResult | null, formData: FormDat
   return { ok: true, message: `Categoría «${v.name}» creada.` };
 }
 
-/** Activar o desactivar (en lugar de borrar). */
+/** Activar o desactivar (en lugar de borrar), con motivo. */
 export async function setCategoryActive(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
-  const parsed = categoryActiveSchema.safeParse(readFields(formData, ["category_id", "active"] as const));
+  const parsed = categoryActiveSchema.safeParse(readFields(formData, ["category_id", "active", "reason"] as const));
   if (!parsed.success) return invalidResult(parsed.error);
+  const { category_id, reason } = parsed.data;
   const active = parsed.data.active === "1";
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from("facility_categories").update({ active }).eq("id", parsed.data.category_id).select("id, name");
+  const { data: current, error: readError } = await supabase.from("facility_categories").select("id, change_reason").eq("id", category_id).maybeSingle();
+  if (readError) return { ok: false, message: friendlyDbError(readError) };
+  if (!current) return { ok: false, message: "La categoría no existe o no tienes permiso para modificarla." };
+  const reasonIssue = await prepareReason(supabase, category_id, current.change_reason, reason);
+  if (reasonIssue) return { ok: false, message: reasonIssue };
+
+  const { data, error } = await supabase.from("facility_categories").update({ active, change_reason: reason }).eq("id", category_id).select("id, name");
   if (error) return { ok: false, message: friendlyDbError(error, "No se pudo cambiar el estado.") };
   if (!data || data.length === 0) return { ok: false, message: "La categoría no existe o no tienes permiso para modificarla." };
 
@@ -83,12 +105,12 @@ export async function setCategoryActive(_prev: ActionResult | null, formData: Fo
   };
 }
 
-/** Eliminación definitiva: solo si ninguna instalación la usa. */
+/** Eliminación definitiva con motivo: solo si ninguna instalación la usa. */
 export async function deleteCategory(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
-  const parsed = categoryDeleteSchema.safeParse(readFields(formData, ["category_id", "confirm"] as const));
+  const parsed = categoryDeleteSchema.safeParse(readFields(formData, ["category_id", "confirm", "reason"] as const));
   if (!parsed.success) return invalidResult(parsed.error);
-  const { category_id } = parsed.data;
+  const { category_id, reason } = parsed.data;
 
   const supabase = await createClient();
   const { count, error: countError } = await supabase.from("facilities").select("id", { count: "exact", head: true }).eq("category_id", category_id);
@@ -98,6 +120,17 @@ export async function deleteCategory(_prev: ActionResult | null, formData: FormD
       ok: false,
       message: `No se puede eliminar: la usan ${count} ${count === 1 ? "instalación" : "instalaciones"}. Desactívala en su lugar.`,
     };
+  }
+
+  // La bitácora del borrado toma el motivo guardado en la fila: se guarda antes
+  // de borrar (sin generar otra entrada). Si ya es el mismo no se reescribe,
+  // porque app.touch_row() lo dejaría en null al ver un valor repetido.
+  const { data: current, error: readError } = await supabase.from("facility_categories").select("id, change_reason").eq("id", category_id).maybeSingle();
+  if (readError) return { ok: false, message: friendlyDbError(readError, "No se pudo eliminar la categoría.") };
+  if (!current) return { ok: false, message: "La categoría no existe o ya fue eliminada." };
+  if (current.change_reason !== reason) {
+    const { error: reasonError } = await supabase.from("facility_categories").update({ change_reason: reason }).eq("id", category_id);
+    if (reasonError) return { ok: false, message: friendlyDbError(reasonError, "No se pudo eliminar la categoría.") };
   }
 
   const { data, error } = await supabase.from("facility_categories").delete().eq("id", category_id).select("id");

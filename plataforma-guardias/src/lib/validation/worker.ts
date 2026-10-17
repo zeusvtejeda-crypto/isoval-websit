@@ -30,6 +30,9 @@ export const PRIVACY_NOTE =
 export const PRIVATE_DATA_NOTE =
   "El número de trabajador y el teléfono son opcionales y privados: solo los ven administración y la coordinación de la sede. Auditoría no los ve.";
 export const PHONE_ERROR = "Teléfono inválido: de 7 a 20 caracteres con dígitos, espacios, +, paréntesis o guiones.";
+/** El número ya pertenece a otro registro (la cuenta puede no verlo: otra sede). */
+export const EMPLOYEE_NUMBER_TAKEN = "Ese número de trabajador ya está registrado (posiblemente en otra sede).";
+export const FACILITY_REQUIRED = "Elige la instalación de adscripción.";
 
 // ---------------------------------------------------------------------------
 // Normalización
@@ -158,7 +161,8 @@ export const workerFormSchema = z
       .int({ error: "Elige un municipio de la lista." })
       .positive({ error: "Elige un municipio de la lista." })
       .optional(),
-    facility_id: z.guid({ error: "Elige una instalación de la lista." }).optional(),
+    // Cada trabajador pertenece a una sede (workers.facility_id es obligatorio).
+    facility_id: z.guid({ error: (issue) => (issue.input === undefined ? FACILITY_REQUIRED : "Elige una instalación de la lista.") }),
     area: optionalText(TEXT_MAX, "Área"),
     position: optionalText(TEXT_MAX, "Puesto"),
     usual_shift: z.enum(USUAL_SHIFT_OPTIONS, { error: "Elige un turno de la lista." }).optional(),
@@ -205,8 +209,6 @@ export const workerDeleteSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const WORKERS_PAGE_SIZE = 25;
-/** Valor del filtro de sede para trabajadores sin instalación de adscripción. */
-export const NO_FACILITY = "ninguna";
 export const SEARCH_MAX = 100;
 
 export type WorkerStatusFilter = "activos" | "inactivos" | "todos";
@@ -217,7 +219,7 @@ export type WorkerListFilters = {
   q: string;
   stateId: number | null;
   municipalityId: number | null;
-  /** uuid de la sede, NO_FACILITY o null (todas). */
+  /** uuid de la sede o null (todas). */
   facility: string | null;
   area: string;
   status: WorkerStatusFilter;
@@ -267,20 +269,15 @@ export const DEFAULT_WORKER_FILTERS: WorkerListFilters = {
 /**
  * Lee los filtros de la URL. Valores desconocidos se ignoran.
  * @param facilityIds sedes permitidas en el filtro (null = cualquiera).
- * @param allowNoFacility permite filtrar «sin instalación» (administración).
  */
-export function parseWorkerFilters(
-  sp: RawSearchParams,
-  opts: { facilityIds: string[] | null; allowNoFacility: boolean },
-): WorkerListFilters {
+export function parseWorkerFilters(sp: RawSearchParams, opts: { facilityIds: string[] | null }): WorkerListFilters {
   const q = collapseSpaces(firstParam(sp.q) ?? "").slice(0, SEARCH_MAX);
   const stateId = positiveInt(firstParam(sp.estado), 99);
   const municipalityId = stateId ? positiveInt(firstParam(sp.municipio), 999_999_999) : null;
 
   const rawFacility = firstParam(sp.sede)?.trim() ?? "";
   let facility: string | null = null;
-  if (rawFacility === NO_FACILITY && opts.allowNoFacility) facility = NO_FACILITY;
-  else if (isUuid(rawFacility) && (!opts.facilityIds || opts.facilityIds.includes(rawFacility))) facility = rawFacility.toLowerCase();
+  if (isUuid(rawFacility) && (!opts.facilityIds || opts.facilityIds.includes(rawFacility))) facility = rawFacility.toLowerCase();
 
   const area = collapseSpaces(firstParam(sp.area) ?? "").slice(0, TEXT_MAX);
   const rawStatus = firstParam(sp.activo);

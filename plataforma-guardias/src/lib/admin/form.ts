@@ -2,10 +2,19 @@
  * Utilidades de formularios y traducción de errores del módulo de
  * administración (lógica pura).
  */
-import type { z } from "zod";
+import { z } from "zod";
 import { friendlyDbError, type ActionResult } from "@/lib/actions";
 
 export type FailedResult = Extract<ActionResult, { ok: false }>;
+
+export const REASON_MIN = 5;
+export const REASON_MAX = 500;
+
+/** «Motivo del cambio» obligatorio: queda en la bitácora junto con los valores anterior y nuevo. */
+export const changeReasonSchema = z
+  .string({ error: `Indica el motivo del cambio (mínimo ${REASON_MIN} caracteres).` })
+  .min(REASON_MIN, { error: `Indica el motivo del cambio (mínimo ${REASON_MIN} caracteres).` })
+  .max(REASON_MAX, { error: `El motivo admite hasta ${REASON_MAX} caracteres.` });
 
 /** Primer mensaje por campo. */
 export function fieldErrorsFrom(error: z.ZodError): Record<string, string> {

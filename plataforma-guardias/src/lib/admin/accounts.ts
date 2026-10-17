@@ -5,7 +5,7 @@
 import { z } from "zod";
 import type { AppRole } from "@/lib/auth";
 import type { Tone } from "@/lib/attendance/labels";
-import { readAll, readRaw, readText } from "./form";
+import { REASON_MAX, REASON_MIN, readAll, readRaw, readText } from "./form";
 import { TEMP_PASSWORD_MAX, TEMP_PASSWORD_MIN, temporaryPasswordIssue } from "./password";
 
 export const USERS_BASE_PATH = "/administracion/usuarios";
@@ -31,18 +31,28 @@ export function roleUsesFacilityScopes(role: AppRole): boolean {
   return SCOPED_ROLES.includes(role);
 }
 
+/**
+ * La auditoría es de solo lectura: no se vincula a un trabajador, porque el
+ * vínculo permitiría registrar asistencia y solicitar correcciones como
+ * propias (la base de datos también lo impide).
+ */
+export function roleAllowsWorker(role: AppRole): boolean {
+  return role !== "auditor";
+}
+
+export const AUDITOR_WORKER_MESSAGE = "La auditoría es de solo lectura: no se vincula a un trabajador. Quita el trabajador o elige otro rol.";
+
 export const ROLE_HINTS: Record<AppRole, string> = {
   admin: "Acceso total: instalaciones, cuentas, configuración y bitácora completa.",
   coordinador: "Gestiona guardias y registros solo en las sedes asignadas. No puede corregir, anular ni revisar su propia asistencia.",
-  auditor: "Consulta de solo lectura en las sedes asignadas. No ve teléfonos ni números de trabajador.",
+  auditor: "Consulta de solo lectura en las sedes asignadas. No ve teléfonos ni números de trabajador ni se vincula a un trabajador.",
   trabajador: "Solo ve y registra sus propias guardias. Vincula la cuenta con su registro de trabajador.",
 };
 
 export const DISPLAY_NAME_MIN = 2;
 export const DISPLAY_NAME_MAX = 120;
 export const EMAIL_MAX = 254;
-export const REASON_MIN = 5;
-export const REASON_MAX = 500;
+export { REASON_MAX, REASON_MIN };
 export const ACCOUNT_SEARCH_MAX = 100;
 
 export const PASSWORD_MODES = ["generar", "manual"] as const;
@@ -88,6 +98,12 @@ function checkScopes(value: { role: AppRole; facility_ids: string[] }, ctx: z.Re
   }
 }
 
+function checkWorkerRole(value: { role: AppRole; worker_id?: string | undefined }, ctx: z.RefinementCtx) {
+  if (value.worker_id && !roleAllowsWorker(value.role)) {
+    ctx.addIssue({ code: "custom", path: ["worker_id"], message: AUDITOR_WORKER_MESSAGE });
+  }
+}
+
 /** Administración y trabajadores no usan sedes asignadas: se descartan. */
 function normalizeScopes<T extends { role: AppRole; facility_ids: string[] }>(value: T): T {
   return roleUsesFacilityScopes(value.role) ? value : { ...value, facility_ids: [] };
@@ -108,6 +124,7 @@ export const createAccountSchema = z
   .superRefine((v, ctx) => {
     checkPassword(v, ctx);
     checkScopes(v, ctx);
+    checkWorkerRole(v, ctx);
   })
   .transform(normalizeScopes);
 export type CreateAccountInput = z.infer<typeof createAccountSchema>;
@@ -121,7 +138,10 @@ export const updateAccountSchema = z
     facility_ids: facilityIdsSchema,
     reason: reasonSchema.optional(),
   })
-  .superRefine(checkScopes)
+  .superRefine((v, ctx) => {
+    checkScopes(v, ctx);
+    checkWorkerRole(v, ctx);
+  })
   .transform(normalizeScopes);
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 
@@ -136,6 +156,7 @@ export const resetPasswordSchema = z
     user_id: guid("La cuenta no es válida."),
     password_mode: passwordModeSchema,
     password: z.string().max(TEMP_PASSWORD_MAX * 4).optional(),
+    reason: reasonSchema,
   })
   .superRefine(checkPassword);
 
@@ -172,6 +193,7 @@ export function readResetPasswordForm(formData: FormData) {
     user_id: readText(formData, "user_id"),
     password_mode: readText(formData, "password_mode") ?? "generar",
     password: readRaw(formData, "password"),
+    reason: readText(formData, "reason"),
   };
 }
 
@@ -179,9 +201,17 @@ export function readResetPasswordForm(formData: FormData) {
 // Reglas de cambio
 // ---------------------------------------------------------------------------
 
-/** El motivo es obligatorio cuando cambia el rol o el estado de la cuenta. */
-export function reasonRequired(current: { role: AppRole; active: boolean }, next: { role: AppRole; active: boolean }): boolean {
-  return current.role !== next.role || current.active !== next.active;
+type ReasonFields = { role: AppRole; active: boolean; worker_id?: string | null; facility_ids?: readonly string[] };
+
+/**
+ * El motivo es obligatorio cuando cambian los permisos de la cuenta: rol,
+ * estado, trabajador vinculado o sedes asignadas (solo el nombre visible no lo pide).
+ */
+export function reasonRequired(current: ReasonFields, next: ReasonFields): boolean {
+  if (current.role !== next.role || current.active !== next.active) return true;
+  if ((current.worker_id ?? null) !== (next.worker_id ?? null)) return true;
+  const { add, remove } = scopeChanges(current.facility_ids ?? [], next.facility_ids ?? []);
+  return add.length > 0 || remove.length > 0;
 }
 
 export function scopeChanges(current: readonly string[], next: readonly string[]): { add: string[]; remove: string[] } {

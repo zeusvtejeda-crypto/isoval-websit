@@ -91,12 +91,15 @@ begin
   values (s_now, f1, '[DEMO] Guardia matutina', 'Acceso principal', date_trunc('minute', now()) - interval '2 hours',
     date_trunc('minute', now()) + interval '4 hours', w[3], 3, 6, 'Instrucciones de demostración.', true);
 
-  -- Guardia nocturna que cruza medianoche (22:00 a 06:00 hora de la sede)
+  -- Guardia nocturna de mañana que cruza medianoche (22:00 a 06:00 hora de la sede).
+  -- Es de mañana para que nunca se traslape con la guardia en curso, sin importar la
+  -- hora del reset (Luis está en ambas): una persona no puede tener dos guardias
+  -- asignadas que se traslapan.
   insert into public.shifts (id, facility_id, title, meeting_point, starts_at, ends_at, responsible_worker_id,
     min_staff, max_staff, is_demo)
   values (s_night, f1, '[DEMO] Guardia nocturna', 'Acceso de urgencias',
-    (v_today::timestamp + time '22:00') at time zone 'America/Mazatlan',
-    ((v_today + 1)::timestamp + time '06:00') at time zone 'America/Mazatlan', w[4], 2, 4, true);
+    ((v_today + 1)::timestamp + time '22:00') at time zone 'America/Mazatlan',
+    ((v_today + 2)::timestamp + time '06:00') at time zone 'America/Mazatlan', w[4], 2, 4, true);
 
   -- Guardia de ayer (para historial)
   insert into public.shifts (id, facility_id, title, meeting_point, starts_at, ends_at, responsible_worker_id,

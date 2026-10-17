@@ -4,7 +4,6 @@ import type { Database } from "@/lib/types/database";
 import { canManageFacility, type AppRole, type SessionUser } from "@/lib/auth";
 import { getFacilityOptions, getMunicipalities, labelRepeatedMunicipalities, getStates, type FacilityOption, type Municipality, type State } from "@/lib/data/catalogs";
 import {
-  NO_FACILITY,
   buildSearchPattern,
   canSeeWorkerAccount,
   employeeNumberPattern,
@@ -87,8 +86,7 @@ export async function listWorkers(
     let q = supabase.from("workers").select(LIST_SELECT, { count: "exact", head });
     if (filters.stateId) q = q.eq("state_id", filters.stateId);
     if (filters.stateId && filters.municipalityId) q = q.eq("municipality_id", filters.municipalityId);
-    if (filters.facility === NO_FACILITY) q = q.is("facility_id", null);
-    else if (filters.facility) q = q.eq("facility_id", filters.facility);
+    if (filters.facility) q = q.eq("facility_id", filters.facility);
     if (filters.area) q = q.ilike("area", `%${escapeLike(filters.area)}%`);
     if (filters.status === "activos") q = q.eq("active", true);
     else if (filters.status === "inactivos") q = q.eq("active", false);

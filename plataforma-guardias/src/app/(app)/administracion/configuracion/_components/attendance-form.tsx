@@ -6,6 +6,7 @@ import { CHECKIN_WINDOW_MAX, OPEN_SESSION_GRACE_MAX, type AttendanceSettings } f
 import { invalidProps, useActionForm } from "@/lib/admin/use-action-form";
 import { formatDuration } from "@/lib/time";
 import { saveAttendanceSettings } from "../actions";
+import { ReasonField } from "../../_components/reason-field";
 
 export function AttendanceSettingsForm({ settings }: { settings: AttendanceSettings }) {
   const { state, formAction, pending, onSubmit, fieldError } = useActionForm(saveAttendanceSettings);
@@ -53,6 +54,7 @@ export function AttendanceSettingsForm({ settings }: { settings: AttendanceSetti
           />
         </Field>
       </div>
+      <ReasonField id="att-reason" state={state} error={fieldError("reason")} />
       <FormMessage state={state} />
       <Button type="submit" disabled={pending} aria-disabled={pending}>
         {pending ? "Guardando…" : "Guardar configuración de registro"}

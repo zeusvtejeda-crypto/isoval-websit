@@ -13,11 +13,17 @@ export function WorkerPicker({
   options,
   defaultValue,
   error,
+  disabled,
+  onValueChange,
 }: {
   id: string;
   options: WorkerOption[];
   defaultValue?: string | null;
   error?: string | null;
+  /** Deshabilitado no se envía con el formulario. */
+  disabled?: boolean;
+  /** Avisa el trabajador elegido ("" = sin vínculo). */
+  onValueChange?: (workerId: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [value, setValue] = useState(defaultValue ?? "");
@@ -43,9 +49,21 @@ export function WorkerPicker({
           aria-label="Buscar trabajador"
           aria-controls={id}
           autoComplete="off"
+          disabled={disabled}
         />
       ) : null}
-      <Select id={id} name="worker_id" value={value} onChange={(e) => setValue(e.currentTarget.value)} {...invalidProps(error, id)}>
+      <Select
+        id={id}
+        name="worker_id"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => {
+          const next = e.currentTarget.value;
+          setValue(next);
+          onValueChange?.(next);
+        }}
+        {...invalidProps(error, id)}
+      >
         <option value="">Sin trabajador vinculado</option>
         {shown.map((o) => (
           <option key={o.id} value={o.id}>

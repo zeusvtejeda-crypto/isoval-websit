@@ -34,8 +34,8 @@ Aplicación web responsiva e instalable (PWA) con dos módulos conectados:
 | --- | --- |
 | Directorio público | Lista (funciona sin mapa y sin JavaScript), mapa Leaflet + OpenStreetMap con agrupación, búsqueda por nombre/clave/municipio/estado/dirección, filtros por categoría/estado/municipio, ficha completa, botón «Cómo llegar». |
 | Instalaciones | Alta, edición, desactivación e importación CSV/Excel con validación y detección de duplicados. Categorías editables (nombre, descripción, icono, color). |
-| Trabajadores | Directorio privado por entidad federativa, alta/edición/importación, datos privados (número de trabajador y teléfono) en tabla separada. Un trabajador puede existir sin cuenta. |
-| Guardias | Sede, punto de reunión, inicio/término (cruza medianoche), responsable, cupo mínimo/máximo, asignaciones, sustituciones, instrucciones, estados. Vista de lista y calendario semanal. |
+| Trabajadores | Directorio privado por entidad federativa, alta/edición/importación, datos privados (número de trabajador y teléfono) en tabla separada. Cada trabajador pertenece a una sede (instalación de adscripción obligatoria) y su alta con datos privados es atómica (`create_worker`). Un trabajador puede existir sin cuenta. |
+| Guardias | Sede, punto de reunión, inicio/término (cruza medianoche), responsable, cupo mínimo/máximo, asignaciones, sustituciones, instrucciones, estados. Los datos de una asignación (punto, «cubre a», notas) se corrigen con motivo y quedan en la bitácora. Vista de lista y calendario semanal. |
 | Registro | Botones grandes «Registrar entrada» / «Registrar salida», hora del servidor, idempotencia contra doble clic y reintentos, varias sesiones por guardia, registro por coordinación con motivo. |
 | En servicio | Panel con actualización automática: en servicio, responsables, pendientes de llegar, quienes salieron, guardias sin cobertura y registros incompletos. |
 | Historial y reportes | Por trabajador, sede, estado y rango de fechas; horas programadas, dentro/fuera del horario, total y diferencia; incidencias; exportación a Excel y PDF según permisos. |
@@ -84,7 +84,7 @@ Convenciones y reglas de seguridad: [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.m
 | `audit_log` | Bitácora inmutable: autor, fecha, valor anterior, valor nuevo, motivo. |
 | `app_settings` | Aviso de privacidad, conservación y parámetros de registro. |
 
-Restricciones anti-duplicados clave: una sola entrada abierta por trabajador (índice único parcial), sin traslapes de sesiones (restricción de exclusión GiST), identificador de solicitud único (idempotencia), salida posterior a la entrada (CHECK), clave de unidad única, nombre normalizado único por municipio, número de trabajador único, asignación única por guardia.
+Restricciones anti-duplicados clave: una sola entrada abierta por trabajador (índice único parcial), sin traslapes de sesiones (restricción de exclusión GiST), identificador de solicitud único (idempotencia), salida posterior a la entrada (CHECK), clave de unidad única, nombre normalizado único por municipio, número de trabajador único, asignación única por guardia, sin guardias traslapadas para una misma persona (las consecutivas sí se permiten) y cupo máximo nunca menor que las asignaciones activas (triggers `app.check_assignment` y `app.check_shift_staffing`).
 
 ## Ejecutar en local
 

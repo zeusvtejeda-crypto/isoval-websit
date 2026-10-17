@@ -7,6 +7,7 @@ import {
   canonicalizeRow,
   checkWorkerHeaders,
   describeSummary,
+  employeeNumberKeysInRows,
   headerWarnings,
   parseYesNo,
   resolveFacility,
@@ -154,15 +155,32 @@ describe("validateWorkerRows: filas nuevas y errores", () => {
     expect(summary).toMatchObject({ total: 1, nueva: 1, aplicables: 1 });
   });
 
-  it("toma el estado de la instalación o Nayarit si viene vacío", () => {
+  it("toma el estado de la instalación si viene vacío", () => {
     const { rows } = validateWorkerRows(
-      [row({ nombre_completo: "Persona Uno", instalacion: "OTRA-01" }), row({ nombre_completo: "Persona Dos" })],
+      [row({ nombre_completo: "Persona Uno", instalacion: "OTRA-01" }), row({ nombre_completo: "Persona Dos", instalacion: "DEMO-U01" })],
       ctx(),
     );
     expect(rows[0].create?.state_id).toBe(14);
     expect(rows[1].status).toBe("nueva");
-    expect(rows[1].create).toMatchObject({ state_id: 18, facility_id: null, active: true });
+    expect(rows[1].create).toMatchObject({ state_id: 18, facility_id: FAC_B, active: true });
     expect(rows[1].privateData).toBeNull();
+  });
+
+  it("la instalación es obligatoria en altas, también para administración", () => {
+    const { rows, summary } = validateWorkerRows(
+      [row({ nombre_completo: "Persona Sin Sede" }), row({ nombre_completo: "Otra Sin Sede", instalacion: "   " })],
+      ctx({ scope: admin }),
+    );
+    expect(rows.map((r) => r.status)).toEqual(["error", "error"]);
+    expect(rows[0].messages[0]).toMatch(/Indica la instalación de adscripción/);
+    expect(rows[0].create).toBeNull();
+    expect(summary.aplicables).toBe(0);
+  });
+
+  it("en actualizaciones la instalación vacía conserva la registrada", () => {
+    const { rows } = validateWorkerRows([row({ nombre_completo: "Ana Martínez Ruiz", numero_trabajador: "E-001", area: "Urgencias" })], ctx());
+    expect(rows[0].status).toBe("actualizacion");
+    expect(rows[0].patch).toEqual({ area: "Urgencias" });
   });
 
   it("marca errores de campos", () => {
@@ -173,7 +191,7 @@ describe("validateWorkerRows: filas nuevas y errores", () => {
         row({ nombre_completo: "Persona Tres", telefono: "abc" }),
         row({ nombre_completo: "Persona Cuatro", turno_habitual: "madrugada" }),
         row({ nombre_completo: "Persona Cinco", activo: "quizá" }),
-        row({ nombre_completo: "Persona Seis", estado: "Nayarit", municipio: "Guadalajara" }),
+        row({ nombre_completo: "Persona Seis", estado: "Nayarit", municipio: "Guadalajara", instalacion: "DEMO-H01" }),
         row({ nombre_completo: "Persona Siete", instalacion: "NO-EXISTE" }),
         row({ nombre_completo: "Persona Ocho", instalacion: "INS-000003" }),
         row({ nombre_completo: "[EJEMPLO] Persona Ficticia", instalacion: "DEMO-H01" }),
@@ -378,6 +396,57 @@ describe("validateWorkerRows: actualizaciones", () => {
     // La fila 5 repite el número de la fila 4: duplicada dentro del archivo, aunque la fila 4 tenga error de permisos.
     expect(rows[2].status).toBe("error");
     expect(rows[3].status).toBe("duplicada");
+  });
+});
+
+describe("validateWorkerRows: números registrados en sedes que la cuenta no ve", () => {
+  const TAKEN = "Ese número de trabajador ya está registrado (posiblemente en otra sede).";
+
+  it("extrae los números del archivo (sin repetir, normalizados)", () => {
+    expect(
+      employeeNumberKeysInRows([
+        row({ nombre_completo: "A", numero_trabajador: " x-1 " }),
+        row({ numero_de_trabajador: "X-1", nombre: "B" }),
+        row({ nombre_completo: "C", numero_trabajador: "" }),
+        row({ nombre_completo: "D", numero_trabajador: "Y-2" }),
+      ]),
+    ).toEqual(["X-1", "Y-2"]);
+  });
+
+  it("un alta con un número ya registrado en otra sede es duplicada y no se crea", () => {
+    const { rows, summary } = validateWorkerRows(
+      [
+        row({ nombre_completo: "Persona Nueva", numero_trabajador: " oculto-9 ", instalacion: "DEMO-H01" }),
+        row({ nombre_completo: "Persona Libre", numero_trabajador: "LIBRE-1", instalacion: "DEMO-H01" }),
+      ],
+      ctx({ scope: coordinator, takenEmployeeNumbers: ["OCULTO-9"] }),
+    );
+    expect(rows[0].status).toBe("duplicada");
+    expect(rows[0].messages).toEqual([TAKEN]);
+    expect(rows[0].create).toBeNull();
+    expect(rows[1].status).toBe("nueva");
+    expect(summary).toMatchObject({ nueva: 1, duplicada: 1, aplicables: 1 });
+  });
+
+  it("una actualización no puede asignar un número registrado en otra sede", () => {
+    const { rows } = validateWorkerRows(
+      [row({ nombre_completo: "Luis Hernández Soto", numero_trabajador: "OCULTO-9", instalacion: "DEMO-U01" })],
+      ctx({ scope: coordinator, takenEmployeeNumbers: ["OCULTO-9"] }),
+    );
+    expect(rows[0].status).toBe("duplicada");
+    expect(rows[0].messages).toEqual([TAKEN]);
+    expect(rows[0].privateData).toBeNull();
+  });
+
+  it("una fila marcada así no vuelve duplicadas a las siguientes", () => {
+    const { rows } = validateWorkerRows(
+      [
+        row({ nombre_completo: "Luis Hernández Soto", numero_trabajador: "OCULTO-9", instalacion: "DEMO-U01" }),
+        row({ nombre_completo: "Luis Hernández Soto", area: "Archivo", instalacion: "DEMO-U01" }),
+      ],
+      ctx({ takenEmployeeNumbers: ["OCULTO-9"] }),
+    );
+    expect(rows.map((r) => r.status)).toEqual(["duplicada", "actualizacion"]);
   });
 });
 

@@ -8,7 +8,7 @@ import { shortId } from "./audit-diff";
 
 export type AuditEventRow = Database["public"]["Tables"]["audit_log"]["Row"];
 
-const AUDIT_SELECT = "id, occurred_at, actor_id, actor_role, table_name, record_id, action, old_data, new_data, changed_fields, reason, facility_id";
+const AUDIT_SELECT = "id, occurred_at, actor_id, actor_role, table_name, record_id, action, old_data, new_data, changed_fields, reason, facility_id, redacted_at";
 
 /**
  * Una página de la bitácora con los filtros. RLS limita el alcance:

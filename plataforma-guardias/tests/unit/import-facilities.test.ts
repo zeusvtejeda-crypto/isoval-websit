@@ -111,7 +111,7 @@ describe("encabezados", () => {
 
   it("detecta obligatorias faltantes, alias, desconocidas y repetidas", () => {
     const check = checkFacilityHeaders(["nombre", "tipo", "entidad", "curp", "lat", "latitud"]);
-    expect(check.missing).toEqual(["fuente"]);
+    expect(check.missing).toEqual(["municipio", "fuente"]);
     expect(check.unknown).toEqual(["curp"]);
     expect(check.duplicated).toEqual(["latitud"]);
     expect(headerWarnings(check)).toHaveLength(2);
@@ -187,11 +187,18 @@ describe("filas nuevas", () => {
     expect(row.place).toBe("Bahía de Banderas, Nayarit");
   });
 
-  it("sin municipio usa la zona del estado y respeta la marca de demostración", () => {
-    const result = run([{ ...base, nombre_oficial: "Oficina Estatal", municipio: "" }], "crear_actualizar", true);
+  it("respeta la marca de demostración", () => {
+    const result = run([{ ...base, nombre_oficial: "Oficina Estatal" }], "crear_actualizar", true);
     expect(result.rows[0].status).toBe("nueva");
-    expect(result.rows[0].create).toMatchObject({ timezone: "America/Mazatlan", municipality_id: null, is_demo: true });
+    expect(result.rows[0].create).toMatchObject({ timezone: "America/Mazatlan", municipality_id: 17, is_demo: true });
     expect(result.rows[0].messages.join(" ")).toMatch(/demostración/);
+  });
+
+  it("el municipio es obligatorio (estado → municipio → sede)", () => {
+    const result = run([{ ...base, nombre_oficial: "Oficina Estatal", municipio: "" }]);
+    expect(result.rows[0].status).toBe("error");
+    expect(result.rows[0].messages).toContain("Falta el municipio.");
+    expect(result.rows[0].create).toBeNull();
   });
 
   it("acepta zona horaria y tolerancia explícitas", () => {
@@ -383,12 +390,47 @@ describe("duplicados contra la base", () => {
     expect(result.rows[1].messages[0]).toMatch(/fila 2/);
   });
 
-  it("cambiar de estado quita el municipio y ajusta la zona horaria", () => {
-    const result = run([{ ...base, identificador_interno: "INS-000002", nombre_oficial: "Unidad de Medicina Familiar 1", categoria: "umf", estado: "JAL", municipio: "" }]);
-    const r = result.rows[0];
+  it("cambiar de estado exige el municipio del nuevo estado y ajusta la zona horaria", () => {
+    const row = { ...base, identificador_interno: "INS-000002", nombre_oficial: "Unidad de Medicina Familiar 1", categoria: "umf", estado: "JAL" };
+    // Sin municipio la instalación quedaría sin él: es error, no se quita.
+    const missing = run([{ ...row, municipio: "" }]).rows[0];
+    expect(missing.status).toBe("error");
+    expect(missing.messages).toContain("Falta el municipio.");
+    // El municipio anterior (Tepic) no corresponde al nuevo estado.
+    expect(run([row]).rows[0].messages.join(" ")).toMatch(/no corresponde a Jalisco/);
+
+    const r = run([{ ...row, municipio: "Guadalajara" }]).rows[0];
     expect(r.status).toBe("actualizacion");
-    expect(r.patch).toMatchObject({ state_id: 14, municipality_id: null, timezone: "America/Mexico_City" });
-    expect(r.messages.join(" ")).toMatch(/Se quitará el municipio/);
+    expect(r.patch).toMatchObject({ state_id: 14, municipality_id: 100, timezone: "America/Mexico_City" });
+    expect(r.messages.join(" ")).toMatch(/zona horaria se ajusta/);
+  });
+
+  it("sin clave ni identificador no adivina entre varias unidades co-ubicadas con el mismo nombre", () => {
+    const colocated = [
+      ...existing,
+      facility({ id: "f0000000-0000-4000-8000-00000000000d", internal_code: "INS-000004", official_name: "Linda Vista", unit_key: "NTIMS000721", category_id: 3 }),
+      facility({ id: "f0000000-0000-4000-8000-00000000000e", internal_code: "INS-000005", official_name: "LINDA VISTA", unit_key: "NTIMS001235", category_id: 3 }),
+    ];
+    const validate = (row: Record<string, string>, mode: "crear_actualizar" | "solo_crear" = "crear_actualizar") =>
+      validateFacilityRows([{ ...base, categoria: "otras-unidades-medicas", nombre_oficial: "Linda Vista", telefono: "311 000 0000", ...row }], catalogs, colocated, mode, {
+        today: "2026-10-17",
+      }).rows[0];
+
+    for (const mode of ["crear_actualizar", "solo_crear"] as const) {
+      const ambiguous = validate({}, mode);
+      expect(ambiguous.status).toBe("duplicada");
+      expect(ambiguous.patch).toBeNull();
+      expect(ambiguous.targetId).toBeNull();
+      expect(ambiguous.messages).toEqual([
+        "Hay 2 instalaciones con ese nombre en ese municipio (INS-000004, INS-000005); indica clave_unidad o identificador_interno.",
+      ]);
+    }
+
+    // Con la clave o el identificador se actualiza la unidad correcta.
+    const byKey = validate({ clave_unidad: "ntims001235" });
+    expect(byKey).toMatchObject({ status: "actualizacion", targetCode: "INS-000005", patch: { official_name: "Linda Vista", phone: "311 000 0000" } });
+    const byCode = validate({ identificador_interno: "INS-000004" });
+    expect(byCode).toMatchObject({ status: "actualizacion", targetCode: "INS-000004", patch: { phone: "311 000 0000" } });
   });
 
   it("una instalación inactiva con categoría inactiva se puede actualizar sin cambiar la categoría", () => {

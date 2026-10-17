@@ -7,6 +7,7 @@ import { RETENTION_MAX_MONTHS, retentionImpactIsEmpty, type RetentionImpact, typ
 import { invalidProps, useActionForm } from "@/lib/admin/use-action-form";
 import { DEFAULT_TIMEZONE, formatDate } from "@/lib/time";
 import { applyRetention, previewRetention, saveRetention } from "../actions";
+import { ReasonField } from "../../_components/reason-field";
 
 function plural(n: number, one: string, many: string) {
   return `${n.toLocaleString("es-MX")} ${n === 1 ? one : many}`;
@@ -37,7 +38,12 @@ function ImpactSummary({ impact }: { impact: RetentionImpact }) {
         <li>
           número de trabajador y teléfono de {plural(impact.workerPrivateRows, "trabajador inactivo", "trabajadores inactivos")} sin cambios en su
           registro ni guardias desde el {impact.inactiveWorkerCutoff ? formatDate(impact.inactiveWorkerCutoff, DEFAULT_TIMEZONE) : "corte"} (se
-          conserva su registro de trabajador).
+          conserva su registro de trabajador);
+        </li>
+        <li>
+          el contenido (valores anterior y nuevo) de{" "}
+          {plural(impact.auditRowsRedacted, "evento de bitácora que copiaba", "eventos de bitácora que copiaban")} esos datos; los eventos se
+          conservan con su autor, fecha, acción y motivo.
         </li>
       </ul>
     </div>
@@ -112,6 +118,7 @@ export function RetentionSettingsForm({ retention }: { retention: RetentionSetti
           />
         </Field>
       </div>
+      <ReasonField id="ret-reason" state={state} error={fieldError("reason")} />
       <FormMessage state={state} />
       <Button type="submit" disabled={pending} aria-disabled={pending}>
         {pending ? "Guardando…" : "Guardar periodos"}
@@ -125,7 +132,7 @@ export function RetentionActions() {
   const preview = useActionForm(previewRetention);
   const apply = useActionForm(applyRetention, {
     confirm: () =>
-      "Se eliminarán DEFINITIVAMENTE las guardias, registros y eventos de bitácora anteriores a las fechas de corte, y el número de trabajador y teléfono de los trabajadores inactivos. Esta acción no se puede deshacer. ¿Aplicar ahora?",
+      "Se eliminarán DEFINITIVAMENTE las guardias, registros y eventos de bitácora anteriores a las fechas de corte, y el número de trabajador y teléfono de los trabajadores inactivos. También se borrarán las copias de esos datos en la bitácora (los eventos se conservan con autor, fecha, acción y motivo, sin los valores). Esta acción no se puede deshacer. ¿Aplicar ahora?",
   });
   const confirmError = apply.fieldError("confirm");
   const previewImpact = preview.state?.ok ? preview.state.data : undefined;

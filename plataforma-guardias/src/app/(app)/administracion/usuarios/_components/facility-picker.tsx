@@ -15,11 +15,14 @@ export function FacilityPicker({
   choices,
   defaultSelected,
   error,
+  onSelectionChange,
 }: {
   idPrefix: string;
   choices: FacilityChoice[];
   defaultSelected: string[];
   error?: string | null;
+  /** Avisa la selección nueva (p. ej. para pedir el motivo del cambio). */
+  onSelectionChange?: (ids: string[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(defaultSelected));
   const [query, setQuery] = useState("");
@@ -30,13 +33,16 @@ export function FacilityPicker({
   const selectedChoices = choices.filter((c) => selected.has(c.id));
   const errorId = `${idPrefix}-facilities-error`;
 
+  function update(next: Set<string>) {
+    setSelected(next);
+    onSelectionChange?.([...next]);
+  }
+
   function toggle(id: string, on: boolean) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+    const next = new Set(selected);
+    if (on) next.add(id);
+    else next.delete(id);
+    update(next);
   }
 
   return (
@@ -71,7 +77,7 @@ export function FacilityPicker({
               {selected.size} {selected.size === 1 ? "sede seleccionada" : "sedes seleccionadas"}
             </span>
             {selected.size > 0 ? (
-              <button type="button" onClick={() => setSelected(new Set())} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-brand-800 hover:bg-brand-50">
+              <button type="button" onClick={() => update(new Set())} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-brand-800 hover:bg-brand-50">
                 Quitar todas
               </button>
             ) : null}

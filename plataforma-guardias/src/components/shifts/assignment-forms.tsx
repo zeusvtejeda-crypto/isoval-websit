@@ -150,6 +150,109 @@ export function AddAssignmentForm({
   );
 }
 
+/**
+ * Corregir los datos de una asignación (punto, «cubre a» y notas) con motivo.
+ * La persona asignada no cambia: para eso se quita o se cancela la asignación.
+ */
+export function EditAssignmentForm({
+  action,
+  assignmentId,
+  workerId,
+  assignedPoint,
+  substituteId,
+  substituteName,
+  notes,
+  assignedWorkers,
+  facilityWorkers,
+}: {
+  action: FormAction;
+  assignmentId: string;
+  /** Persona asignada (no puede sustituirse a sí misma). */
+  workerId: string;
+  assignedPoint: string | null;
+  substituteId: string | null;
+  /** Nombre de la persona sustituida actual (null si no es visible). */
+  substituteName: string | null;
+  notes: string | null;
+  /** Personas asignadas a esta guardia. */
+  assignedWorkers: { id: string; full_name: string }[];
+  /** Trabajadores activos de la sede. */
+  facilityWorkers: WorkerOption[];
+}) {
+  const others = assignedWorkers.filter((w) => w.id !== workerId);
+  const listed = new Set([workerId, ...assignedWorkers.map((w) => w.id)]);
+  const facilityOptions = facilityWorkers.filter((w) => !listed.has(w.id));
+  const currentListed = !substituteId || others.some((w) => w.id === substituteId) || facilityOptions.some((w) => w.id === substituteId);
+  // Tras guardar, los campos se vuelven a montar con los valores guardados (y el motivo vacío).
+  const savedKey = [assignedPoint ?? "", substituteId ?? "", notes ?? ""].join("\u0000");
+  return (
+    <ActionForm action={action} submitLabel="Guardar cambios" resetOnSuccess={false}>
+      {(state) => (
+        <div key={savedKey} className="space-y-3">
+          <input type="hidden" name="assignment_id" value={assignmentId} />
+          <p className="text-sm text-gray-600">El cambio queda en la bitácora con los valores anterior y nuevo y el motivo.</p>
+          <Field
+            label="Punto asignado"
+            htmlFor={`e-point-${assignmentId}`}
+            error={fieldError(state, "assigned_point")}
+            hint="Déjalo vacío para usar el punto de reunión de la guardia."
+          >
+            <Input
+              id={`e-point-${assignmentId}`}
+              name="assigned_point"
+              maxLength={200}
+              defaultValue={assignedPoint ?? ""}
+              {...aria(fieldError(state, "assigned_point"), `e-point-${assignmentId}`)}
+            />
+          </Field>
+          <Field
+            label="Cubre a (sustitución)"
+            htmlFor={`e-sub-${assignmentId}`}
+            error={fieldError(state, "substitute_for_worker_id")}
+            hint="Elige «No es sustitución» para quitarla."
+          >
+            <Select
+              id={`e-sub-${assignmentId}`}
+              name="substitute_for_worker_id"
+              defaultValue={substituteId ?? ""}
+              {...aria(fieldError(state, "substitute_for_worker_id"), `e-sub-${assignmentId}`)}
+            >
+              <option value="">No es sustitución</option>
+              {!currentListed && substituteId ? (
+                <optgroup label="Actual">
+                  <option value={substituteId}>{substituteName ?? "Persona no visible para tu cuenta"}</option>
+                </optgroup>
+              ) : null}
+              {others.length > 0 ? (
+                <optgroup label="Asignados a esta guardia">
+                  {others.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.full_name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {facilityOptions.length > 0 ? (
+                <optgroup label="Otras personas de la sede">
+                  {facilityOptions.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.full_name} · {w.internal_code}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+            </Select>
+          </Field>
+          <Field label="Notas" htmlFor={`e-notes-${assignmentId}`} error={fieldError(state, "notes")}>
+            <Textarea id={`e-notes-${assignmentId}`} name="notes" maxLength={500} className="min-h-16" defaultValue={notes ?? ""} />
+          </Field>
+          <ReasonTextarea id={`e-reason-${assignmentId}`} label="Motivo del cambio" error={fieldError(state, "reason")} />
+        </div>
+      )}
+    </ActionForm>
+  );
+}
+
 const STATUS_HINTS: Record<AssignmentStatus, string> = {
   asignado: "La persona vuelve a estar asignada.",
   ausencia_justificada: "Ausencia con justificación. No cuenta como inasistencia.",

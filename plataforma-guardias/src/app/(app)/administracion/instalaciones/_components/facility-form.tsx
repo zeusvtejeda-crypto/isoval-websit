@@ -235,18 +235,22 @@ export function FacilityForm({
           <Field
             label="Municipio"
             htmlFor="municipality_id"
+            required
             error={err("municipality_id")}
             hint={stateId && stateMunicipalities.length === 0 ? "No hay municipios cargados para este estado." : "Según el estado elegido."}
           >
             <Select
               id="municipality_id"
               name="municipality_id"
+              required
               value={municipalityId}
               onChange={(e) => changeLocation(stateId, e.currentTarget.value)}
               disabled={stateMunicipalities.length === 0}
               {...invalidProps(err("municipality_id"), "municipality_id")}
             >
-              <option value="">Sin municipio</option>
+              <option value="" disabled>
+                Elige el municipio…
+              </option>
               {stateMunicipalities.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}

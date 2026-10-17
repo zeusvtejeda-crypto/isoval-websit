@@ -40,6 +40,7 @@ import {
   correctSession,
   removeAssignment,
   saveIncidentNote,
+  updateAssignment,
   voidSession,
 } from "./actions";
 
@@ -47,6 +48,7 @@ export const metadata = { title: "Detalle de guardia" };
 
 const ACTIONS: AssignmentActions = {
   changeStatus: changeAssignmentStatus,
+  update: updateAssignment,
   remove: removeAssignment,
   correct: correctSession,
   voidSession,
@@ -255,6 +257,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
                   correctionsHref={canManage ? `/correcciones?sede=${shift.facility_id}` : null}
                   viewer={{ isAdmin: user.isAdmin, workerId: user.workerId }}
                   openSessionGraceMinutes={openSessionGrace}
+                  substituteOptions={{ assigned: assignedWorkers, facility: facilityWorkers }}
                 />
               ))}
             </div>

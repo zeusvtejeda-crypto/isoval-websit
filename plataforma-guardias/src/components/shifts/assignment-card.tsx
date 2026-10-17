@@ -25,9 +25,17 @@ import {
   isOwnRecordLocked,
   type Viewer,
 } from "@/lib/shifts/rules";
-import type { FormAction } from "@/lib/shifts/types";
+import type { FormAction, WorkerOption } from "@/lib/shifts/types";
 import type { CorrectionRequestRow, IncidentNoteRow } from "@/lib/shifts/queries";
-import { AssignmentStatusForm, CorrectSessionForm, IncidentNoteForm, ManualSessionForm, RemoveAssignmentForm, VoidSessionForm } from "./assignment-forms";
+import {
+  AssignmentStatusForm,
+  CorrectSessionForm,
+  EditAssignmentForm,
+  IncidentNoteForm,
+  ManualSessionForm,
+  RemoveAssignmentForm,
+  VoidSessionForm,
+} from "./assignment-forms";
 import { AttendanceOnBehalf } from "./attendance-on-behalf";
 import { Disclosure } from "./disclosure";
 
@@ -37,6 +45,7 @@ export const GAP_LABEL = "Tiempo entre salida y regreso (no cuenta)";
 
 export type AssignmentActions = {
   changeStatus: FormAction;
+  update: FormAction;
   remove: FormAction;
   correct: FormAction;
   voidSession: FormAction;
@@ -202,6 +211,7 @@ export function AssignmentCard({
   correctionsHref,
   viewer,
   openSessionGraceMinutes,
+  substituteOptions,
 }: {
   item: AssignmentWithAttendance;
   tz: string;
@@ -225,6 +235,8 @@ export function AssignmentCard({
   viewer: Viewer;
   /** Margen tras el término (attendance.open_session_grace_minutes) para cerrar una entrada con la hora actual. */
   openSessionGraceMinutes: number;
+  /** Opciones de «cubre a» al editar la asignación: asignados a la guardia y trabajadores activos de la sede. */
+  substituteOptions?: { assigned: { id: string; full_name: string }[]; facility: WorkerOption[] };
 }) {
   const { assignment, worker, substituteFor, summary } = item;
   const sessions = [...item.sessions].sort((a, b) => a.check_in_at.localeCompare(b.check_in_at) || a.created_at.localeCompare(b.created_at));
@@ -502,9 +514,22 @@ export function AssignmentCard({
                   hasValidSessions={hasValidSessions}
                 />
               </Disclosure>
+              <Disclosure summary="Editar asignación">
+                <EditAssignmentForm
+                  action={actions.update}
+                  assignmentId={assignment.id}
+                  workerId={assignment.worker_id}
+                  assignedPoint={assignment.assigned_point}
+                  substituteId={assignment.substitute_for_worker_id}
+                  substituteName={substituteFor?.full_name ?? null}
+                  notes={assignment.notes}
+                  assignedWorkers={substituteOptions?.assigned ?? []}
+                  facilityWorkers={substituteOptions?.facility ?? []}
+                />
+              </Disclosure>
             </>
           )}
-          {sessions.length === 0 && !ownLocked ? (
+          {sessions.length === 0 && assignment.status === "asignado" && notes.length === 0 && corrections.length === 0 && !ownLocked ? (
             <Disclosure summary="Quitar asignación" tone="danger">
               <RemoveAssignmentForm action={actions.remove} assignmentId={assignment.id} workerName={workerName} />
             </Disclosure>

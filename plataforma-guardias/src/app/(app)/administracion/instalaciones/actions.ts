@@ -9,6 +9,7 @@ import {
   FACILITIES_BASE_PATH,
   TOLERANCE_DEFAULT,
   changedFields,
+  compatibleUnitKeys,
   defaultTimezoneFor,
   facilityActiveSchema,
   facilityDeleteSchema,
@@ -61,13 +62,11 @@ export async function saveFacility(_prev: SaveResult | null, formData: FormData)
     current = data;
   }
 
-  // Catálogos: categoría, estado y municipio del mismo estado.
+  // Catálogos: categoría, estado y municipio (obligatorio) del mismo estado.
   const [categoryRes, stateRes, municipalityRes] = await Promise.all([
     supabase.from("facility_categories").select("id, name, active").eq("id", v.category_id).maybeSingle(),
     supabase.from("states").select("id, default_timezone").eq("id", v.state_id).maybeSingle(),
-    v.municipality_id
-      ? supabase.from("municipalities").select("id, state_id, timezone").eq("id", v.municipality_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
+    supabase.from("municipalities").select("id, state_id, timezone").eq("id", v.municipality_id).maybeSingle(),
   ]);
   const catalogError = categoryRes.error ?? stateRes.error ?? municipalityRes.error;
   if (catalogError) return { ok: false, message: friendlyDbError(catalogError) };
@@ -76,12 +75,14 @@ export async function saveFacility(_prev: SaveResult | null, formData: FormData)
     return fieldError("category_id", `La categoría «${categoryRes.data.name}» está inactiva. Actívala o elige otra.`);
   }
   if (!stateRes.data) return fieldError("state_id", "Estado no válido.");
-  if (v.municipality_id && (!municipalityRes.data || municipalityRes.data.state_id !== v.state_id)) {
+  if (!municipalityRes.data || municipalityRes.data.state_id !== v.state_id) {
     return fieldError("municipality_id", "El municipio no corresponde al estado elegido.");
   }
-  const timezone = v.timezone ?? defaultTimezoneFor(stateRes.data.default_timezone, municipalityRes.data?.timezone);
+  const timezone = v.timezone ?? defaultTimezoneFor(stateRes.data.default_timezone, municipalityRes.data.timezone);
 
-  // Duplicados: clave de unidad y nombre oficial en el mismo estado y municipio.
+  // Duplicados: clave de unidad y nombre oficial en el mismo estado y municipio
+  // (este último con la misma regla que la importación: unidades co-ubicadas
+  // con claves distintas no chocan).
   const unitKey = v.unit_key ? v.unit_key : null;
   if (unitKey) {
     const { data: dupes, error } = await supabase
@@ -94,17 +95,20 @@ export async function saveFacility(_prev: SaveResult | null, formData: FormData)
     if (clash) return fieldError("unit_key", `Esa clave de unidad ya pertenece a ${clash.internal_code} (${clash.official_name}).`);
   }
   {
-    let q = supabase
+    const { data: dupes, error } = await supabase
       .from("facilities")
-      .select("id, internal_code, official_name")
+      .select("id, internal_code, official_name, unit_key")
       .eq("normalized_name", normalizeText(v.official_name))
-      .eq("state_id", v.state_id);
-    q = v.municipality_id ? q.eq("municipality_id", v.municipality_id) : q.is("municipality_id", null);
-    const { data: dupes, error } = await q.limit(5);
+      .eq("state_id", v.state_id)
+      .eq("municipality_id", v.municipality_id)
+      .limit(50);
     if (error) return { ok: false, message: friendlyDbError(error) };
-    const clash = (dupes ?? []).find((d) => d.id !== v.id);
+    const clash = (dupes ?? []).find((d) => d.id !== v.id && compatibleUnitKeys(unitKey, d.unit_key));
     if (clash) {
-      return fieldError("official_name", `Ya existe ${clash.internal_code} (${clash.official_name}) con el mismo nombre en el mismo estado y municipio.`);
+      return fieldError(
+        "official_name",
+        `Ya existe ${clash.internal_code} (${clash.official_name}) con el mismo nombre en el mismo estado y municipio. Si es otra unidad, ambas deben tener su clave de unidad.`,
+      );
     }
   }
 
@@ -114,7 +118,7 @@ export async function saveFacility(_prev: SaveResult | null, formData: FormData)
     category_id: v.category_id,
     description: v.description ?? null,
     state_id: v.state_id,
-    municipality_id: v.municipality_id ?? null,
+    municipality_id: v.municipality_id,
     address: v.address ?? null,
     latitude: v.latitude,
     longitude: v.longitude,

@@ -127,7 +127,9 @@ export function DirectoryExplorer({ facilities, lookups, initialParams }: Direct
   const updating = deferredFilters !== filters;
   const mountMap = mapActivated || isDesktop;
 
-  const categoryOptions = lookups.categories.filter((c) => c.active || c.slug === filters.categoria);
+  // lookups.categories ya trae solo las activas y las inactivas que aún usa
+  // alguna instalación pública: todas sirven para filtrar.
+  const categoryOptions = lookups.categories;
   const municipalityOptions = municipalitiesForState(lookups.municipalities, filters.estado);
   const groupMunicipalities = filters.estado == null && lookups.states.length > 1;
 

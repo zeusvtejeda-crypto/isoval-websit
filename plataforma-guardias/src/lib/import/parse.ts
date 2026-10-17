@@ -39,11 +39,30 @@ function cleanRows(headers: string[], rows: string[][]): ParsedFile {
   return { headers: norm.filter(Boolean), rows: out };
 }
 
+export const NOT_UTF8_MESSAGE = "El archivo no está en UTF-8: guárdalo como «CSV UTF-8» o .xlsx";
+
+/**
+ * Texto de un CSV a partir de sus bytes: UTF-8 (con o sin BOM) y, si no es UTF-8
+ * válido, Windows-1252, que es lo que guarda Excel en Windows con «CSV
+ * (delimitado por comas)». Así los acentos no se convierten en «�».
+ */
+export function decodeCsvBytes(bytes: ArrayBuffer | Uint8Array): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
+}
+
 export function parseCsv(text: string): ParsedFile {
   const result = Papa.parse<string[]>(text.replace(/^﻿/, ""), { skipEmptyLines: "greedy" });
   if (result.errors.length && result.data.length === 0) {
     throw new Error("No se pudo leer el CSV: " + result.errors[0].message);
   }
+  // «�» (U+FFFD) solo aparece si el texto ya se leyó con otra codificación:
+  // se rechaza en lugar de importar nombres oficiales dañados.
+  const damaged = result.data.findIndex((r) => r.some((c) => (c ?? "").includes("\ufffd")));
+  if (damaged >= 0) throw new Error(`${NOT_UTF8_MESSAGE} (la fila ${damaged + 1} tiene caracteres dañados «\ufffd»).`);
   const [headers = [], ...rows] = result.data;
   return cleanRows(headers, rows);
 }
@@ -172,7 +191,7 @@ export async function parseImportFile(file: File): Promise<ParsedFile> {
   if (file.size > MAX_IMPORT_BYTES) throw new Error("El archivo supera 5 MB.");
   const name = file.name.toLowerCase();
   if (name.endsWith(".csv") || file.type === "text/csv") {
-    return parseCsv(await file.text());
+    return parseCsv(decodeCsvBytes(await file.arrayBuffer()));
   }
   if (name.endsWith(".xlsx") || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
     return parseXlsx(await file.arrayBuffer());

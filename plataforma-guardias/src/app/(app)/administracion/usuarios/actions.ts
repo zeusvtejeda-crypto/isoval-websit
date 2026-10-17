@@ -17,7 +17,6 @@ import {
   reasonRequired,
   resetPasswordSchema,
   roleUsesFacilityScopes,
-  scopeChanges,
   updateAccountSchema,
 } from "@/lib/admin/accounts";
 import { getAuthAdmin } from "@/lib/admin/accounts-server";
@@ -58,19 +57,14 @@ async function checkFacilities(supabase: ServerSupabase, ids: readonly string[])
   return null;
 }
 
-async function syncScopes(supabase: ServerSupabase, userId: string, next: readonly string[]): Promise<string | null> {
-  const { data, error } = await supabase.from("user_facility_scopes").select("facility_id").eq("user_id", userId);
-  if (error) return friendlyDbError(error, "No se pudieron leer las sedes asignadas.");
-  const { add, remove } = scopeChanges((data ?? []).map((s) => s.facility_id), next);
-  if (remove.length) {
-    const { error: delError } = await supabase.from("user_facility_scopes").delete().eq("user_id", userId).in("facility_id", remove);
-    if (delError) return friendlyDbError(delError, "No se pudieron quitar sedes asignadas.");
-  }
-  if (add.length) {
-    const { error: insError } = await supabase.from("user_facility_scopes").insert(add.map((facility_id) => ({ user_id: userId, facility_id })));
-    if (insError) return friendlyDbError(insError, "No se pudieron asignar las sedes.");
-  }
-  return null;
+/**
+ * Reemplaza las sedes asignadas en una sola transacción (set_user_scopes). Las
+ * filas se insertan y se borran, así que el motivo viaja a la bitácora por la
+ * función, también al quitar sedes.
+ */
+async function syncScopes(supabase: ServerSupabase, userId: string, next: readonly string[], reason: string): Promise<string | null> {
+  const { error } = await supabase.rpc("set_user_scopes", { p_user_id: userId, p_facility_ids: [...next], p_reason: reason });
+  return error ? friendlyDbError(error, "No se pudieron guardar las sedes asignadas.") : null;
 }
 
 /**
@@ -142,7 +136,7 @@ export async function createAccount(_prev: ActionResult<CreatedAccount> | null, 
   if (!updated || updated.length === 0) return rollback("No se encontró el perfil creado para la cuenta.");
 
   if (roleUsesFacilityScopes(v.role) && v.facility_ids.length) {
-    const scopeIssue = await syncScopes(supabase, userId, v.facility_ids);
+    const scopeIssue = await syncScopes(supabase, userId, v.facility_ids, "Alta de cuenta de acceso");
     if (scopeIssue) return rollback(scopeIssue);
   }
 
@@ -154,7 +148,7 @@ export async function createAccount(_prev: ActionResult<CreatedAccount> | null, 
   };
 }
 
-/** Edición: nombre, rol, trabajador vinculado y sedes. Motivo obligatorio si cambia el rol. */
+/** Edición: nombre, rol, trabajador vinculado y sedes. Motivo obligatorio si cambia algo más que el nombre. */
 export async function updateAccount(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const actor: SessionUser = await requireAdmin();
   const parsed = updateAccountSchema.safeParse(readUpdateAccountForm(formData));
@@ -169,10 +163,6 @@ export async function updateAccount(_prev: ActionResult | null, formData: FormDa
   if (current.id === actor.id && v.role !== current.role) {
     return fieldFailure("role", "No puedes cambiar tu propio rol. Pide a otra persona con rol de administración que lo haga.");
   }
-  if (reasonRequired(current, { role: v.role, active: current.active }) && !v.reason) {
-    return fieldFailure("reason", "Indica el motivo del cambio de rol (mínimo 5 caracteres).");
-  }
-
   const nextWorker = v.worker_id ?? null;
   if (nextWorker && nextWorker !== current.worker_id) {
     const workerIssue = await checkWorker(supabase, nextWorker, current.id);
@@ -183,11 +173,19 @@ export async function updateAccount(_prev: ActionResult | null, formData: FormDa
 
   const { data: scopeRows, error: scopeReadError } = await supabase.from("user_facility_scopes").select("facility_id").eq("user_id", v.user_id);
   if (scopeReadError) return failure(friendlyDbError(scopeReadError, "No se pudieron leer las sedes asignadas."));
+  const currentScopes = (scopeRows ?? []).map((s) => s.facility_id);
   const changes = changedAccountFields(
-    { display_name: current.display_name, role: current.role, worker_id: current.worker_id, facility_ids: (scopeRows ?? []).map((s) => s.facility_id) },
+    { display_name: current.display_name, role: current.role, worker_id: current.worker_id, facility_ids: currentScopes },
     { display_name: v.display_name, role: v.role, worker_id: nextWorker, facility_ids: v.facility_ids },
   );
   if (changes.length === 0) return { ok: true, message: "No hubo cambios que guardar." };
+  const needsReason = reasonRequired(
+    { role: current.role, active: current.active, worker_id: current.worker_id, facility_ids: currentScopes },
+    { role: v.role, active: current.active, worker_id: nextWorker, facility_ids: v.facility_ids },
+  );
+  if (needsReason && !v.reason) {
+    return fieldFailure("reason", "Indica el motivo del cambio (mínimo 5 caracteres): es obligatorio al cambiar el rol, el trabajador vinculado o las sedes.");
+  }
 
   const profileChanged = changes.some((c) => c !== "sedes asignadas");
   if (profileChanged) {
@@ -202,7 +200,7 @@ export async function updateAccount(_prev: ActionResult | null, formData: FormDa
     if (!updated || updated.length === 0) return failure("No tienes permiso para modificar esta cuenta.");
   }
 
-  const scopeIssue = await syncScopes(supabase, v.user_id, v.facility_ids);
+  const scopeIssue = changes.includes("sedes asignadas") ? await syncScopes(supabase, v.user_id, v.facility_ids, v.reason ?? "") : null;
   if (scopeIssue) {
     revalidateAccounts(v.user_id);
     return failure(profileChanged ? `Se guardaron los datos de la cuenta, pero no las sedes: ${scopeIssue}` : scopeIssue);
@@ -268,7 +266,11 @@ export async function setAccountActive(_prev: ActionResult | null, formData: For
   };
 }
 
-/** Restablece una contraseña temporal (capturada o generada; la generada se muestra una vez). */
+/**
+ * Restablece una contraseña temporal (capturada o generada; la generada se
+ * muestra una vez). Auth no pasa por las tablas auditadas: la constancia (con
+ * motivo y sin la contraseña) la deja log_password_reset.
+ */
 export async function resetAccountPassword(
   _prev: ActionResult<PasswordResetResult> | null,
   formData: FormData,
@@ -290,11 +292,18 @@ export async function resetAccountPassword(
   const { error } = await admin.api.updateUserById(v.user_id, { password });
   if (error) return failure(friendlyAuthError(error, "No se pudo restablecer la contraseña."));
 
+  // La contraseña ya cambió: si la constancia falla se avisa, no se oculta el restablecimiento.
+  const { error: auditError } = await supabase.rpc("log_password_reset", { p_user_id: v.user_id, p_reason: v.reason });
+  const auditWarning = auditError
+    ? ` Atención: no quedó constancia en la bitácora (${friendlyDbError(auditError, "error al registrar")}); avisa a otra persona de administración.`
+    : "";
+
   return {
     ok: true,
-    message: current.active
-      ? "Contraseña temporal restablecida."
-      : "Contraseña temporal restablecida. La cuenta sigue inactiva: reactívala para que pueda iniciar sesión.",
+    message:
+      (current.active
+        ? "Contraseña temporal restablecida."
+        : "Contraseña temporal restablecida. La cuenta sigue inactiva: reactívala para que pueda iniciar sesión.") + auditWarning,
     data: { generatedPassword: v.password_mode === "generar" ? password : null },
   };
 }

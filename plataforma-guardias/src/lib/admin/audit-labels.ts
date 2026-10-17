@@ -30,10 +30,12 @@ export const AUDIT_TABLE_LABELS: Record<string, string> = {
   attendance_qr_tokens: "Códigos QR de registro",
   states: "Entidades federativas",
   municipalities: "Municipios",
+  // Restablecimientos de contraseña (log_password_reset; nunca guarda la contraseña).
+  "auth.users": "Contraseñas de cuentas de acceso",
 };
 
 /** Tablas cuya bitácora solo ve administración (política audit_read). */
-export const ADMIN_ONLY_AUDIT_TABLES = ["worker_private", "profiles", "user_facility_scopes"] as const;
+export const ADMIN_ONLY_AUDIT_TABLES = ["worker_private", "profiles", "user_facility_scopes", "auth.users"] as const;
 /** Eventos sin sede: solo administración los ve. */
 export const GLOBAL_AUDIT_TABLES = ["facility_categories", "app_settings", "retention", "demo_data", "states", "municipalities"] as const;
 
@@ -117,6 +119,7 @@ export const FIELD_LABELS: Record<string, string> = {
   employee_number: "Número de trabajador",
   role: "Rol",
   display_name: "Nombre visible",
+  password: "Contraseña",
   user_id: "Cuenta",
   granted_by: "Asignada por",
   granted_at: "Fecha de asignación",
@@ -174,8 +177,11 @@ export const FIELD_LABELS: Record<string, string> = {
   shifts: "Guardias",
   sessions: "Registros de entrada y salida",
   audit_rows: "Eventos de bitácora",
+  audit_rows_redacted: "Eventos de bitácora con contenido eliminado",
+  worker_private_rows: "Datos privados de trabajadores inactivos",
   attendance_cutoff: "Fecha de corte (guardias y asistencia)",
   audit_cutoff: "Fecha de corte (bitácora)",
+  inactive_worker_cutoff: "Fecha de corte (trabajadores inactivos)",
   workers: "Trabajadores",
   facilities: "Instalaciones",
   executed: "Ejecutada",
@@ -200,6 +206,7 @@ export const SETTING_FIELD_LABELS: Record<string, string> = {
   legal_review_status: "Revisión jurídica",
   attendance_months: "Meses de conservación de guardias y asistencia",
   audit_months: "Meses de conservación de bitácora",
+  inactive_worker_months: "Meses para conservar datos privados de trabajadores inactivos",
   checkin_window_before_minutes: "Ventana de entrada antes del inicio (min)",
   open_session_grace_minutes: "Margen para entradas abiertas (min)",
   text: "Texto",

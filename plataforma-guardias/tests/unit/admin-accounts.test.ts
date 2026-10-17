@@ -17,9 +17,11 @@ import {
   ownAttendanceRestricted,
   parseAccountFilters,
   readCreateAccountForm,
+  readResetPasswordForm,
   readUpdateAccountForm,
   reasonRequired,
   resetPasswordSchema,
+  roleAllowsWorker,
   roleUsesFacilityScopes,
   scopeChanges,
   updateAccountSchema,
@@ -123,16 +125,58 @@ describe("esquemas de edición, estado y contraseña", () => {
   });
 
   it("restablecer: generar no requiere contraseña; manual sí", () => {
-    expect(resetPasswordSchema.safeParse({ user_id: U1, password_mode: "generar" }).success).toBe(true);
-    expect(resetPasswordSchema.safeParse({ user_id: U1, password_mode: "manual", password: "123" }).success).toBe(false);
+    const reason = "Olvidó su contraseña";
+    expect(resetPasswordSchema.safeParse({ user_id: U1, password_mode: "generar", reason }).success).toBe(true);
+    expect(resetPasswordSchema.safeParse({ user_id: U1, password_mode: "manual", password: "123", reason }).success).toBe(false);
+  });
+
+  it("restablecer: el motivo es obligatorio (queda en la bitácora)", () => {
+    const missing = resetPasswordSchema.safeParse(readResetPasswordForm(form([["user_id", U1]])));
+    expect(missing.success).toBe(false);
+    if (!missing.success) expect(missing.error.issues.map((i) => i.path[0])).toEqual(["reason"]);
+    const short = resetPasswordSchema.safeParse(readResetPasswordForm(form([["user_id", U1], ["reason", " abcd "]])));
+    expect(short.success).toBe(false);
+    const ok = resetPasswordSchema.safeParse(readResetPasswordForm(form([["user_id", U1], ["reason", "  Solicitud de la persona titular  "]])));
+    expect(ok.success && ok.data).toMatchObject({ password_mode: "generar", reason: "Solicitud de la persona titular" });
+  });
+});
+
+describe("auditoría de solo lectura", () => {
+  it("no se vincula a un trabajador al crear ni al editar", () => {
+    expect(roleAllowsWorker("auditor")).toBe(false);
+    expect(roleAllowsWorker("coordinador")).toBe(true);
+    expect(roleAllowsWorker("trabajador")).toBe(true);
+    const create = createAccountSchema.safeParse({
+      email: "audita@ejemplo.mx",
+      display_name: "Auditoría",
+      role: "auditor",
+      worker_id: W1,
+      facility_ids: [F1],
+      password_mode: "generar",
+    });
+    expect(create.success).toBe(false);
+    if (!create.success) expect(create.error.issues.map((i) => [i.path[0], i.message])).toEqual([["worker_id", expect.stringMatching(/solo lectura/)]]);
+    const update = updateAccountSchema.safeParse({ user_id: U1, display_name: "Auditoría", role: "auditor", worker_id: W1, facility_ids: [F1] });
+    expect(update.success).toBe(false);
+    if (!update.success) expect(update.error.issues[0].path).toEqual(["worker_id"]);
+    expect(updateAccountSchema.safeParse({ user_id: U1, display_name: "Auditoría", role: "auditor", facility_ids: [F1] }).success).toBe(true);
+    // Coordinación sí puede cubrir guardias.
+    expect(updateAccountSchema.safeParse({ user_id: U1, display_name: "Coord", role: "coordinador", worker_id: W1, facility_ids: [F1] }).success).toBe(true);
   });
 });
 
 describe("reglas de cambio", () => {
-  it("motivo obligatorio solo si cambia el rol o el estado", () => {
+  it("motivo obligatorio si cambian el rol, el estado, el trabajador vinculado o las sedes", () => {
     expect(reasonRequired({ role: "trabajador", active: true }, { role: "trabajador", active: true })).toBe(false);
     expect(reasonRequired({ role: "trabajador", active: true }, { role: "coordinador", active: true })).toBe(true);
     expect(reasonRequired({ role: "admin", active: true }, { role: "admin", active: false })).toBe(true);
+    const coord = { role: "coordinador" as const, active: true, worker_id: null, facility_ids: [F1, F2] };
+    expect(reasonRequired(coord, { ...coord, facility_ids: [F2, F1] })).toBe(false);
+    expect(reasonRequired(coord, { ...coord, facility_ids: [F1] })).toBe(true);
+    expect(reasonRequired(coord, { ...coord, facility_ids: [F1, F2, F2] })).toBe(false);
+    expect(reasonRequired(coord, { ...coord, worker_id: W1 })).toBe(true);
+    expect(reasonRequired({ ...coord, worker_id: W1 }, { ...coord, worker_id: null })).toBe(true);
+    expect(reasonRequired({ ...coord, worker_id: W1 }, { ...coord, worker_id: W2 })).toBe(true);
   });
 
   it("calcula sedes por agregar y quitar", () => {

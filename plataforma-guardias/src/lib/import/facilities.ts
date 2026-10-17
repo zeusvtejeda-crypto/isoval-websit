@@ -10,10 +10,12 @@
  * - Duplicados contra la base: clave de unidad, identificador interno o nombre
  *   normalizado + estado + municipio.
  * - El nombre + lugar solo cuenta como duplicado cuando alguna de las dos
- *   instalaciones no tiene clave de unidad: en catálogos oficiales (CLUES) hay
- *   unidades distintas con el mismo nombre en el mismo municipio (p. ej. una
- *   unidad médica rural y un centro de atención obstétrica co-ubicados).
- * - La fuente de información es obligatoria en cada fila.
+ *   instalaciones no tiene clave de unidad (compatibleUnitKeys): en catálogos
+ *   oficiales (CLUES) hay unidades distintas con el mismo nombre en el mismo
+ *   municipio (p. ej. una unidad médica rural y un centro de atención
+ *   obstétrica co-ubicados). Si una fila sin clave ni identificador coincide
+ *   con varias, no se adivina cuál actualizar: se marca como duplicada.
+ * - El municipio y la fuente de información son obligatorios en cada fila.
  * - En actualizaciones, las celdas opcionales vacías conservan lo registrado.
  *
  * Solo importa tipos de @/lib/import/parse para poder usarse en el navegador
@@ -38,6 +40,7 @@ import {
   UNIT_KEY_MAX,
   checkCoordinates,
   collapseSpaces,
+  compatibleUnitKeys,
   defaultTimezoneFor,
   isHttpUrlList,
   matchMexicoTimezone,
@@ -81,7 +84,7 @@ export const FACILITY_IMPORT_HEADERS = [
 ] as const;
 export type FacilityImportHeader = (typeof FACILITY_IMPORT_HEADERS)[number];
 
-export const FACILITY_REQUIRED_HEADERS = ["nombre_oficial", "categoria", "estado", "fuente"] as const satisfies readonly FacilityImportHeader[];
+export const FACILITY_REQUIRED_HEADERS = ["nombre_oficial", "categoria", "estado", "municipio", "fuente"] as const satisfies readonly FacilityImportHeader[];
 
 /** Encabezados alternos aceptados (ya normalizados como en parse.ts). */
 const HEADER_ALIASES: Record<string, FacilityImportHeader> = {
@@ -221,7 +224,7 @@ export type FacilityWriteValues = {
   category_id: number;
   description: string | null;
   state_id: number;
-  municipality_id: number | null;
+  municipality_id: number;
   address: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -389,7 +392,7 @@ export function resolveMunicipality(value: string, state: ImportStateRef, munici
       error: `Hay ${byName.length} municipios llamados «${v}» en ${state.name}; usa la clave INEGI (${byName.map((m) => m.inegi_code).join(" o ")}).`,
     };
   }
-  if (inState.length === 0) return { error: `No hay municipios cargados para ${state.name}; deja vacía la columna «municipio».` };
+  if (inState.length === 0) return { error: `No hay municipios cargados para ${state.name}: no se pueden registrar instalaciones en ese estado.` };
   return { error: `El municipio «${v}» no corresponde a ${state.name}.` };
 }
 
@@ -406,7 +409,6 @@ type ParsedCells = {
   description: string | undefined;
   state: ImportStateRef | undefined;
   municipality: ImportMunicipalityRef | undefined;
-  municipalityText: string | undefined;
   address: string | undefined;
   /** Par de coordenadas capturado (undefined = ambas vacías). */
   coords: { latitude: number; longitude: number } | undefined;
@@ -461,7 +463,8 @@ function parseCells(cells: CanonicalRow, catalogs: FacilityImportCatalogs, optio
 
   const municipalityText = cells.municipio?.trim() || undefined;
   let municipality: ImportMunicipalityRef | undefined;
-  if (municipalityText && state) {
+  if (!municipalityText) errors.push("Falta el municipio.");
+  else if (state) {
     const r = resolveMunicipality(municipalityText, state, catalogs.municipalities);
     if ("error" in r) errors.push(r.error);
     else municipality = r.value;
@@ -551,7 +554,6 @@ function parseCells(cells: CanonicalRow, catalogs: FacilityImportCatalogs, optio
     description,
     state,
     municipality,
-    municipalityText,
     address,
     coords,
     phone,
@@ -634,16 +636,15 @@ export function validateFacilityRows(
     const pk = namePlaceKey(f.official_name, f.state_id, f.municipality_id);
     byPlace.set(pk, [...(byPlace.get(pk) ?? []), f]);
   }
-  /** Mismo nombre y lugar solo es la misma instalación si alguna no tiene clave de unidad o si coinciden. */
-  const compatibleUnits = (a: string | null, b: string | null) => !a || !b || a === b;
-  const placeMatch = (key: string | null, unit: string | null, excludeId?: string): ExistingFacilityRef | undefined =>
-    key ? (byPlace.get(key) ?? []).find((f) => f.id !== excludeId && compatibleUnits(unit, unitKeyKey(f.unit_key))) : undefined;
+  /** Registradas con el mismo nombre y lugar que podrían ser la misma instalación (ver compatibleUnitKeys). */
+  const placeMatches = (key: string | null, unit: string | null, excludeId?: string): ExistingFacilityRef[] =>
+    key ? (byPlace.get(key) ?? []).filter((f) => f.id !== excludeId && compatibleUnitKeys(unit, f.unit_key)) : [];
 
   // Lo visto en el archivo (primera fila que usa cada clave).
   const seenUnit = new Map<string, number>();
   const seenPlace = new Map<string, { row: number; unit: string | null }[]>();
   const firstSeenPlace = (key: string | null, unit: string | null) =>
-    key ? (seenPlace.get(key) ?? []).find((e) => compatibleUnits(unit, e.unit))?.row : undefined;
+    key ? (seenPlace.get(key) ?? []).find((e) => compatibleUnitKeys(unit, e.unit))?.row : undefined;
   const rememberPlace = (key: string | null, unit: string | null, row: number) => {
     if (key) seenPlace.set(key, [...(seenPlace.get(key) ?? []), { row, unit }]);
   };
@@ -666,7 +667,7 @@ export function validateFacilityRows(
 
     // Claves de la fila tal como vienen en el archivo.
     const unitKey = unitKeyKey(p.unitKey);
-    const placeKey = p.name && p.state && (!p.municipalityText || p.municipality) ? namePlaceKey(p.name, p.state.id, p.municipality?.id ?? null) : null;
+    const placeKey = p.name && p.state && p.municipality ? namePlaceKey(p.name, p.state.id, p.municipality.id) : null;
     const firstUnitRow = unitKey ? seenUnit.get(unitKey) : undefined;
     const firstPlaceRow = firstSeenPlace(placeKey, unitKey);
     const firstCodeRow = p.internalCode ? seenCode.get(p.internalCode) : undefined;
@@ -674,12 +675,13 @@ export function validateFacilityRows(
     rememberPlace(placeKey, unitKey, rowNumber);
     remember(seenCode, p.internalCode ?? null, rowNumber);
 
-    if (errors.length > 0 || !p.category || !p.state) {
+    if (errors.length > 0 || !p.category || !p.state || !p.municipality) {
       result.messages = errors.length > 0 ? errors : ["Fila incompleta."];
       return result;
     }
     const state = p.state;
     const category = p.category;
+    const municipality = p.municipality;
 
     // --- Duplicados dentro del archivo ---
     if (firstCodeRow !== undefined) {
@@ -717,7 +719,20 @@ export function validateFacilityRows(
       result.messages = [`La clave de unidad «${p.unitKey}» ya pertenece a ${describeFacility(matchUnit)}.`];
       return result;
     }
-    target = target ?? matchUnit ?? placeMatch(placeKey, unitKey);
+    target = target ?? matchUnit;
+    if (!target) {
+      // Sin identificador ni clave registrada: por nombre y lugar, sin adivinar
+      // cuál actualizar si hay varias unidades co-ubicadas con ese nombre.
+      const candidates = placeMatches(placeKey, unitKey);
+      if (candidates.length > 1) {
+        result.status = "duplicada";
+        result.messages = [
+          `Hay ${candidates.length} instalaciones con ese nombre en ese municipio (${candidates.map((f) => f.internal_code).join(", ")}); indica clave_unidad o identificador_interno.`,
+        ];
+        return result;
+      }
+      target = candidates[0];
+    }
 
     if (!target) {
       // --- Nueva ---
@@ -736,7 +751,6 @@ export function validateFacilityRows(
         result.messages = ["Para marcar como verificada indica la fecha de verificación (columna «fecha_verificacion»)."];
         return result;
       }
-      const municipalityId = p.municipality?.id ?? null;
       result.status = "nueva";
       result.create = {
         official_name: p.name,
@@ -744,7 +758,7 @@ export function validateFacilityRows(
         category_id: category.id,
         description: p.description ?? null,
         state_id: state.id,
-        municipality_id: municipalityId,
+        municipality_id: municipality.id,
         address: p.address ?? null,
         latitude: p.coords?.latitude ?? null,
         longitude: p.coords?.longitude ?? null,
@@ -757,14 +771,13 @@ export function validateFacilityRows(
         last_verified_at: p.verifiedAt ?? null,
         verification_status: verificationStatus,
         notes: p.notes ?? null,
-        timezone: p.timezone ?? defaultTimezoneFor(state.default_timezone, p.municipality?.timezone),
+        timezone: p.timezone ?? defaultTimezoneFor(state.default_timezone, municipality.timezone),
         arrival_tolerance_minutes: p.tolerance ?? TOLERANCE_DEFAULT,
         is_demo: markDemo,
       };
       const notes = [`Se creará una instalación nueva en ${result.place ?? state.name}.`];
       if (markDemo) notes.push("Se marcará como dato de demostración.");
       if (!p.coords) notes.push("Sin coordenadas: no aparecerá en el mapa.");
-      if (!p.municipality) notes.push("Sin municipio.");
       if (!p.timezone) notes.push(`Zona horaria por omisión: ${result.create.timezone}.`);
       result.messages = notes;
       return result;
@@ -793,21 +806,14 @@ export function validateFacilityRows(
     }
     seenTarget.set(target.id, rowNumber);
 
-    // Valores finales (las celdas opcionales vacías conservan lo registrado).
+    // Valores finales (las celdas opcionales vacías conservan lo registrado;
+    // estado y municipio se exigen siempre, así que la ubicación nunca queda a medias).
     const notes: string[] = [];
-    const stateChanged = state.id !== target.state_id;
-    let municipalityId: number | null = target.municipality_id;
-    if (p.municipality) municipalityId = p.municipality.id;
-    else if (stateChanged && target.municipality_id !== null) {
-      municipalityId = null;
-      notes.push("Se quitará el municipio porque cambió el estado.");
-    }
-    const locationChanged = stateChanged || municipalityId !== target.municipality_id;
+    const locationChanged = state.id !== target.state_id || municipality.id !== target.municipality_id;
     let timezone = target.timezone;
     if (p.timezone) timezone = p.timezone;
     else if (locationChanged) {
-      const muni = municipalityId ? municipalityById.get(municipalityId) : undefined;
-      timezone = defaultTimezoneFor(state.default_timezone, muni?.timezone);
+      timezone = defaultTimezoneFor(state.default_timezone, municipality.timezone);
       if (timezone !== target.timezone) notes.push(`La zona horaria se ajusta a la de la nueva ubicación (${timezone}).`);
     }
 
@@ -818,7 +824,7 @@ export function validateFacilityRows(
       category_id: category.id,
       description: p.description ?? target.description,
       state_id: state.id,
-      municipality_id: municipalityId,
+      municipality_id: municipality.id,
       address: p.address ?? target.address,
       latitude: p.coords ? p.coords.latitude : target.latitude,
       longitude: p.coords ? p.coords.longitude : target.longitude,
@@ -857,7 +863,7 @@ export function validateFacilityRows(
       return result;
     }
     const finalPlace = namePlaceKey(final.official_name, final.state_id, final.municipality_id);
-    const placeClash = placeMatch(finalPlace, finalUnit, target.id);
+    const placeClash = placeMatches(finalPlace, finalUnit, target.id)[0];
     if (placeClash) {
       result.status = "duplicada";
       result.messages = [`Ya existe ${describeFacility(placeClash)} con el mismo nombre oficial en el mismo estado y municipio.`];

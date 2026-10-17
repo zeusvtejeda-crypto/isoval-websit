@@ -11,6 +11,7 @@ import {
   WORKER_IMPORT_MODES,
   checkWorkerHeaders,
   describeSummary,
+  employeeNumberKeysInRows,
   headerWarnings,
   toPreviewRows,
   validateWorkerRows,
@@ -69,7 +70,7 @@ export async function processWorkerImport(_prev: ActionResult<ImportOutcome> | n
   const supabase = await createClient();
   let context: Awaited<ReturnType<typeof loadImportContext>>;
   try {
-    context = await loadImportContext(supabase, user, mode);
+    context = await loadImportContext(supabase, user, mode, employeeNumberKeysInRows(parsed.rows));
   } catch {
     return { ok: false, message: "No se pudieron cargar los catálogos para validar. Inténtalo de nuevo." };
   }

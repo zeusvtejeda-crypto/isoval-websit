@@ -19,9 +19,13 @@ const KEYS_LIMIT = 300;
 const COLUMNS: { name: string; required?: boolean; description: string }[] = [
   { name: "nombre_completo", required: true, description: "Nombre y apellidos (3 a 200 caracteres)." },
   { name: "numero_trabajador", description: "Opcional y privado. Si ya existe, se actualiza a esa persona (o se omite en «solo crear»)." },
-  { name: "estado", description: "Nombre, abreviatura o clave INEGI (Nayarit, NAY o 18). Vacío: el de la instalación o Nayarit." },
+  { name: "estado", description: "Nombre, abreviatura o clave INEGI (Nayarit, NAY o 18). Vacío: el de la instalación (en altas) o sin cambio (en actualizaciones)." },
   { name: "municipio", description: "Nombre o clave INEGI de 3 dígitos; debe pertenecer al estado." },
-  { name: "instalacion", description: "Clave de unidad, identificador interno (INS-…) o nombre oficial exacto." },
+  {
+    name: "instalacion",
+    description:
+      "Clave de unidad, identificador interno (INS-…) o nombre oficial exacto. Obligatoria en altas: cada trabajador pertenece a una sede. Vacía en actualizaciones: conserva la registrada.",
+  },
   { name: "area", description: "Opcional (máximo 120 caracteres)." },
   { name: "puesto", description: "Opcional (máximo 120 caracteres)." },
   { name: "turno_habitual", description: `Opcional: ${USUAL_SHIFT_OPTIONS.join(", ")}.` },
@@ -98,7 +102,10 @@ export default async function ImportarTrabajadoresPage() {
               </tbody>
             </Table>
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700">
-              <li>Duplicados: número de trabajador repetido en el archivo o ya registrado, y mismo nombre en la misma sede.</li>
+              <li>
+                Duplicados: número de trabajador repetido en el archivo o ya registrado (también en sedes que no gestionas), y mismo nombre en la
+                misma sede.
+              </li>
               <li>En actualizaciones, las celdas vacías conservan el valor registrado.</li>
               <li>Cada cambio queda en la bitácora con el motivo «Importación de archivo».</li>
               <li>La fila 1 es la de encabezados. Las filas completamente vacías se omiten y no cuentan en la numeración de la vista previa.</li>

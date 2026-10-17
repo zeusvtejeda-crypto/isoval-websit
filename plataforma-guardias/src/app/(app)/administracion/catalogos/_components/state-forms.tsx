@@ -2,27 +2,66 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FormMessage, Select } from "@/components/ui/form";
+import { FormMessage, Input, Select } from "@/components/ui/form";
 import { cn } from "@/lib/cn";
 import { TIMEZONE_CHOICES, timezoneChoiceLabel } from "@/lib/admin/catalogs";
+import { REASON_MAX, REASON_MIN } from "@/lib/admin/form";
 import { invalidProps, useActionForm } from "@/lib/admin/use-action-form";
 import { saveStateTimezone, setStateCoverage } from "../actions";
 
+/** Motivo breve para los controles compactos de la lista (queda en la bitácora). */
+export function CompactReasonInput({ id, error }: { id: string; error: string | null }) {
+  return (
+    <div className="space-y-1">
+      <label htmlFor={id} className="block text-sm font-medium text-gray-800">
+        Motivo del cambio<span className="text-red-700"> *</span>
+      </label>
+      <Input
+        id={id}
+        name="reason"
+        required
+        minLength={REASON_MIN}
+        maxLength={REASON_MAX}
+        autoComplete="off"
+        className="py-2 text-sm"
+        {...invalidProps(error, id)}
+      />
+      {error ? (
+        <p id={`${id}-error`} className="text-sm font-medium text-red-700">
+          {error}
+        </p>
+      ) : (
+        <p className="text-xs text-gray-600">Queda en la bitácora.</p>
+      )}
+    </div>
+  );
+}
+
 /**
- * Interruptor «Cobertura activa» (states.enabled). Envía el valor contrario
- * al actual; la página se vuelve a cargar con el estado guardado.
+ * «Cobertura activa» (states.enabled). El interruptor abre la confirmación
+ * con el motivo; al guardar se envía el valor contrario al actual y la página
+ * se vuelve a cargar con el estado guardado.
  */
 export function StateCoverageSwitch({ stateId, stateName, enabled }: { stateId: number; stateName: string; enabled: boolean }) {
-  const { state, formAction, pending, onSubmit } = useActionForm(setStateCoverage);
+  const { state, formAction, pending, onSubmit, fieldError } = useActionForm(setStateCoverage);
+  const [open, setOpen] = useState(false);
+  const [handled, setHandled] = useState(state);
+  if (state !== handled) {
+    setHandled(state);
+    if (state?.ok) setOpen(false);
+  }
+  const panelId = `state-coverage-${stateId}`;
+  const reasonError = fieldError("reason");
   return (
     <form action={formAction} onSubmit={onSubmit} className="space-y-1">
       <input type="hidden" name="state_id" value={stateId} />
       <input type="hidden" name="enabled" value={enabled ? "0" : "1"} />
       <button
-        type="submit"
-        role="switch"
-        aria-checked={enabled}
-        aria-label={`Cobertura activa en ${stateName}`}
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-label={`Cobertura en ${stateName}: ${enabled ? "activa" : "inactiva"}. Cambiar`}
+        onClick={() => setOpen((o) => !o)}
         disabled={pending}
         aria-disabled={pending}
         className="inline-flex min-h-11 items-center gap-2 rounded-xl px-1 text-sm font-medium text-gray-900 hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-brand-700 disabled:cursor-wait"
@@ -38,7 +77,20 @@ export function StateCoverageSwitch({ stateId, stateName, enabled }: { stateId: 
         </span>
         <span>{pending ? "Guardando…" : enabled ? "Activa" : "Inactiva"}</span>
       </button>
-      {state && !state.ok ? <FormMessage state={state} /> : null}
+      {open ? (
+        <div id={panelId} className="space-y-2">
+          <CompactReasonInput id={`${panelId}-reason`} error={reasonError} />
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" size="sm" className="min-h-11" disabled={pending} aria-disabled={pending}>
+              {pending ? "Guardando…" : enabled ? "Desactivar cobertura" : "Activar cobertura"}
+            </Button>
+            <Button variant="ghost" size="sm" className="min-h-11" onClick={() => setOpen(false)} disabled={pending}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {state && !state.ok && !reasonError ? <FormMessage state={state} /> : null}
       {state?.ok ? (
         <p role="status" className="text-xs text-gray-600">
           {state.message}
@@ -61,6 +113,7 @@ export function StateTimezoneForm({ stateId, stateName, value }: { stateId: numb
   const known = TIMEZONE_CHOICES.some((t) => t.value === value);
   const id = `state-tz-${stateId}`;
   const error = fieldError("default_timezone");
+  const changed = selected !== value;
 
   return (
     <form action={formAction} onSubmit={onSubmit} className="space-y-1">
@@ -88,7 +141,7 @@ export function StateTimezoneForm({ stateId, stateName, value }: { stateId: numb
             </option>
           ))}
         </Select>
-        <Button type="submit" variant="outline" size="sm" className="min-h-11" disabled={pending || selected === value} aria-disabled={pending || selected === value}>
+        <Button type="submit" variant="outline" size="sm" className="min-h-11" disabled={pending || !changed} aria-disabled={pending || !changed}>
           {pending ? "Guardando…" : "Guardar zona"}
         </Button>
       </div>
@@ -97,7 +150,9 @@ export function StateTimezoneForm({ stateId, stateName, value }: { stateId: numb
           {error}
         </p>
       ) : null}
-      {state && !state.ok && !error ? <FormMessage state={state} /> : null}
+      {/* El motivo solo se pide cuando hay un cambio por guardar. */}
+      {changed ? <CompactReasonInput id={`${id}-reason`} error={fieldError("reason")} /> : null}
+      {state && !state.ok && !error && !fieldError("reason") ? <FormMessage state={state} /> : null}
       {state?.ok ? (
         <p role="status" className="text-xs text-gray-600">
           {state.message}

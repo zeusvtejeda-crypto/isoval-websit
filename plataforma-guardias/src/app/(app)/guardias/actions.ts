@@ -7,8 +7,8 @@ import { friendlyDbError, type ActionResult } from "@/lib/actions";
 import { createClient } from "@/lib/supabase/server";
 import { clearStoredReason } from "@/lib/reason";
 import { buildShiftTimes, resolveEditedSchedule } from "@/lib/shifts/dates";
-import { countAssignments, countValidSessions, getShiftContext } from "@/lib/shifts/queries";
-import { FACILITY_LOCKED_NOTICE, SCHEDULE_LOCKED_NOTICE, isScheduleLocked } from "@/lib/shifts/rules";
+import { countActiveAssignments, countAssignments, countValidSessions, getShiftContext } from "@/lib/shifts/queries";
+import { FACILITY_LOCKED_NOTICE, SCHEDULE_LOCKED_NOTICE, isScheduleLocked, maxStaffBelowAssigned } from "@/lib/shifts/rules";
 import { SHIFT_FORM_FIELDS, invalidResult, readForm, shiftFormSchema, shiftStatusSchema } from "@/lib/shifts/schemas";
 
 /** Alta o edición de una guardia. Al guardar redirige al detalle. */
@@ -64,8 +64,13 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
         return { ok: false, message: FACILITY_LOCKED_NOTICE, fieldErrors: { facility_id: "La guardia ya tiene asignaciones." } };
       }
     }
-    const { data: row } = await supabase.from("shifts").select("responsible_worker_id").eq("id", v.id).maybeSingle();
+    const { data: row } = await supabase.from("shifts").select("responsible_worker_id, max_staff").eq("id", v.id).maybeSingle();
     existingResponsible = row?.responsible_worker_id ?? null;
+    // Al cambiar el cupo, no por debajo de las personas asignadas (la BD también lo impide).
+    if (v.max_staff != null && v.max_staff !== (row?.max_staff ?? null)) {
+      const belowAssigned = maxStaffBelowAssigned(v.max_staff, await countActiveAssignments(supabase, v.id));
+      if (belowAssigned) return { ok: false, message: belowAssigned, fieldErrors: { max_staff: "Es menor que las personas asignadas." } };
+    }
   } else if (!facility.active) {
     return { ok: false, message: "La sede no está activa." };
   }

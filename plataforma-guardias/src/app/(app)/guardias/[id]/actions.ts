@@ -6,9 +6,11 @@ import { friendlyDbError, type ActionResult } from "@/lib/actions";
 import { createClient } from "@/lib/supabase/server";
 import { clearStoredReason } from "@/lib/reason";
 import { ASSIGNMENT_STATUS_LABELS } from "@/lib/attendance/labels";
+import { formatShiftRange } from "@/lib/time";
 import { localDateTimeToUtc } from "@/lib/shifts/dates";
-import { OWN_RECORD_DB_MESSAGE, isOwnRecordLocked, validateCapturedTimes } from "@/lib/shifts/rules";
-import { getAssignmentContext, getSessionContext, getShiftContext, type ShiftContext } from "@/lib/shifts/queries";
+import { shiftDisplayTitle } from "@/lib/shifts/format";
+import { CONSECUTIVE_SHIFTS_NOTE, OWN_RECORD_DB_MESSAGE, isOwnRecordLocked, validateCapturedTimes } from "@/lib/shifts/rules";
+import { findOverlappingAssignment, getAssignmentContext, getSessionContext, getShiftContext, type ShiftContext } from "@/lib/shifts/queries";
 import {
   addAssignmentSchema,
   assignmentStatusSchema,
@@ -18,6 +20,7 @@ import {
   manualSessionSchema,
   readForm,
   removeAssignmentSchema,
+  updateAssignmentSchema,
   voidSessionSchema,
 } from "@/lib/shifts/schemas";
 
@@ -75,6 +78,16 @@ export async function addAssignment(_prev: ActionResult | null, formData: FormDa
     }
   }
 
+  // Una persona no puede estar en dos guardias que se traslapan (la BD también lo impide, en todas las sedes).
+  const overlap = await findOverlappingAssignment(supabase, v.worker_id, ctx.shift, v.shift_id);
+  if (overlap) {
+    return {
+      ok: false,
+      message: `Esa persona ya está asignada a otra guardia que se traslapa con este horario: ${shiftDisplayTitle(overlap)}, ${formatShiftRange(overlap.starts_at, overlap.ends_at, ctx.timezone)}. ${CONSECUTIVE_SHIFTS_NOTE}`,
+      fieldErrors: { worker_id: "Tiene otra guardia en ese horario." },
+    };
+  }
+
   const { error } = await supabase.from("shift_assignments").insert({
     shift_id: v.shift_id,
     worker_id: v.worker_id,
@@ -89,7 +102,89 @@ export async function addAssignment(_prev: ActionResult | null, formData: FormDa
   return { ok: true, message: "Asignación agregada." };
 }
 
+/**
+ * Corregir los datos de una asignación (punto asignado, «cubre a» y notas) con
+ * motivo obligatorio. La bitácora guarda los valores anterior y nuevo y el motivo.
+ */
+export async function updateAssignment(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const user = await requireManager();
+  const parsed = updateAssignmentSchema.safeParse(
+    readForm(formData, ["assignment_id", "assigned_point", "substitute_for_worker_id", "notes", "reason"] as const),
+  );
+  if (!parsed.success) return invalidResult(parsed.error);
+  const v = parsed.data;
+
+  const supabase = await createClient();
+  const ctx = await getAssignmentContext(supabase, v.assignment_id);
+  const denied = ensureManage(user, ctx);
+  if (denied || !ctx) return denied ?? NO_ACCESS;
+  const own = ensureNotOwn(user, ctx.assignment.worker_id);
+  if (own) return own;
+
+  const next = {
+    assigned_point: v.assigned_point ?? null,
+    substitute_for_worker_id: v.substitute_for_worker_id ?? null,
+    notes: v.notes ?? null,
+  };
+  if (next.substitute_for_worker_id === ctx.assignment.worker_id) {
+    return {
+      ok: false,
+      message: "Revisa los campos marcados.",
+      fieldErrors: { substitute_for_worker_id: "Una persona no puede sustituirse a sí misma." },
+    };
+  }
+
+  const { data: current, error: currentError } = await supabase
+    .from("shift_assignments")
+    .select("assigned_point, substitute_for_worker_id, notes, change_reason")
+    .eq("id", v.assignment_id)
+    .maybeSingle();
+  if (currentError) return { ok: false, message: friendlyDbError(currentError) };
+  if (!current) return { ok: false, message: "La guardia o el registro no existe, o no tienes acceso." };
+  if (
+    next.assigned_point === current.assigned_point &&
+    next.substitute_for_worker_id === current.substitute_for_worker_id &&
+    next.notes === current.notes
+  ) {
+    return { ok: false, message: "No hay cambios que guardar." };
+  }
+
+  // Una persona sustituida nueva debe ser visible (la BD también lo exige).
+  if (next.substitute_for_worker_id && next.substitute_for_worker_id !== current.substitute_for_worker_id) {
+    const { data: substitute, error: substituteError } = await supabase
+      .from("workers")
+      .select("id")
+      .eq("id", next.substitute_for_worker_id)
+      .maybeSingle();
+    if (substituteError) return { ok: false, message: friendlyDbError(substituteError) };
+    if (!substitute) {
+      return {
+        ok: false,
+        message: "La persona sustituida no existe o no es visible para tu cuenta.",
+        fieldErrors: { substitute_for_worker_id: "Elige a una persona de la lista." },
+      };
+    }
+  }
+
+  // Un motivo igual al guardado se perdería en la bitácora: se limpia antes.
+  if (current.change_reason === v.reason) {
+    const cleared = await clearStoredReason(supabase, "shift_assignments", v.assignment_id);
+    if (cleared) return { ok: false, message: friendlyDbError(cleared, "No se pudo actualizar la asignación.") };
+  }
+  const { error } = await supabase
+    .from("shift_assignments")
+    .update({ ...next, change_reason: v.reason })
+    .eq("id", v.assignment_id);
+  if (error) return { ok: false, message: friendlyDbError(error, "No se pudo actualizar la asignación.") };
+
+  revalidateShift(ctx.shift.id);
+  return { ok: true, message: "Asignación actualizada. El cambio quedó en la bitácora con su motivo." };
+}
+
 /** Quitar una asignación SIN registros. Con registros se usa el estado «cancelado». */
+const ASSIGNMENT_HAS_HISTORY =
+  "La asignación tiene estado, registros, justificaciones o solicitudes registradas y no puede quitarse. Cambia su estado a «Asignación cancelada» con un motivo.";
+
 export async function removeAssignment(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await requireManager();
   const parsed = removeAssignmentSchema.safeParse(readForm(formData, ["assignment_id", "reason"] as const));
@@ -103,17 +198,17 @@ export async function removeAssignment(_prev: ActionResult | null, formData: For
   const own = ensureNotOwn(user, ctx.assignment.worker_id);
   if (own) return own;
 
-  const { count, error: countError } = await supabase
-    .from("attendance_sessions")
-    .select("id", { count: "exact", head: true })
-    .eq("assignment_id", assignment_id);
+  // Una asignación con historia (estado registrado, asistencia, justificaciones
+  // o solicitudes) no se borra: se cancela con motivo. La BD también lo impide.
+  if (ctx.assignment.status !== "asignado") return { ok: false, message: ASSIGNMENT_HAS_HISTORY };
+  const counts = await Promise.all(
+    (["attendance_sessions", "incident_notes", "correction_requests"] as const).map((table) =>
+      supabase.from(table).select("id", { count: "exact", head: true }).eq("assignment_id", assignment_id),
+    ),
+  );
+  const countError = counts.find((r) => r.error)?.error;
   if (countError) return { ok: false, message: friendlyDbError(countError) };
-  if ((count ?? 0) > 0) {
-    return {
-      ok: false,
-      message: "La asignación tiene registros de asistencia y no puede quitarse. Cambia su estado a «Asignación cancelada» con un motivo.",
-    };
-  }
+  if (counts.some((r) => (r.count ?? 0) > 0)) return { ok: false, message: ASSIGNMENT_HAS_HISTORY };
 
   // El motivo se guarda antes de borrar para que la bitácora lo conserve
   // (limpiando antes el guardado, para que un motivo repetido no se pierda).

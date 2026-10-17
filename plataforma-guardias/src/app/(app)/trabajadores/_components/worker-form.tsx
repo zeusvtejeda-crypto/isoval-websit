@@ -52,7 +52,7 @@ export function WorkerForm({
   states,
   municipalities,
   facilities,
-  allowNoFacility,
+  allFacilities,
   showPrivate,
   cancelHref,
 }: {
@@ -62,8 +62,8 @@ export function WorkerForm({
   states: StateOption[];
   municipalities: MunicipalityOption[];
   facilities: FacilityOption[];
-  /** Administración puede dejar al trabajador sin instalación de adscripción. */
-  allowNoFacility: boolean;
+  /** Administración: la lista incluye todas las instalaciones activas (no solo sus sedes). */
+  allFacilities: boolean;
   /** Mostrar campos privados (número de trabajador y teléfono). */
   showPrivate: boolean;
   cancelHref: string;
@@ -172,24 +172,14 @@ export function WorkerForm({
         <Field
           label="Instalación de adscripción"
           htmlFor="facility_id"
-          required={!allowNoFacility}
+          required
           error={err("facility_id")}
-          hint={allowNoFacility ? "Solo instalaciones activas. Puedes dejarla vacía." : "Solo aparecen las sedes que coordinas."}
+          hint={allFacilities ? "Solo instalaciones activas. Cada trabajador pertenece a una sede." : "Solo aparecen las sedes que coordinas."}
         >
-          <Select
-            id="facility_id"
-            name="facility_id"
-            required={!allowNoFacility}
-            defaultValue={defaults.facility_id}
-            {...invalidProps(err("facility_id"), "facility_id")}
-          >
-            {allowNoFacility ? (
-              <option value="">Sin instalación de adscripción</option>
-            ) : (
-              <option value="" disabled>
-                Elige la instalación…
-              </option>
-            )}
+          <Select id="facility_id" name="facility_id" required defaultValue={defaults.facility_id} {...invalidProps(err("facility_id"), "facility_id")}>
+            <option value="" disabled>
+              Elige la instalación…
+            </option>
             {facilities.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.official_name}

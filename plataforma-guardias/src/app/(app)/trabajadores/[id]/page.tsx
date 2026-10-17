@@ -122,10 +122,8 @@ export default async function TrabajadorPage({
                     {worker.facility.official_name}
                     {worker.facility.active ? null : <span className="block text-sm font-normal text-gray-600">Instalación inactiva</span>}
                   </>
-                ) : worker.facility_id ? (
-                  <span className="font-normal text-gray-500">Instalación no visible para tu cuenta</span>
                 ) : (
-                  <span className="font-normal text-gray-500">Sin instalación de adscripción</span>
+                  <span className="font-normal text-gray-500">Instalación no visible para tu cuenta</span>
                 )}
               </Item>
               <Item label="Área">{worker.area ?? missing}</Item>

@@ -62,8 +62,9 @@ async function hasRepeatedName(supabase: ServerSupabase, row: MunicipalityRow): 
 
 /**
  * Datos del directorio: instalaciones públicas, categorías activas (más las
- * que tengan instalaciones, para mostrar su nombre), y los estados y municipios
- * que tienen al menos una instalación pública.
+ * inactivas que aún tengan instalaciones, para mostrar su nombre y poder
+ * filtrar por ellas), y los estados y municipios que tienen al menos una
+ * instalación pública.
  */
 export async function loadDirectoryData(): Promise<DirectoryData> {
   const supabase = await createClient();

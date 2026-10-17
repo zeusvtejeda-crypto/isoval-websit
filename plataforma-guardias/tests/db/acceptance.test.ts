@@ -65,8 +65,8 @@ describe("1. Crear una instalación y encontrarla en mapa y lista", () => {
     const mun = await municipalityId("017");
     const created = await asUser(adminId, (c) =>
       c.query(
-        `insert into public.facilities (official_name, category_id, state_id, municipality_id, latitude, longitude, address, source)
-         values ($1, $2, 18, $3, 21.51, -104.89, 'Calle de prueba 1', 'Prueba') returning id, internal_code`,
+        `insert into public.facilities (official_name, category_id, state_id, municipality_id, latitude, longitude, address, source, is_demo)
+         values ($1, $2, 18, $3, 21.51, -104.89, 'Calle de prueba 1', 'Prueba automatizada', true) returning id, internal_code`,
         [name, cat, mun],
       ),
     );
@@ -87,9 +87,14 @@ describe("1. Crear una instalación y encontrarla en mapa y lista", () => {
 
   it("un coordinador o trabajador no puede crear instalaciones", async () => {
     const cat = await categoryId();
+    const mun = await municipalityId();
     const msg = await expectPgError(
       asUser(coordA, (c) =>
-        c.query("insert into public.facilities (official_name, category_id, state_id) values ($1, $2, 18)", [`No permitida ${suffix()}`, cat]),
+        c.query("insert into public.facilities (official_name, category_id, state_id, municipality_id, is_demo) values ($1, $2, 18, $3, true)", [
+          `No permitida ${suffix()}`,
+          cat,
+          mun,
+        ]),
       ),
     );
     expect(msg).toMatch(/row-level security/);
@@ -100,11 +105,15 @@ describe("1. Crear una instalación y encontrarla en mapa y lista", () => {
     const mun = await municipalityId("008");
     const name = `Clínica Duplicada ${suffix()}`;
     await asUser(adminId, (c) =>
-      c.query("insert into public.facilities (official_name, category_id, state_id, municipality_id) values ($1, $2, 18, $3)", [name, cat, mun]),
+      c.query("insert into public.facilities (official_name, category_id, state_id, municipality_id, source, is_demo) values ($1, $2, 18, $3, 'Prueba automatizada', true)", [
+        name,
+        cat,
+        mun,
+      ]),
     );
     const msg = await expectPgError(
       asUser(adminId, (c) =>
-        c.query("insert into public.facilities (official_name, category_id, state_id, municipality_id) values ($1, $2, 18, $3)", [
+        c.query("insert into public.facilities (official_name, category_id, state_id, municipality_id, source, is_demo) values ($1, $2, 18, $3, 'Prueba automatizada', true)", [
           `  ${name.toUpperCase().replace("Í", "I")} `,
           cat,
           mun,
@@ -321,14 +330,17 @@ describe("7. Salida y regreso", () => {
 
 describe("8. Entrada sin salida", () => {
   it("una entrada abierta de una guardia terminada no se cierra con la hora actual por el trabajador", async () => {
+    // Persona propia de esta prueba: A2 ya tiene una guardia en curso (sin traslapes de asignaciones).
+    const worker = await createWorkerSuper(facilityA);
+    const workerUser = await createAuthUser({ role: "trabajador", workerId: worker });
     const shiftId = await createShiftSuper(facilityA, -60, 30);
-    const assignmentId = await assignSuper(shiftId, workerA2);
-    await asUser(userA2, (c) => c.query("select public.check_in($1, $2)", [assignmentId, uid()]));
+    const assignmentId = await assignSuper(shiftId, worker);
+    await asUser(workerUser, (c) => c.query("select public.check_in($1, $2)", [assignmentId, uid()]));
     // Simula que la guardia terminó hace más del margen (240 min por omisión).
     await asSuper((c) =>
       c.query("update public.shifts set starts_at = now() - interval '10 hours', ends_at = now() - interval '5 hours' where id = $1", [shiftId]),
     );
-    const msg = await expectPgError(asUser(userA2, (c) => c.query("select public.check_out($1, $2)", [assignmentId, uid()])));
+    const msg = await expectPgError(asUser(workerUser, (c) => c.query("select public.check_out($1, $2)", [assignmentId, uid()])));
     expect(msg).toMatch(/requiere revisión/);
     const open = await asSuper((c) =>
       c.query("select check_out_at from public.attendance_sessions where assignment_id = $1", [assignmentId]),
@@ -605,7 +617,8 @@ describe("Integridad adicional", () => {
   });
 
   it("get_my_assignments solo devuelve las asignaciones propias", async () => {
-    const shiftId = await createShiftSuper(facilityA, 60, 300);
+    // Dentro de 36 h: A1 y A2 ya tienen guardias hoy y mañana (no se traslapan asignaciones).
+    const shiftId = await createShiftSuper(facilityA, 36 * 60, 40 * 60);
     await assignSuper(shiftId, workerA1);
     await assignSuper(shiftId, workerA2);
     const r = await asUser(userA1, (c) =>

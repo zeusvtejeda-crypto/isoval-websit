@@ -94,6 +94,49 @@ export async function countAssignments(supabase: ServerSupabase, shiftId: string
   return count ?? 0;
 }
 
+/** Asignaciones activas («Asignado»): las que ocupan el cupo máximo. */
+export async function countActiveAssignments(supabase: ServerSupabase, shiftId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("shift_assignments")
+    .select("id", { count: "exact", head: true })
+    .eq("shift_id", shiftId)
+    .eq("status", "asignado");
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+export type OverlappingShift = { id: string; starts_at: string; ends_at: string; title: string | null; meeting_point: string };
+
+type OverlapRow = { id: string; shift: OverlappingShift & { status: ShiftStatus } };
+
+/**
+ * Otra guardia no cancelada en la que la persona tiene una asignación activa y
+ * cuyo horario se traslapa con [inicio, término). Las consecutivas no cuentan.
+ * Solo ve lo que RLS permita; la BD lo revisa en todas las sedes (app.check_assignment).
+ */
+export async function findOverlappingAssignment(
+  supabase: ServerSupabase,
+  workerId: string,
+  range: { starts_at: string; ends_at: string },
+  excludeShiftId: string,
+): Promise<OverlappingShift | null> {
+  const { data, error } = await supabase
+    .from("shift_assignments")
+    .select("id, shift:shifts!inner(id, starts_at, ends_at, title, meeting_point, status)")
+    .eq("worker_id", workerId)
+    .eq("status", "asignado")
+    .neq("shift_id", excludeShiftId)
+    .neq("shift.status", "cancelada")
+    .lt("shift.starts_at", range.ends_at)
+    .gt("shift.ends_at", range.starts_at)
+    .limit(1)
+    .overrideTypes<OverlapRow[], { merge: false }>();
+  if (error) throw new Error(error.message);
+  const shift = data?.[0]?.shift;
+  if (!shift) return null;
+  return { id: shift.id, starts_at: shift.starts_at, ends_at: shift.ends_at, title: shift.title, meeting_point: shift.meeting_point };
+}
+
 /** Personas con entrada abierta (vigente, sin salida) en la guardia. */
 export async function countOpenSessions(supabase: ServerSupabase, shiftId: string): Promise<number> {
   const { count, error } = await supabase

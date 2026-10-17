@@ -5,6 +5,7 @@ export type Database = {
     Tables: {
       app_settings: {
         Row: {
+          change_reason: string | null;
           description: string | null;
           is_public: boolean;
           key: string;
@@ -14,6 +15,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          change_reason?: string | null;
           description?: string | null;
           is_public?: boolean;
           key: string;
@@ -22,6 +24,7 @@ export type Database = {
           value: NonNullable<Json>;
         };
         Update: {
+          change_reason?: string | null;
           description?: string | null;
           is_public?: boolean;
           key?: string;
@@ -205,6 +208,7 @@ export type Database = {
           old_data: Json | null;
           reason: string | null;
           record_id: string | null;
+          redacted_at: string | null;
           table_name: string;
         };
         ComputedFields: never;
@@ -220,6 +224,7 @@ export type Database = {
           old_data?: Json | null;
           reason?: string | null;
           record_id?: string | null;
+          redacted_at?: string | null;
           table_name: string;
         };
         Update: {
@@ -234,6 +239,7 @@ export type Database = {
           old_data?: Json | null;
           reason?: string | null;
           record_id?: string | null;
+          redacted_at?: string | null;
           table_name?: string;
         };
         Relationships: [];
@@ -353,7 +359,7 @@ export type Database = {
           last_verified_at: string | null;
           latitude: number | null;
           longitude: number | null;
-          municipality_id: number | null;
+          municipality_id: number;
           normalized_name: string | null;
           notes: string | null;
           official_name: string;
@@ -388,7 +394,7 @@ export type Database = {
           last_verified_at?: string | null;
           latitude?: number | null;
           longitude?: number | null;
-          municipality_id?: number | null;
+          municipality_id: number;
           normalized_name?: never;
           notes?: string | null;
           official_name: string;
@@ -422,7 +428,7 @@ export type Database = {
           last_verified_at?: string | null;
           latitude?: number | null;
           longitude?: number | null;
-          municipality_id?: number | null;
+          municipality_id?: number;
           normalized_name?: never;
           notes?: string | null;
           official_name?: string;
@@ -467,6 +473,7 @@ export type Database = {
       facility_categories: {
         Row: {
           active: boolean;
+          change_reason: string | null;
           color: string;
           created_at: string;
           description: string | null;
@@ -480,6 +487,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           active?: boolean;
+          change_reason?: string | null;
           color?: string;
           created_at?: string;
           description?: string | null;
@@ -492,6 +500,7 @@ export type Database = {
         };
         Update: {
           active?: boolean;
+          change_reason?: string | null;
           color?: string;
           created_at?: string;
           description?: string | null;
@@ -565,6 +574,7 @@ export type Database = {
       };
       municipalities: {
         Row: {
+          change_reason: string | null;
           id: number;
           inegi_code: string;
           name: string;
@@ -573,6 +583,7 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          change_reason?: string | null;
           id?: never;
           inegi_code: string;
           name: string;
@@ -580,6 +591,7 @@ export type Database = {
           timezone?: string | null;
         };
         Update: {
+          change_reason?: string | null;
           id?: never;
           inegi_code?: string;
           name?: string;
@@ -802,6 +814,7 @@ export type Database = {
       states: {
         Row: {
           abbreviation: string;
+          change_reason: string | null;
           default_timezone: string;
           enabled: boolean;
           id: number;
@@ -810,6 +823,7 @@ export type Database = {
         ComputedFields: never;
         Insert: {
           abbreviation: string;
+          change_reason?: string | null;
           default_timezone?: string;
           enabled?: boolean;
           id: number;
@@ -817,6 +831,7 @@ export type Database = {
         };
         Update: {
           abbreviation?: string;
+          change_reason?: string | null;
           default_timezone?: string;
           enabled?: boolean;
           id?: number;
@@ -826,6 +841,7 @@ export type Database = {
       };
       user_facility_scopes: {
         Row: {
+          change_reason: string | null;
           facility_id: string;
           granted_at: string;
           granted_by: string | null;
@@ -833,12 +849,14 @@ export type Database = {
         };
         ComputedFields: never;
         Insert: {
+          change_reason?: string | null;
           facility_id: string;
           granted_at?: string;
           granted_by?: string | null;
           user_id: string;
         };
         Update: {
+          change_reason?: string | null;
           facility_id?: string;
           granted_at?: string;
           granted_by?: string | null;
@@ -908,7 +926,7 @@ export type Database = {
           change_reason: string | null;
           created_at: string;
           created_by: string | null;
-          facility_id: string | null;
+          facility_id: string;
           full_name: string;
           id: string;
           internal_code: string;
@@ -928,7 +946,7 @@ export type Database = {
           change_reason?: string | null;
           created_at?: string;
           created_by?: string | null;
-          facility_id?: string | null;
+          facility_id: string;
           full_name: string;
           id?: string;
           internal_code?: string;
@@ -947,7 +965,7 @@ export type Database = {
           change_reason?: string | null;
           created_at?: string;
           created_by?: string | null;
-          facility_id?: string | null;
+          facility_id?: string;
           full_name?: string;
           id?: string;
           internal_code?: string;
@@ -1144,6 +1162,23 @@ export type Database = {
         };
         Returns: Json;
       };
+      create_worker: {
+        Args: {
+          p_active?: boolean;
+          p_area?: string;
+          p_change_reason?: string;
+          p_employee_number?: string;
+          p_facility_id: string;
+          p_full_name: string;
+          p_municipality_id?: number;
+          p_phone?: string;
+          p_position?: string;
+          p_state_id: number;
+          p_usual_shift?: string;
+        };
+        Returns: string;
+      };
+      create_workers: { Args: { p_change_reason: string; p_rows: Json }; Returns: Json };
       effective_status: {
         Args: {
           s: Omit<
@@ -1153,6 +1188,11 @@ export type Database = {
         };
         Returns: Database["public"]["Enums"]["shift_status"];
       };
+      employee_number_taken: {
+        Args: { p_except_worker?: string; p_number: string };
+        Returns: boolean;
+      };
+      employee_numbers_taken: { Args: { p_numbers: string[] }; Returns: string[] };
       get_my_assignments: {
         Args: { p_from: string; p_to: string };
         Returns: {
@@ -1175,6 +1215,7 @@ export type Database = {
         }[];
       };
       issue_qr_token: { Args: { p_revoke_previous?: boolean; p_shift_id: string }; Returns: Json };
+      log_password_reset: { Args: { p_reason: string; p_user_id: string }; Returns: number };
       purge_demo_data: { Args: Record<PropertyKey, never>; Returns: Json };
       qr_token_context: { Args: { p_token: string }; Returns: Json };
       request_correction: {
@@ -1264,6 +1305,10 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      set_user_scopes: {
+        Args: { p_facility_ids: string[]; p_reason: string; p_user_id: string };
+        Returns: Json;
       };
       void_attendance: { Args: { p_reason: string; p_session_id: string }; Returns: Json };
     };

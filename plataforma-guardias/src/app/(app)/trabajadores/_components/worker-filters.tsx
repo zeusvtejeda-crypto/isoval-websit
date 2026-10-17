@@ -6,7 +6,6 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/form";
 import {
   ACCOUNT_FILTER_OPTIONS,
-  NO_FACILITY,
   SEARCH_MAX,
   STATUS_FILTER_OPTIONS,
   TEXT_MAX,
@@ -28,7 +27,7 @@ export function WorkerFilters({
   municipalities,
   facilities,
   areas,
-  allowNoFacility,
+  allFacilities,
   canSearchPrivate,
 }: {
   filters: WorkerListFilters;
@@ -37,7 +36,8 @@ export function WorkerFilters({
   municipalities: MunicipalityOption[];
   facilities: FacilityOption[];
   areas: string[];
-  allowNoFacility: boolean;
+  /** Administración: ve todas las sedes y todas las cuentas. */
+  allFacilities: boolean;
   canSearchPrivate: boolean;
 }) {
   const appliedState = filters.stateId ? String(filters.stateId) : "";
@@ -84,8 +84,7 @@ export function WorkerFilters({
         </Field>
         <Field label="Sede de adscripción" htmlFor="f-sede">
           <Select id="f-sede" name="sede" defaultValue={filters.facility ?? ""}>
-            <option value="">{allowNoFacility ? "Todas las sedes" : "Todas las sedes visibles"}</option>
-            {allowNoFacility ? <option value={NO_FACILITY}>Sin instalación de adscripción</option> : null}
+            <option value="">{allFacilities ? "Todas las sedes" : "Todas las sedes visibles"}</option>
             {facilities.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.official_name}
@@ -110,7 +109,7 @@ export function WorkerFilters({
             ))}
           </Select>
         </Field>
-        <Field label="Cuenta de acceso" htmlFor="f-cuenta" hint={allowNoFacility ? undefined : "Solo considera al personal adscrito a tus sedes."}>
+        <Field label="Cuenta de acceso" htmlFor="f-cuenta" hint={allFacilities ? undefined : "Solo considera al personal adscrito a tus sedes."}>
           <Select id="f-cuenta" name="cuenta" defaultValue={filters.account}>
             {ACCOUNT_FILTER_OPTIONS.map((o) => (
               <option key={o.value || "todas"} value={o.value}>

@@ -124,6 +124,18 @@ export function namePlaceKey(name: string, stateId: number, municipalityId: numb
   return `${normalizeText(name)}|${stateId}|${municipalityId ?? 0}`;
 }
 
+/**
+ * Dos instalaciones con el mismo nombre y lugar solo son la misma si alguna no
+ * tiene clave de unidad o si sus claves coinciden: en catálogos oficiales (CLUES)
+ * hay unidades distintas co-ubicadas con el mismo nombre y su propia clave.
+ * Regla común del formulario y de la importación.
+ */
+export function compatibleUnitKeys(a: string | null | undefined, b: string | null | undefined): boolean {
+  const ka = unitKeyKey(a);
+  const kb = unitKeyKey(b);
+  return !ka || !kb || ka === kb;
+}
+
 /** Slug para categorías: minúsculas, sin acentos, guiones. */
 export function slugify(value: string): string {
   return value
@@ -423,11 +435,11 @@ export function facilityFormSchema(today: string = todayYmd()) {
         .int({ error: "Elige el estado." })
         .min(1, { error: "Elige el estado." })
         .max(99, { error: "Elige el estado." }),
+      // Obligatorio: el directorio se organiza por estado → municipio → sede.
       municipality_id: z.coerce
-        .number({ error: "Elige un municipio de la lista." })
+        .number({ error: "Elige el municipio." })
         .int({ error: "Elige un municipio de la lista." })
-        .positive({ error: "Elige un municipio de la lista." })
-        .optional(),
+        .positive({ error: "Elige el municipio." }),
       address: optionalText(ADDRESS_MAX, "Dirección"),
       latitude: coordinate("Latitud"),
       longitude: coordinate("Longitud"),
@@ -590,7 +602,7 @@ export const EMPTY_CATEGORY_FORM: CategoryFormDefaults = {
   active: true,
 };
 
-export const CATEGORY_FORM_FIELDS = ["id", "name", "slug", "description", "icon", "color", "sort_order"] as const;
+export const CATEGORY_FORM_FIELDS = ["id", "name", "slug", "description", "icon", "color", "sort_order", "reason"] as const;
 
 export function readCategoryForm(formData: FormData) {
   return { ...readFields(formData, CATEGORY_FORM_FIELDS), active: readCheckbox(formData, "active") };
@@ -631,14 +643,16 @@ export const categoryFormSchema = z
       .max(CATEGORY_ORDER_MAX, { error: `El orden debe ser un número entero de 0 a ${CATEGORY_ORDER_MAX}.` })
       .optional(),
     active: z.boolean(),
+    // Obligatorio al editar (queda en la bitácora); en un alta se registra «Alta de categoría».
+    reason: optionalText(REASON_MAX, "Motivo"),
   })
   .transform((v, ctx) => {
     const slug = v.slug || slugify(v.name);
-    if (!slug) {
-      ctx.addIssue({ code: "custom", path: ["slug"], message: "Escribe un identificador con letras o números." });
-      return z.NEVER;
-    }
-    return { ...v, slug, sort_order: v.sort_order ?? 100 };
+    if (!slug) ctx.addIssue({ code: "custom", path: ["slug"], message: "Escribe un identificador con letras o números." });
+    const missingReason = Boolean(v.id) && (!v.reason || v.reason.length < REASON_MIN);
+    if (missingReason) ctx.addIssue({ code: "custom", path: ["reason"], message: `Indica el motivo del cambio (mínimo ${REASON_MIN} caracteres).` });
+    if (!slug || missingReason) return z.NEVER;
+    return { ...v, slug, sort_order: v.sort_order ?? 100, reason: v.reason ?? "Alta de categoría" };
   });
 
 export type CategoryFormInput = z.infer<typeof categoryFormSchema>;
@@ -649,10 +663,12 @@ export const categoryIdSchema = z.object({
 
 export const categoryActiveSchema = categoryIdSchema.extend({
   active: z.enum(["1", "0"], { error: "Acción inválida." }),
+  reason: reasonSchema,
 });
 
 export const categoryDeleteSchema = categoryIdSchema.extend({
   confirm: z.literal("ELIMINAR", { error: "Escribe ELIMINAR para confirmar." }),
+  reason: reasonSchema,
 });
 
 // ---------------------------------------------------------------------------

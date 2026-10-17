@@ -4,7 +4,7 @@
  * Lógica pura.
  */
 import { z } from "zod";
-import { readText } from "./form";
+import { changeReasonSchema, readText } from "./form";
 
 export const SETTINGS_PATH = "/administracion/configuracion";
 
@@ -101,6 +101,7 @@ export function readPrivacyNoticeForm(formData: FormData) {
     responsible: readText(formData, "responsible") ?? null,
     contact: readText(formData, "contact") ?? null,
     legal_review_status: readText(formData, "legal_review_status"),
+    reason: readText(formData, "reason"),
   };
 }
 
@@ -139,6 +140,7 @@ export function readRetentionForm(formData: FormData) {
     attendance_months: readText(formData, "attendance_months"),
     audit_months: readText(formData, "audit_months"),
     inactive_worker_months: readText(formData, "inactive_worker_months"),
+    reason: readText(formData, "reason"),
   };
 }
 
@@ -152,6 +154,8 @@ export type RetentionImpact = {
   auditRows: number;
   /** Filas de worker_private (número de trabajador y teléfono) de trabajadores inactivos. */
   workerPrivateRows: number;
+  /** Eventos de bitácora cuyas copias de esos datos se redactan (se conserva el evento sin sus valores). */
+  auditRowsRedacted: number;
 };
 
 /** Lee la respuesta de apply_retention_policy. */
@@ -167,11 +171,14 @@ export function parseRetentionImpact(value: unknown): RetentionImpact | null {
     sessions: Math.max(0, int(v.sessions, 0)),
     auditRows: Math.max(0, int(v.audit_rows, 0)),
     workerPrivateRows: Math.max(0, int(v.worker_private_rows, 0)),
+    auditRowsRedacted: Math.max(0, int(v.audit_rows_redacted, 0)),
   };
 }
 
 export function retentionImpactIsEmpty(impact: RetentionImpact): boolean {
-  return impact.shifts === 0 && impact.sessions === 0 && impact.auditRows === 0 && impact.workerPrivateRows === 0;
+  return (
+    impact.shifts === 0 && impact.sessions === 0 && impact.auditRows === 0 && impact.workerPrivateRows === 0 && impact.auditRowsRedacted === 0
+  );
 }
 
 /** Resumen del resultado de «Aplicar ahora». */
@@ -181,7 +188,9 @@ export function describeAppliedRetention(impact: RetentionImpact): string {
     `Política aplicada. Se eliminaron ${p(impact.shifts, "guardia", "guardias")}, ` +
     `${p(impact.sessions, "registro de entrada y salida", "registros de entrada y salida")}, ` +
     `${p(impact.auditRows, "evento de bitácora", "eventos de bitácora")} y ` +
-    `los datos privados de ${p(impact.workerPrivateRows, "trabajador inactivo", "trabajadores inactivos")}. Quedó constancia en la bitácora.`
+    `los datos privados de ${p(impact.workerPrivateRows, "trabajador inactivo", "trabajadores inactivos")}; ` +
+    `se borró el contenido de ${p(impact.auditRowsRedacted, "evento de bitácora que los copiaba", "eventos de bitácora que los copiaban")}. ` +
+    "Quedó constancia en la bitácora."
   );
 }
 
@@ -218,7 +227,22 @@ export function readAttendanceSettingsForm(formData: FormData) {
   return {
     checkin_window_before_minutes: readText(formData, "checkin_window_before_minutes"),
     open_session_grace_minutes: readText(formData, "open_session_grace_minutes"),
+    reason: readText(formData, "reason"),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Formularios: valor + motivo del cambio (el motivo va a la bitácora, no al valor)
+// ---------------------------------------------------------------------------
+
+export const privacyNoticeFormSchema = privacyNoticeSchema.extend({ reason: changeReasonSchema });
+export const retentionFormSchema = retentionSchema.extend({ reason: changeReasonSchema });
+export const attendanceSettingsFormSchema = attendanceSettingsSchema.extend({ reason: changeReasonSchema });
+
+/** Separa el motivo del valor que se guarda en app_settings. */
+export function splitReason<T extends { reason: string }>(data: T): { reason: string; value: Omit<T, "reason"> } {
+  const { reason, ...value } = data;
+  return { reason, value };
 }
 
 // ---------------------------------------------------------------------------

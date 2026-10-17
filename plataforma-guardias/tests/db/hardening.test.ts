@@ -129,7 +129,8 @@ describe("Alcance de datos", () => {
 
   it("coordinación no marca registros como demostración ni falsifica el autor", async () => {
     const worker = await createWorkerSuper(facilityA);
-    const msg = await expectPgError(asUser(coordA2, (c) => c.query("update public.workers set is_demo = true where id = $1", [worker])));
+    // createWorkerSuper crea personas de demostración: coordinación tampoco puede quitarles la marca.
+    const msg = await expectPgError(asUser(coordA2, (c) => c.query("update public.workers set is_demo = false where id = $1", [worker])));
     expect(msg).toMatch(/Solo administración/);
     const inserted = await asUser(coordA2, (c) =>
       c.query("insert into public.workers (full_name, state_id, facility_id, is_demo, created_by) values ('Persona protegida', 18, $1, true, $2) returning is_demo, created_by", [facilityA, adminId]),
@@ -148,11 +149,13 @@ describe("Alcance de datos", () => {
   });
 
   it("check_in no entrega la sesión abierta de otra sede", async () => {
-    const shiftB = await createShiftSuper(facilityB, -30, 120);
+    // Guardias consecutivas (una persona no puede tener dos guardias traslapadas):
+    // sigue en servicio en B cuando ya abre el registro de la siguiente, en A.
+    const shiftB = await createShiftSuper(facilityB, -30, 60);
     const shared = await createWorkerSuper(facilityB);
     const assignmentB = await assignSuper(shiftB, shared);
     await asUser(adminId, (c) => c.query("select public.check_in($1, $2, null, 'Registro de prueba')", [assignmentB, uid()]));
-    const shiftA = await createShiftSuper(facilityA, -30, 120);
+    const shiftA = await createShiftSuper(facilityA, 60, 180);
     const assignmentA = await assignSuper(shiftA, shared);
     const coordOnlyA = await createAuthUser({ role: "coordinador" });
     await grantScope(coordOnlyA, facilityA);

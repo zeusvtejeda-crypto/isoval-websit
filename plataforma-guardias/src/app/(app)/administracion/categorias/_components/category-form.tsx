@@ -17,6 +17,7 @@ import {
   slugify,
   type CategoryFormDefaults,
 } from "@/lib/validation/facility";
+import { ReasonField } from "../../_components/reason-field";
 
 type CategoryAction = (prev: ActionResult | null, formData: FormData) => Promise<ActionResult>;
 
@@ -175,6 +176,14 @@ export function CategoryForm({
       </div>
 
       <Checkbox name="active" value="1" defaultChecked={defaults.active} label="Activa" />
+
+      <ReasonField
+        id={`${prefix}-reason`}
+        state={state}
+        error={err("reason")}
+        required={isEdit}
+        hint={isEdit ? "Queda en la bitácora junto con los valores anteriores." : "Si lo dejas vacío se registra «Alta de categoría»."}
+      />
 
       <FormMessage state={state} />
 

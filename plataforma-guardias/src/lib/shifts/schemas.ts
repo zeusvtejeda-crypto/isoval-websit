@@ -113,6 +113,15 @@ export const addAssignmentSchema = z
     error: "Una persona no puede sustituirse a sí misma.",
   });
 
+/** Corrección de los datos de una asignación (vacío = se borra el valor). La persona asignada no cambia. */
+export const updateAssignmentSchema = z.object({
+  assignment_id: id("Asignación inválida."),
+  assigned_point: optionalText(200),
+  substitute_for_worker_id: id("Persona sustituida inválida.").optional(),
+  notes: optionalText(500),
+  reason: reason(5, "Indica el motivo del cambio"),
+});
+
 export const removeAssignmentSchema = z.object({
   assignment_id: id("Asignación inválida."),
   reason: reason(5),

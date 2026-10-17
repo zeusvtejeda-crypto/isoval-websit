@@ -24,7 +24,7 @@ const COLUMNS: { name: string; required?: boolean; description: string }[] = [
   { name: "categoria", required: true, description: "Identificador (slug) o nombre de la categoría, sin importar acentos ni mayúsculas." },
   { name: "descripcion", description: "Opcional." },
   { name: "estado", required: true, description: "Nombre, abreviatura o clave INEGI (Nayarit, NAY o 18)." },
-  { name: "municipio", description: "Nombre (o clave INEGI de 3 dígitos) dentro del estado." },
+  { name: "municipio", required: true, description: "Nombre (o clave INEGI de 3 dígitos) dentro del estado." },
   { name: "direccion", description: "Opcional." },
   { name: "latitud", description: "Decimal entre 14 y 33. Captura latitud y longitud juntas, o ninguna." },
   { name: "longitud", description: "Decimal negativo entre −119 y −86." },
@@ -97,9 +97,10 @@ export default async function ImportarInstalacionesPage() {
           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700">
             <li>
               Duplicados en el archivo: misma clave de unidad, mismo identificador interno o mismo nombre oficial en el mismo municipio. Contra lo
-              registrado: clave de unidad, identificador interno o mismo nombre en el mismo estado y municipio.
+              registrado: clave de unidad, identificador interno o mismo nombre en el mismo estado y municipio (si hay varias unidades con ese nombre, la
+              fila debe indicar su clave de unidad o su identificador interno).
             </li>
-            <li>En actualizaciones, las celdas opcionales vacías conservan el valor registrado. Nombre, categoría, estado y fuente se exigen siempre.</li>
+            <li>En actualizaciones, las celdas opcionales vacías conservan el valor registrado. Nombre, categoría, estado, municipio y fuente se exigen siempre.</li>
             <li>Cada cambio queda en la bitácora con el motivo «Importación: nombre del archivo».</li>
             <li>Las instalaciones nuevas se crean activas y visibles en el directorio público; puedes ocultarlas o desactivarlas después.</li>
             <li>La fila 1 es la de encabezados. Las filas completamente vacías se omiten y no cuentan en la numeración de la vista previa.</li>

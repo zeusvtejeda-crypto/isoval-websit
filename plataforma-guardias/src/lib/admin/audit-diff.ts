@@ -11,6 +11,8 @@ export type AuditEventData = {
   changed_fields: string[] | null;
   old_data: unknown;
   new_data: unknown;
+  /** Fecha en que se borró el contenido (old_data/new_data) por conservación de datos. */
+  redacted_at?: string | null;
 };
 
 export type RefKind = "facility" | "category" | "state" | "municipality" | "profile" | "worker";
@@ -106,6 +108,33 @@ export function collectRefIds(events: readonly Pick<AuditEventData, "old_data" |
   return [...out];
 }
 
+/** El contenido del evento (valores anterior y nuevo) se borró por conservación de datos. */
+export function isRedacted(event: Pick<AuditEventData, "redacted_at">): boolean {
+  return typeof event.redacted_at === "string" && event.redacted_at !== "";
+}
+
+/**
+ * Aviso de un evento redactado: por la política de conservación o al eliminar
+ * los datos de demostración (new_data solo guarda la causa). null si no aplica.
+ */
+export function redactionNotice(event: Pick<AuditEventData, "redacted_at" | "new_data">, timeZone?: string | null): string | null {
+  if (!isRedacted(event)) return null;
+  const when = formatDateTime(event.redacted_at as string, timeZone);
+  const cause = isPlainObject(event.new_data) ? event.new_data.redactado : null;
+  return cause === "demostracion"
+    ? `Contenido eliminado al borrar los datos de demostración (${when}).`
+    : `Contenido eliminado por la política de conservación (${when}).`;
+}
+
+/** Nombres de los campos que cambiaron en un evento redactado (se conservan sin sus valores). */
+export function redactedFieldLabels(event: AuditEventData): string[] {
+  if (!isRedacted(event) || event.action !== "UPDATE" || !event.changed_fields?.length) return [];
+  return [...new Set(event.changed_fields)]
+    .filter((f) => !HIDDEN_FIELDS.has(f))
+    .sort(byFieldOrder)
+    .map((f) => fieldLabel(event.table_name, f));
+}
+
 function textField(data: Record<string, unknown>, field: string): string | null {
   const v = data[field];
   return typeof v === "string" && v.trim() ? v.trim() : null;
@@ -116,6 +145,7 @@ function textField(data: Record<string, unknown>, field: string): string | null 
  * de la guardia…). null si no se puede describir sin exponer datos de más.
  */
 export function auditSubject(event: AuditEventData & { record_id?: string | null }, ctx: ValueContext = {}): string | null {
+  if (isRedacted(event)) return null;
   const data = { ...asObject(event.old_data), ...asObject(event.new_data) };
   const ref = (kind: RefKind, id: unknown) => (typeof id === "string" && id ? refName(kind === "worker" ? "worker_id" : "user_id", id, ctx) : null);
   switch (event.table_name) {
@@ -127,6 +157,8 @@ export function auditSubject(event: AuditEventData & { record_id?: string | null
       return textField(data, "name");
     case "profiles":
       return textField(data, "display_name") ?? ref("profile", data.id);
+    case "auth.users":
+      return ref("profile", data.user_id ?? event.record_id);
     case "worker_private":
     case "shift_assignments":
     case "attendance_sessions":
@@ -236,8 +268,10 @@ function snapshot(table: string, data: Record<string, unknown>, side: "before" |
  * - Alta: valores registrados (— → valor).
  * - Eliminación: valores que tenía (valor → —).
  * - Depuración: resumen de lo eliminado.
+ * - Contenido redactado por conservación: ninguno (ya no hay valores).
  */
 export function auditFieldChanges(event: AuditEventData, ctx: ValueContext = {}): FieldChange[] {
+  if (isRedacted(event)) return [];
   const table = event.table_name;
   const oldObj = asObject(event.old_data);
   const newObj = asObject(event.new_data);

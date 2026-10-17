@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import type { ActionResult } from "@/lib/actions";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type ServerSupabase } from "@/lib/supabase/server";
+import { clearStoredReason } from "@/lib/reason";
 import { failure, fieldFailure, invalidResult } from "@/lib/admin/form";
 import { loadStateMunicipalities } from "@/lib/admin/catalogs-server";
 import {
@@ -30,15 +31,29 @@ function revalidateCatalogs() {
   revalidatePath("/directorio", "layout");
 }
 
+/**
+ * app.reset_change_reason() deja en null un motivo igual al guardado (para no
+ * arrastrar motivos viejos a la bitácora): si se repite, se limpia antes.
+ */
+async function prepareReason(supabase: ServerSupabase, table: "states" | "municipalities", id: number, reason: string): Promise<string | null> {
+  const { data, error } = await supabase.from(table).select("change_reason").eq("id", id).maybeSingle();
+  if (error) return friendlyCatalogError(error, "No se pudo guardar el cambio.");
+  if (!data || data.change_reason !== reason) return null;
+  const cleared = await clearStoredReason(supabase, table, id);
+  return cleared ? friendlyCatalogError(cleared, "No se pudo guardar el cambio.") : null;
+}
+
 /** Cobertura activa de una entidad (states.enabled). */
 export async function setStateCoverage(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
   const parsed = stateCoverageSchema.safeParse(readStateCoverageForm(formData));
   if (!parsed.success) return invalidResult(parsed.error);
-  const { state_id, enabled } = parsed.data;
+  const { state_id, enabled, reason } = parsed.data;
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from("states").update({ enabled }).eq("id", state_id).select("id, name");
+  const reasonIssue = await prepareReason(supabase, "states", state_id, reason);
+  if (reasonIssue) return failure(reasonIssue);
+  const { data, error } = await supabase.from("states").update({ enabled, change_reason: reason }).eq("id", state_id).select("id, name");
   if (error) return failure(friendlyCatalogError(error, "No se pudo cambiar la cobertura."));
   if (!data || data.length === 0) return failure("La entidad no existe o no tienes permiso para modificarla.");
 
@@ -56,10 +71,12 @@ export async function saveStateTimezone(_prev: ActionResult | null, formData: Fo
   await requireAdmin();
   const parsed = stateTimezoneSchema.safeParse(readStateTimezoneForm(formData));
   if (!parsed.success) return invalidResult(parsed.error);
-  const { state_id, default_timezone } = parsed.data;
+  const { state_id, default_timezone, reason } = parsed.data;
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from("states").update({ default_timezone }).eq("id", state_id).select("id, name");
+  const reasonIssue = await prepareReason(supabase, "states", state_id, reason);
+  if (reasonIssue) return failure(reasonIssue);
+  const { data, error } = await supabase.from("states").update({ default_timezone, change_reason: reason }).eq("id", state_id).select("id, name");
   if (error) return failure(friendlyCatalogError(error, "No se pudo guardar la zona horaria."));
   if (!data || data.length === 0) return failure("La entidad no existe o no tienes permiso para modificarla.");
 
@@ -75,12 +92,14 @@ export async function saveMunicipalityTimezone(_prev: ActionResult | null, formD
   await requireAdmin();
   const parsed = municipalityTimezoneSchema.safeParse(readMunicipalityTimezoneForm(formData));
   if (!parsed.success) return invalidResult(parsed.error);
-  const { state_id, municipality_id, timezone } = parsed.data;
+  const { state_id, municipality_id, timezone, reason } = parsed.data;
 
   const supabase = await createClient();
+  const reasonIssue = await prepareReason(supabase, "municipalities", municipality_id, reason);
+  if (reasonIssue) return failure(reasonIssue);
   const { data, error } = await supabase
     .from("municipalities")
-    .update({ timezone })
+    .update({ timezone, change_reason: reason })
     .eq("id", municipality_id)
     .eq("state_id", state_id)
     .select("id, name, inegi_code");
@@ -126,7 +145,7 @@ export async function createMunicipality(_prev: ActionResult | null, formData: F
 
   const { error } = await supabase
     .from("municipalities")
-    .insert({ state_id: v.state_id, inegi_code: v.inegi_code, name: v.name, timezone: v.timezone })
+    .insert({ state_id: v.state_id, inegi_code: v.inegi_code, name: v.name, timezone: v.timezone, change_reason: v.reason })
     .select("id")
     .single();
   if (error) {

@@ -33,6 +33,12 @@ const DATA = {
   facilityName: `[DEMO] E2E Instalación ${RUN}`,
   facilityKey: `E2E-${RUN}`,
   workerName: `[DEMO] E2E Trabajadora ${RUN}`,
+  // Una persona no puede tener dos guardias asignadas que se traslapan: las
+  // guardias en curso de los criterios 3 y 7 usan personas distintas, creadas en
+  // cada ejecución (así también se pueden repetir sin reiniciar la base).
+  companionName: `[DEMO] E2E Compañero ${RUN}`,
+  returnWorkerName: `[DEMO] E2E Trabajador regreso ${RUN}`,
+  returnEmail: `e2e.regreso.${RUN}@demo.local`,
   employeeNumber: `E2E-${RUN}`,
   workerPhone: "311 555 0101",
   shiftTitle: `[DEMO] E2E Guardia ${RUN}`,
@@ -46,7 +52,6 @@ const DATA = {
   correctionReason: `E2E corrección ${RUN}: la entrada se capturó cinco minutos antes`,
 };
 const HOSPITAL_A = "[DEMO] Hospital de demostración A";
-const JORGE = { id: "d1000000-0000-4000-8000-000000000004", name: "[DEMO] Jorge Ramírez Cruz" };
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 /** Estado compartido entre criterios (se llena conforme avanza el flujo). */
@@ -104,6 +109,33 @@ async function createShift(page: Page, s: ShiftInput): Promise<string> {
   await expect(page).toHaveURL(new RegExp(`/guardias/${UUID}$`));
   await expect(page.getByRole("heading", { level: 1, name: s.title })).toBeVisible();
   return idFromUrl(page, new RegExp(`/guardias/(${UUID})$`));
+}
+
+/** Coordinación registra un trabajador del Hospital A (solo datos obligatorios) y devuelve su identificador. */
+async function createWorker(page: Page, name: string): Promise<string> {
+  await loginAs(page, "coordinacion@demo.local");
+  await page.goto("/trabajadores/nuevo");
+  await page.getByLabel("Nombre completo").fill(name);
+  await page.getByLabel("Municipio").selectOption({ label: "Tepic" });
+  await page.getByLabel("Instalación de adscripción").selectOption(DEMO.hospitalA);
+  await page.getByRole("button", { name: "Registrar trabajador" }).click();
+  await expect(page).toHaveURL(new RegExp(`/trabajadores/${UUID}\\?guardado=1`));
+  return idFromUrl(page, new RegExp(`/trabajadores/(${UUID})`));
+}
+
+/** Administración crea la cuenta de acceso (rol trabajador) vinculada al trabajador. */
+async function createWorkerAccount(page: Page, workerId: string, email: string, password: string) {
+  await loginAs(page, "admin@demo.local");
+  await page.goto(`/trabajadores/${workerId}`);
+  await page.getByRole("link", { name: "Crear cuenta de acceso para esta persona" }).click();
+  await expect(page).toHaveURL(/\/administracion\/usuarios\/nueva\?trabajador=/);
+  await page.locator("#new-email").fill(email);
+  await expect(page.locator("#new-role")).toHaveValue("trabajador");
+  await expect(page.locator("#new-worker_id")).toHaveValue(workerId);
+  await page.getByRole("radio", { name: /Escribirla/ }).check();
+  await page.locator("#new-password").fill(password);
+  await page.getByRole("button", { name: "Crear cuenta" }).click();
+  await expect(page.getByText(`Cuenta creada para ${email}.`)).toBeVisible();
 }
 
 /** Agrega una asignación desde el detalle de la guardia y espera a verla en la lista. */
@@ -252,6 +284,7 @@ test.describe("Criterios de aceptación por la interfaz", () => {
 
   test("Criterio 3: crear una guardia y asignar trabajadores", async ({ page }) => {
     const workerId = required(state.workerId, "el trabajador del criterio 2");
+    const companionId = await createWorker(page, DATA.companionName);
     await loginAs(page, "coordinacion@demo.local");
 
     // Coordinación tiene dos sedes: primero elige la sede (paso 1 de 2).
@@ -287,7 +320,7 @@ test.describe("Criterios de aceptación por la interfaz", () => {
     await expect(page.getByRole("heading", { level: 2, name: "Asignaciones (0)" })).toBeVisible();
 
     await addAssignment(page, workerId, DATA.workerName, 1);
-    await addAssignment(page, JORGE.id, JORGE.name, 2);
+    await addAssignment(page, companionId, DATA.companionName, 2);
 
     const general = page.locator("section").filter({ hasText: "Punto de reunión o acceso" }).first();
     await expect(metric(general, "Responsable")).toHaveText(DATA.workerName);
@@ -512,7 +545,9 @@ test.describe("Criterios de aceptación por la interfaz", () => {
   });
 
   test("Criterio 7: salida y regreso sin contar el tiempo ausente", async ({ page }) => {
-    const workerId = required(state.workerId, "el trabajador del criterio 2");
+    // Otra persona: la del criterio 2 sigue asignada a la guardia en curso del criterio 3.
+    const workerId = await createWorker(page, DATA.returnWorkerName);
+    await createWorkerAccount(page, workerId, DATA.returnEmail, DATA.password);
     await loginAs(page, "coordinacion@demo.local");
 
     // Guardia de 5 h que inició hace 4 h.
@@ -527,8 +562,8 @@ test.describe("Criterios de aceptación por la interfaz", () => {
       endTime: localParts(end).time,
       minStaff: "1",
     });
-    await addAssignment(page, workerId, DATA.workerName, 1);
-    const card = assignmentCard(page, DATA.workerName);
+    await addAssignment(page, workerId, DATA.returnWorkerName, 1);
+    const card = assignmentCard(page, DATA.returnWorkerName);
     const sessions = sessionItems(card);
 
     // Coordinación captura dos tramos: 1 h, ausencia de 30 min y regreso por 1 h.
@@ -564,13 +599,13 @@ test.describe("Criterios de aceptación por la interfaz", () => {
     await expect(card.locator("summary", { hasText: "Registrar entrada por otra persona" })).toBeVisible();
     const onBehalf = await openDisclosure(card, /Registrar (entrada|salida) por otra persona/);
     await onBehalf.getByLabel("Motivo").fill("E2E: regresó a la guardia sin teléfono");
-    await onBehalf.getByRole("button", { name: `Registrar entrada de ${DATA.workerName}` }).click();
+    await onBehalf.getByRole("button", { name: `Registrar entrada de ${DATA.returnWorkerName}` }).click();
     await expect(onBehalf.getByText("Confirmado por el servidor")).toBeVisible();
     await expect(sessions).toHaveCount(3);
     await expect(card.getByText("Entrada abierta desde", { exact: false })).toBeVisible();
     await expect(card.locator("summary", { hasText: "Registrar salida por otra persona" })).toBeVisible();
     await onBehalf.getByLabel("Motivo").fill("E2E: termina su participación");
-    await onBehalf.getByRole("button", { name: `Registrar salida de ${DATA.workerName}` }).click();
+    await onBehalf.getByRole("button", { name: `Registrar salida de ${DATA.returnWorkerName}` }).click();
     await expect(onBehalf.getByText("Salida registrada.", { exact: false })).toBeVisible();
     await expect(card.getByText("Entrada abierta desde", { exact: false })).toHaveCount(0);
 
@@ -632,7 +667,7 @@ test.describe("Criterios de aceptación por la interfaz", () => {
     await loginAs(page, "coordinacion@demo.local");
     await page.goto(`/guardias/${shiftId}`);
 
-    const card = assignmentCard(page, DATA.workerName);
+    const card = assignmentCard(page, DATA.returnWorkerName);
     const sessions = sessionItems(card);
     const original = sessions.filter({ hasText: displayDateTime(start) }).filter({ hasText: "Vigente" });
     await expect(original).toHaveCount(1);
@@ -670,7 +705,7 @@ test.describe("Criterios de aceptación por la interfaz", () => {
     await expect(event.locator("dl").last()).toContainText("Corregido");
 
     // El trabajador también ve la versión original conservada en su historial.
-    await loginAs(page, DATA.email, DATA.password);
+    await loginAs(page, DATA.returnEmail, DATA.password);
     await page.goto("/mi-historial");
     const mine = historyCard(page, DATA.returnPoint);
     await expect(mine.getByText("Corregido (versión original conservada)")).toBeVisible();

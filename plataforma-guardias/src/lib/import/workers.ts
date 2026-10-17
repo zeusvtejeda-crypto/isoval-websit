@@ -3,11 +3,14 @@
  *
  * - Estados: nueva, actualización, duplicada o error.
  * - Duplicados: número de trabajador repetido en el archivo o existente en la
- *   base; mismo nombre normalizado + misma sede (en la base o en otra fila).
+ *   base (también en sedes que la cuenta no ve: se comprueba con
+ *   employee_numbers_taken, que solo responde sí/no); mismo nombre normalizado
+ *   + misma sede (en la base o en otra fila).
  * - Un número ya registrado con otro nombre se marca como duplicada: la
  *   importación no renombra a otra persona por un número mal capturado.
  * - La instalación se resuelve por clave de unidad, identificador interno
  *   (INS-…) o nombre oficial exacto.
+ * - Cada trabajador pertenece a una sede: en altas la instalación es obligatoria.
  * - Coordinación solo puede importar a sus sedes (se valida cada fila).
  * - En actualizaciones, las celdas vacías conservan el valor registrado.
  *
@@ -19,6 +22,7 @@ import type { Tone } from "@/lib/attendance/labels";
 import {
   DEFAULT_STATE_ID,
   EMPLOYEE_NUMBER_MAX,
+  EMPLOYEE_NUMBER_TAKEN,
   NAME_MAX,
   NAME_MIN,
   PHONE_ERROR,
@@ -110,6 +114,16 @@ export function canonicalizeRow(raw: RawRow): CanonicalRow {
   return out;
 }
 
+/** Números de trabajador del archivo (claves sin repetir) para la comprobación previa. */
+export function employeeNumberKeysInRows(rows: RawRow[]): string[] {
+  const keys = new Set<string>();
+  for (const raw of rows) {
+    const key = employeeNumberKey(canonicalizeRow(raw).numero_trabajador);
+    if (key) keys.add(key);
+  }
+  return [...keys];
+}
+
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
@@ -173,6 +187,11 @@ export type WorkerImportContext = {
   municipalities: ImportMunicipalityRef[];
   facilities: ImportFacilityRef[];
   existing: ExistingWorkerRef[];
+  /**
+   * Números de trabajador del archivo (clave employeeNumberKey) que ya están
+   * registrados en registros que la cuenta no ve (por ejemplo, de otra sede).
+   */
+  takenEmployeeNumbers?: string[];
   defaultStateId?: number;
 };
 
@@ -180,7 +199,7 @@ export type WorkerWriteValues = {
   full_name: string;
   state_id: number;
   municipality_id: number | null;
-  facility_id: string | null;
+  facility_id: string;
   area: string | null;
   position: string | null;
   usual_shift: string | null;
@@ -430,6 +449,7 @@ export function validateWorkerRows(rows: RawRow[], ctx: WorkerImportContext): Wo
   const defaultStateId = ctx.defaultStateId ?? DEFAULT_STATE_ID;
   const stateById = new Map(ctx.states.map((s) => [s.id, s]));
   const facilityById = new Map(ctx.facilities.map((f) => [f.id, f]));
+  const takenElsewhere = new Set(ctx.takenEmployeeNumbers ?? []);
 
   // Índices de lo registrado.
   const byEmployee = new Map<string, ExistingWorkerRef>();
@@ -496,12 +516,17 @@ export function validateWorkerRows(rows: RawRow[], ctx: WorkerImportContext): Wo
         return result;
       }
 
-      if (!p.facility && !ctx.scope.isAdmin) {
+      if (!p.facility) {
         result.messages = ["Indica la instalación de adscripción (clave de unidad, identificador interno o nombre oficial)."];
         return result;
       }
+      if (empKey && takenElsewhere.has(empKey)) {
+        result.status = "duplicada";
+        result.messages = [EMPLOYEE_NUMBER_TAKEN];
+        return result;
+      }
 
-      const state = p.state ?? (p.facility ? stateById.get(p.facility.state_id) : undefined) ?? stateById.get(defaultStateId);
+      const state = p.state ?? stateById.get(p.facility.state_id) ?? stateById.get(defaultStateId);
       if (!state) {
         result.messages = ["Indica el estado."];
         return result;
@@ -523,7 +548,7 @@ export function validateWorkerRows(rows: RawRow[], ctx: WorkerImportContext): Wo
         full_name: p.name,
         state_id: state.id,
         municipality_id: municipalityId,
-        facility_id: p.facility?.id ?? null,
+        facility_id: p.facility.id,
         area: p.area ?? null,
         position: p.position ?? null,
         usual_shift: p.usualShift ?? null,
@@ -531,7 +556,6 @@ export function validateWorkerRows(rows: RawRow[], ctx: WorkerImportContext): Wo
       };
       result.privateData = p.employeeNumber || p.phone ? { employee_number: p.employeeNumber ?? null, phone: p.phone ?? null } : null;
       const notes = [`Se creará un registro nuevo en ${state.name}.`];
-      if (!p.facility) notes.push("Sin instalación de adscripción.");
       if (result.create.active === false) notes.push("Se registrará como inactivo.");
       result.messages = notes;
       return result;
@@ -606,6 +630,10 @@ export function validateWorkerRows(rows: RawRow[], ctx: WorkerImportContext): Wo
     }
 
     const finalFacility = p.facility?.id ?? target.facility_id;
+    if (!finalFacility) {
+      result.messages = ["Indica la instalación de adscripción (clave de unidad, identificador interno o nombre oficial)."];
+      return result;
+    }
     const finalName = p.name;
     if (finalName !== target.full_name) {
       patch.full_name = finalName;
@@ -626,6 +654,12 @@ export function validateWorkerRows(rows: RawRow[], ctx: WorkerImportContext): Wo
     if (firstNameRow !== undefined) {
       result.status = "duplicada";
       result.messages = [`Mismo nombre y misma sede que la fila ${firstNameRow}.`];
+      return result;
+    }
+    // Número nuevo que ya pertenece a un registro que la cuenta no ve.
+    if (empKey && employeeNumberKey(target.employee_number) !== empKey && takenElsewhere.has(empKey)) {
+      result.status = "duplicada";
+      result.messages = [EMPLOYEE_NUMBER_TAKEN];
       return result;
     }
     seenTarget.set(target.id, rowNumber);
@@ -656,8 +690,7 @@ export function validateWorkerRows(rows: RawRow[], ctx: WorkerImportContext): Wo
     result.patch = Object.keys(patch).length > 0 ? patch : null;
     result.changes = changes;
     result.noop = changes.length === 0;
-    const facilityName = finalFacility ? facilityById.get(finalFacility)?.official_name : null;
-    result.facilityLabel = facilityName ?? result.facilityLabel;
+    result.facilityLabel = facilityById.get(finalFacility)?.official_name ?? result.facilityLabel;
     result.messages = [
       result.noop
         ? `Coincide con ${describeWorker(target)}. Sin cambios: no se modificará.`

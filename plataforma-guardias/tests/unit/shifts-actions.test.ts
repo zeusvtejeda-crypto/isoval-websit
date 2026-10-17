@@ -24,6 +24,9 @@ const h = vi.hoisted(() => ({
   assignmentCtx: null as unknown,
   sessionCtx: null as unknown,
   assignments: 0,
+  activeAssignments: 0,
+  overlap: null as unknown,
+  rows: {} as Record<string, unknown>,
   validSessions: 0,
   sessionCount: 0,
   facility: null as unknown,
@@ -52,6 +55,14 @@ vi.mock("@/lib/shifts/queries", () => ({
   getAssignmentContext: vi.fn(async () => h.assignmentCtx),
   getSessionContext: vi.fn(async () => h.sessionCtx),
   countAssignments: vi.fn(async () => h.assignments),
+  countActiveAssignments: vi.fn(async () => {
+    h.log.push("countActiveAssignments");
+    return h.activeAssignments;
+  }),
+  findOverlappingAssignment: vi.fn(async () => {
+    h.log.push("findOverlappingAssignment");
+    return h.overlap;
+  }),
   countValidSessions: vi.fn(async () => {
     h.log.push("countValidSessions");
     return h.validSessions;
@@ -91,6 +102,7 @@ function chain(table: string) {
     return c;
   };
   c.maybeSingle = async () => {
+    if (table in h.rows) return { data: h.rows[table], error: null };
     if (table === "facilities") return { data: h.facility, error: null };
     if (table === "shifts") return { data: { responsible_worker_id: null }, error: null };
     return { data: null, error: null };
@@ -112,14 +124,16 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { saveShift, setShiftStatus } from "@/app/(app)/guardias/actions";
 import {
+  addAssignment,
   addManualSession,
   changeAssignmentStatus,
   correctSession,
   removeAssignment,
   saveIncidentNote,
+  updateAssignment,
   voidSession,
 } from "@/app/(app)/guardias/[id]/actions";
-import { FACILITY_LOCKED_NOTICE, OUTSIDE_WINDOW_MESSAGE, OWN_RECORD_DB_MESSAGE, SCHEDULE_LOCKED_NOTICE } from "@/lib/shifts/rules";
+import { CONSECUTIVE_SHIFTS_NOTE, FACILITY_LOCKED_NOTICE, OUTSIDE_WINDOW_MESSAGE, OWN_RECORD_DB_MESSAGE, SCHEDULE_LOCKED_NOTICE } from "@/lib/shifts/rules";
 
 const coordinator = { id: "p-coord", isAdmin: false, workerId: "w-coord", facilityIds: [FAC, OTHER], role: "coordinador" };
 const admin = { id: "p-admin", isAdmin: true, workerId: "w-admin", facilityIds: [], role: "admin" };
@@ -164,6 +178,9 @@ beforeEach(() => {
   h.assignmentCtx = { shift, timezone: MAZ, assignment: { id: ASSIGNMENT, shift_id: SHIFT, worker_id: "w1", status: "asignado" } };
   h.sessionCtx = { shift, timezone: MAZ, session: { id: SESSION, assignment_id: ASSIGNMENT, shift_id: SHIFT, worker_id: "w1", record_status: "vigente" } };
   h.assignments = 1;
+  h.activeAssignments = 1;
+  h.overlap = null;
+  h.rows = {};
   h.validSessions = 0;
   h.sessionCount = 0;
   h.facility = { id: FAC, timezone: MAZ, active: true };
@@ -253,6 +270,19 @@ describe("acciones sobre asignaciones y registros", () => {
     expect(h.ops[0].payload).toEqual({ change_reason: "Asignada por error" });
   });
 
+  it("quitar asignación: no borra una asignación con estado registrado ni con historia", async () => {
+    h.assignmentCtx = { shift, timezone: MAZ, assignment: { id: ASSIGNMENT, shift_id: SHIFT, worker_id: "w1", status: "inasistencia_confirmada" } };
+    const absent = await removeAssignment(null, form({ assignment_id: ASSIGNMENT, reason: "Asignada por error" }));
+    expect(absent).toMatchObject({ ok: false });
+    expect(absent.ok ? "" : absent.message).toMatch(/Asignación cancelada/);
+
+    h.assignmentCtx = { shift, timezone: MAZ, assignment: { id: ASSIGNMENT, shift_id: SHIFT, worker_id: "w1", status: "asignado" } };
+    h.sessionCount = 1; // también aplica al conteo de justificaciones y solicitudes
+    const withHistory = await removeAssignment(null, form({ assignment_id: ASSIGNMENT, reason: "Asignada por error" }));
+    expect(withHistory).toMatchObject({ ok: false });
+    expect(h.log).toEqual([]);
+  });
+
   it("propia asistencia: coordinación no corrige, anula, agrega, cambia estado ni justifica", async () => {
     h.user = { ...coordinator, workerId: "w1" };
     const results = await Promise.all([
@@ -321,5 +351,121 @@ describe("acciones sobre asignaciones y registros", () => {
     const ok = await addManualSession(null, manual());
     expect(ok).toEqual({ ok: true, message: "Registro manual agregado (corrección administrativa)." });
     expect(h.log).toEqual(["rpc:add_manual_attendance"]);
+  });
+});
+
+describe("cupo máximo y guardias traslapadas", () => {
+  it("saveShift no reduce el cupo por debajo de las personas asignadas (antes de escribir)", async () => {
+    h.activeAssignments = 3;
+    h.rows.shifts = { responsible_worker_id: null, max_staff: 5 };
+    const r = await saveShift(null, editForm({ max_staff: "2" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.message).toBe("La guardia tiene 3 personas asignadas: el cupo máximo no puede ser menor. Quita o cancela asignaciones antes de reducirlo.");
+      expect(r.fieldErrors).toHaveProperty("max_staff");
+    }
+    expect(h.log).toEqual(["countActiveAssignments"]);
+  });
+
+  it("saveShift: con el cupo sin cambios no se vuelve a contar; con un cupo suficiente sí se guarda", async () => {
+    h.activeAssignments = 3;
+    h.rows.shifts = { responsible_worker_id: null, max_staff: 2 };
+    await expect(saveShift(null, editForm({ max_staff: "2" }))).rejects.toThrow("NEXT_REDIRECT");
+    expect(h.log).toEqual([`clear:shifts:${SHIFT}`, "update:shifts"]);
+
+    h.log = [];
+    h.rows.shifts = { responsible_worker_id: null, max_staff: 5 };
+    await expect(saveShift(null, editForm({ max_staff: "3" }))).rejects.toThrow("NEXT_REDIRECT");
+    expect(h.log).toEqual(["countActiveAssignments", `clear:shifts:${SHIFT}`, "update:shifts"]);
+  });
+
+  it("addAssignment rechaza a una persona con otra guardia traslapada sin llegar a la BD", async () => {
+    h.rows.workers = { id: "w1", active: true };
+    h.overlap = { id: "s-otra", starts_at: "2026-10-18T03:00:00Z", ends_at: "2026-10-18T09:00:00Z", title: "Guardia de urgencias", meeting_point: "Acceso" };
+    const r = await addAssignment(null, form({ shift_id: SHIFT, worker_id: "d1000000-0000-4000-8000-000000000001" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.message).toMatch(/^Esa persona ya está asignada a otra guardia que se traslapa con este horario: Guardia de urgencias, /);
+      expect(r.message).toContain(CONSECUTIVE_SHIFTS_NOTE);
+      expect(r.fieldErrors).toHaveProperty("worker_id");
+    }
+    expect(h.log).toEqual(["findOverlappingAssignment"]);
+
+    h.log = [];
+    h.overlap = null;
+    const ok = await addAssignment(null, form({ shift_id: SHIFT, worker_id: "d1000000-0000-4000-8000-000000000001" }));
+    expect(ok.ok).toBe(true);
+    expect(h.log).toEqual(["findOverlappingAssignment", "insert:shift_assignments"]);
+  });
+});
+
+describe("updateAssignment", () => {
+  const SUB = "d1000000-0000-4000-8000-000000000009";
+  const edit = (entries: Record<string, string> = {}) =>
+    form({ assignment_id: ASSIGNMENT, assigned_point: "Puerta norte", substitute_for_worker_id: SUB, notes: "Trae radio", reason: "Cubre una incapacidad", ...entries });
+
+  beforeEach(() => {
+    h.rows.shift_assignments = { assigned_point: null, substitute_for_worker_id: null, notes: null, change_reason: "Asignación a la guardia" };
+    h.rows.workers = { id: SUB };
+  });
+
+  it("guarda punto, «cubre a» y notas con el motivo; la bitácora toma los valores de la BD", async () => {
+    const r = await updateAssignment(null, edit());
+    expect(r).toEqual({ ok: true, message: "Asignación actualizada. El cambio quedó en la bitácora con su motivo." });
+    // El motivo guardado es otro: no hace falta limpiarlo.
+    expect(h.log).toEqual(["update:shift_assignments"]);
+    expect(h.ops[0].payload).toEqual({ assigned_point: "Puerta norte", substitute_for_worker_id: SUB, notes: "Trae radio", change_reason: "Cubre una incapacidad" });
+  });
+
+  it("un motivo igual al guardado se limpia antes; vacío quita el valor", async () => {
+    h.rows.shift_assignments = { assigned_point: "Puerta norte", substitute_for_worker_id: SUB, notes: "Trae radio", change_reason: "Cubre una incapacidad" };
+    const r = await updateAssignment(null, edit({ assigned_point: "", substitute_for_worker_id: "" }));
+    expect(r.ok).toBe(true);
+    expect(h.log).toEqual([`clear:shift_assignments:${ASSIGNMENT}`, "update:shift_assignments"]);
+    expect(h.ops[0].payload).toEqual({ assigned_point: null, substitute_for_worker_id: null, notes: "Trae radio", change_reason: "Cubre una incapacidad" });
+  });
+
+  it("exige motivo de al menos 5 caracteres y rechaza cambios vacíos", async () => {
+    const short = await updateAssignment(null, edit({ reason: "ok" }));
+    expect(short.ok).toBe(false);
+    if (!short.ok) expect(short.fieldErrors?.reason).toBe("Indica el motivo del cambio (mínimo 5 caracteres).");
+
+    h.rows.shift_assignments = { assigned_point: "Puerta norte", substitute_for_worker_id: SUB, notes: "Trae radio", change_reason: null };
+    expect(await updateAssignment(null, edit())).toEqual({ ok: false, message: "No hay cambios que guardar." });
+    expect(h.log).toEqual([]);
+  });
+
+  it("la persona sustituida no puede ser la misma ni una no visible", async () => {
+    h.assignmentCtx = { shift, timezone: MAZ, assignment: { id: ASSIGNMENT, shift_id: SHIFT, worker_id: SUB, status: "asignado" } };
+    const same = await updateAssignment(null, edit());
+    expect(same.ok).toBe(false);
+    if (!same.ok) expect(same.fieldErrors?.substitute_for_worker_id).toBe("Una persona no puede sustituirse a sí misma.");
+
+    h.assignmentCtx = { shift, timezone: MAZ, assignment: { id: ASSIGNMENT, shift_id: SHIFT, worker_id: "w1", status: "asignado" } };
+    h.rows.workers = null;
+    const hidden = await updateAssignment(null, edit());
+    expect(hidden.ok).toBe(false);
+    if (!hidden.ok) {
+      expect(hidden.message).toBe("La persona sustituida no existe o no es visible para tu cuenta.");
+      expect(hidden.fieldErrors).toHaveProperty("substitute_for_worker_id");
+    }
+    expect(h.log).toEqual([]);
+  });
+
+  it("separación de funciones y alcance: ni la propia asignación ni otra sede", async () => {
+    h.user = { ...coordinator, workerId: "w1" };
+    expect(await updateAssignment(null, edit())).toEqual({ ok: false, message: OWN_RECORD_DB_MESSAGE });
+    h.user = { ...coordinator, facilityIds: [OTHER] };
+    expect(await updateAssignment(null, edit())).toEqual({ ok: false, message: "No tienes permiso para modificar guardias de esta sede." });
+    expect(h.log).toEqual([]);
+
+    // Administración sí corrige su propia asignación.
+    h.user = { ...admin, workerId: "w1" };
+    expect((await updateAssignment(null, edit())).ok).toBe(true);
+  });
+
+  it("muestra el mensaje de la BD tal cual", async () => {
+    h.writeError = { code: "42501", message: "La persona sustituida no existe o no es visible para tu cuenta" };
+    expect(await updateAssignment(null, edit())).toEqual({ ok: false, message: "La persona sustituida no existe o no es visible para tu cuenta" });
   });
 });

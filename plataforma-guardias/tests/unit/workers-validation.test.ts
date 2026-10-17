@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_WORKER_FILTERS,
-  NO_FACILITY,
+  EMPLOYEE_NUMBER_TAKEN,
+  FACILITY_REQUIRED,
   buildSearchPattern,
   canSeeWorkerAccount,
   employeeNumberKey,
@@ -42,7 +43,7 @@ describe("normalización", () => {
 });
 
 describe("formulario de trabajador", () => {
-  const base = { full_name: "  María   López ", state_id: "18", active: true };
+  const base = { full_name: "  María   López ", state_id: "18", facility_id: FAC, active: true };
 
   it("acepta un alta mínima y normaliza espacios", () => {
     const r = workerFormSchema.safeParse(base);
@@ -50,8 +51,25 @@ describe("formulario de trabajador", () => {
     if (r.success) {
       expect(r.data.full_name).toBe("María López");
       expect(r.data.state_id).toBe(18);
+      expect(r.data.facility_id).toBe(FAC);
       expect(r.data.municipality_id).toBeUndefined();
     }
+  });
+
+  it("la instalación de adscripción es obligatoria (también para administración)", () => {
+    const fd = new FormData();
+    fd.set("full_name", "María López");
+    fd.set("state_id", "18");
+    fd.set("facility_id", "");
+    const r = workerFormSchema.safeParse(readWorkerForm(fd));
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.find((i) => i.path[0] === "facility_id")?.message).toBe(FACILITY_REQUIRED);
+    }
+    const invalid = workerFormSchema.safeParse({ ...base, facility_id: "no-uuid" });
+    expect(invalid.success).toBe(false);
+    if (!invalid.success) expect(invalid.error.issues[0].message).toBe("Elige una instalación de la lista.");
+    expect(EMPLOYEE_NUMBER_TAKEN).toMatch(/posiblemente en otra sede/);
   });
 
   it("valida nombre, estado, teléfono, turno e instalación", () => {
@@ -97,18 +115,15 @@ describe("formulario de trabajador", () => {
 
 describe("filtros de la lista", () => {
   it("usa valores por omisión e ignora valores inválidos", () => {
-    expect(parseWorkerFilters({}, { facilityIds: null, allowNoFacility: true })).toEqual(DEFAULT_WORKER_FILTERS);
-    const f = parseWorkerFilters(
-      { estado: "abc", municipio: "17", sede: "x", activo: "raro", cuenta: "quiza", pagina: "-2" },
-      { facilityIds: null, allowNoFacility: true },
-    );
+    expect(parseWorkerFilters({}, { facilityIds: null })).toEqual(DEFAULT_WORKER_FILTERS);
+    const f = parseWorkerFilters({ estado: "abc", municipio: "17", sede: "x", activo: "raro", cuenta: "quiza", pagina: "-2" }, { facilityIds: null });
     expect(f).toEqual(DEFAULT_WORKER_FILTERS);
   });
 
   it("lee todos los filtros válidos", () => {
     const f = parseWorkerFilters(
       { q: "  ana   ruiz ", estado: "18", municipio: "17", sede: FAC, area: " Enfermería ", activo: "todos", cuenta: "sin", pagina: "3" },
-      { facilityIds: [FAC], allowNoFacility: false },
+      { facilityIds: [FAC] },
     );
     expect(f).toEqual({
       q: "ana ruiz",
@@ -123,14 +138,15 @@ describe("filtros de la lista", () => {
     expect(hasActiveFilters(f)).toBe(true);
   });
 
-  it("limita la sede al alcance y «sin instalación» a administración", () => {
-    expect(parseWorkerFilters({ sede: FAC2 }, { facilityIds: [FAC], allowNoFacility: false }).facility).toBeNull();
-    expect(parseWorkerFilters({ sede: NO_FACILITY }, { facilityIds: [FAC], allowNoFacility: false }).facility).toBeNull();
-    expect(parseWorkerFilters({ sede: NO_FACILITY }, { facilityIds: null, allowNoFacility: true }).facility).toBe(NO_FACILITY);
+  it("limita la sede al alcance; ya no existe el filtro «sin instalación»", () => {
+    expect(parseWorkerFilters({ sede: FAC2 }, { facilityIds: [FAC] }).facility).toBeNull();
+    expect(parseWorkerFilters({ sede: FAC2 }, { facilityIds: null }).facility).toBe(FAC2);
+    // Enlaces antiguos con ?sede=ninguna se ignoran.
+    expect(parseWorkerFilters({ sede: "ninguna" }, { facilityIds: null }).facility).toBeNull();
   });
 
   it("el municipio requiere estado", () => {
-    expect(parseWorkerFilters({ municipio: "17" }, { facilityIds: null, allowNoFacility: true }).municipalityId).toBeNull();
+    expect(parseWorkerFilters({ municipio: "17" }, { facilityIds: null }).municipalityId).toBeNull();
   });
 
   it("construye la URL sin valores por omisión", () => {
@@ -138,10 +154,7 @@ describe("filtros de la lista", () => {
     const f = { ...DEFAULT_WORKER_FILTERS, q: "ana", stateId: 18, municipalityId: 17, status: "inactivos" as const, page: 2 };
     expect(workersHref(f)).toBe("/trabajadores?q=ana&estado=18&municipio=17&activo=inactivos&pagina=2");
     expect(workersHref(f, { page: 1 })).toBe("/trabajadores?q=ana&estado=18&municipio=17&activo=inactivos");
-    const roundTrip = parseWorkerFilters(Object.fromEntries(new URL(workersHref(f), "http://x").searchParams), {
-      facilityIds: null,
-      allowNoFacility: true,
-    });
+    const roundTrip = parseWorkerFilters(Object.fromEntries(new URL(workersHref(f), "http://x").searchParams), { facilityIds: null });
     expect(roundTrip).toEqual(f);
   });
 });

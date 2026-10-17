@@ -62,7 +62,7 @@ export default async function NuevoTrabajadorPage({ searchParams }: { searchPara
           states={states.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled }))}
           municipalities={municipalities.map((m) => ({ id: m.id, state_id: m.state_id, name: m.name }))}
           facilities={facilities.map((f) => ({ id: f.id, official_name: f.official_name }))}
-          allowNoFacility={user.isAdmin}
+          allFacilities={user.isAdmin}
           showPrivate
           cancelHref="/trabajadores"
         />

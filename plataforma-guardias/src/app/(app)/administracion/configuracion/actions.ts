@@ -8,17 +8,18 @@ import { failure, fieldFailure, friendlyAdminError, invalidResult } from "@/lib/
 import {
   SETTINGS_PATH,
   SETTING_KEYS,
-  attendanceSettingsSchema,
+  attendanceSettingsFormSchema,
   describeAppliedRetention,
   describeDemoCounts,
   isConfirmed,
   parseDemoPurgeResult,
   parseRetentionImpact,
-  privacyNoticeSchema,
+  privacyNoticeFormSchema,
   readAttendanceSettingsForm,
   readPrivacyNoticeForm,
   readRetentionForm,
-  retentionSchema,
+  retentionFormSchema,
+  splitReason,
   type DemoCounts,
   type RetentionImpact,
 } from "@/lib/admin/settings";
@@ -27,10 +28,11 @@ import { saveSettingValue } from "@/lib/admin/settings-server";
 /** (a) Aviso de privacidad. */
 export async function savePrivacyNotice(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
-  const parsed = privacyNoticeSchema.safeParse(readPrivacyNoticeForm(formData));
+  const parsed = privacyNoticeFormSchema.safeParse(readPrivacyNoticeForm(formData));
   if (!parsed.success) return invalidResult(parsed.error);
+  const { reason, value } = splitReason(parsed.data);
   const supabase = await createClient();
-  const error = await saveSettingValue(supabase, SETTING_KEYS.privacy, parsed.data);
+  const error = await saveSettingValue(supabase, SETTING_KEYS.privacy, value, reason);
   if (error) return failure(friendlyAdminError(error, "No se pudo guardar el aviso de privacidad."));
   revalidatePath(SETTINGS_PATH);
   revalidatePath("/aviso-de-privacidad");
@@ -46,10 +48,11 @@ export async function savePrivacyNotice(_prev: ActionResult | null, formData: Fo
 /** (b) Periodos de conservación (meses). */
 export async function saveRetention(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
-  const parsed = retentionSchema.safeParse(readRetentionForm(formData));
+  const parsed = retentionFormSchema.safeParse(readRetentionForm(formData));
   if (!parsed.success) return invalidResult(parsed.error);
+  const { reason, value } = splitReason(parsed.data);
   const supabase = await createClient();
-  const error = await saveSettingValue(supabase, SETTING_KEYS.retention, parsed.data);
+  const error = await saveSettingValue(supabase, SETTING_KEYS.retention, value, reason);
   if (error) return failure(friendlyAdminError(error, "No se pudieron guardar los periodos de conservación."));
   revalidatePath(SETTINGS_PATH);
   return { ok: true, message: "Periodos de conservación guardados. No se eliminó nada: usa «Calcular impacto» y «Aplicar ahora»." };
@@ -88,10 +91,11 @@ export async function applyRetention(_prev: ActionResult<RetentionImpact> | null
 /** (c) Ventana de registro y margen para entradas abiertas. */
 export async function saveAttendanceSettings(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
-  const parsed = attendanceSettingsSchema.safeParse(readAttendanceSettingsForm(formData));
+  const parsed = attendanceSettingsFormSchema.safeParse(readAttendanceSettingsForm(formData));
   if (!parsed.success) return invalidResult(parsed.error);
+  const { reason, value } = splitReason(parsed.data);
   const supabase = await createClient();
-  const error = await saveSettingValue(supabase, SETTING_KEYS.attendance, parsed.data);
+  const error = await saveSettingValue(supabase, SETTING_KEYS.attendance, value, reason);
   if (error) return failure(friendlyAdminError(error, "No se pudo guardar la configuración de registro."));
   revalidatePath("/", "layout");
   return { ok: true, message: "Configuración de registro de asistencia guardada. Aplica a los siguientes registros." };

@@ -4,9 +4,11 @@ import {
   MEXICO_TIMEZONES,
   buildSearchPattern,
   categoryActiveSchema,
+  categoryDeleteSchema,
   categoryFormSchema,
   changedFields,
   checkCoordinates,
+  compatibleUnitKeys,
   defaultTimezoneFor,
   facilitiesHref,
   facilityFormSchema,
@@ -36,6 +38,13 @@ describe("normalización", () => {
     expect(unitKeyKey("   ")).toBeNull();
     expect(slugify("Unidades de Medicina Familiar (Nivel 1)")).toBe("unidades-de-medicina-familiar-nivel-1");
     expect(slugify("Oficinas Ádministrativas")).toBe("oficinas-administrativas");
+  });
+  it("mismo nombre y lugar: solo es la misma unidad si alguna no tiene clave o coinciden", () => {
+    expect(compatibleUnitKeys("NTIMS000721", "NTIMS001235")).toBe(false);
+    expect(compatibleUnitKeys(" ntims000721 ", "NTIMS000721")).toBe(true);
+    expect(compatibleUnitKeys(null, "NTIMS001235")).toBe(true);
+    expect(compatibleUnitKeys("NTIMS000721", "  ")).toBe(true);
+    expect(compatibleUnitKeys(undefined, null)).toBe(true);
   });
   it("servicios: uno por línea, sin vacíos ni repetidos", () => {
     expect(parseServices("Urgencias\n\n - Farmacia\r\nurgencias\n  Laboratorio  ")).toEqual(["Urgencias", "Farmacia", "Laboratorio"]);
@@ -141,6 +150,15 @@ describe("formulario de instalación", () => {
     expect(errorsOf(facilityFormData({ latitude: "abc", longitude: "-100" }))).toContain("latitude");
   });
 
+  it("exige el municipio", () => {
+    const fd = facilityFormData();
+    fd.delete("municipality_id");
+    const missing = schema.safeParse(readFacilityForm(fd));
+    expect(missing.success).toBe(false);
+    expect(missing.error?.issues).toEqual([expect.objectContaining({ path: ["municipality_id"], message: "Elige el municipio." })]);
+    expect(schema.safeParse(readFacilityForm(facilityFormData({ municipality_id: "abc" }))).success).toBe(false);
+  });
+
   it("verificada exige fecha y no admite fechas futuras", () => {
     const missing = schema.safeParse(readFacilityForm(facilityFormData({ verification_status: "verificado" })));
     expect(missing.success).toBe(false);
@@ -189,10 +207,21 @@ describe("cambios y motivo para la bitácora", () => {
 });
 
 describe("formulario de categoría", () => {
-  it("activar/desactivar solo acepta 1 o 0", () => {
-    expect(categoryActiveSchema.safeParse({ category_id: "3", active: "0" }).success).toBe(true);
-    expect(categoryActiveSchema.safeParse({ category_id: "3", active: "si" }).success).toBe(false);
-    expect(categoryActiveSchema.safeParse({ category_id: "x", active: "1" }).success).toBe(false);
+  it("activar/desactivar solo acepta 1 o 0, con motivo", () => {
+    const reason = "Categoría duplicada";
+    expect(categoryActiveSchema.safeParse({ category_id: "3", active: "0", reason }).success).toBe(true);
+    expect(categoryActiveSchema.safeParse({ category_id: "3", active: "si", reason }).success).toBe(false);
+    expect(categoryActiveSchema.safeParse({ category_id: "x", active: "1", reason }).success).toBe(false);
+    const noReason = categoryActiveSchema.safeParse({ category_id: "3", active: "0" });
+    expect(noReason.success).toBe(false);
+    if (!noReason.success) expect(noReason.error.issues[0].path).toEqual(["reason"]);
+  });
+
+  it("eliminar exige confirmación y motivo", () => {
+    expect(categoryDeleteSchema.safeParse({ category_id: "3", confirm: "ELIMINAR", reason: "Creada por error" }).success).toBe(true);
+    const r = categoryDeleteSchema.safeParse({ category_id: "3", confirm: "ELIMINAR", reason: "abc" });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0].path).toEqual(["reason"]);
   });
 
   function fd(values: Record<string, string>) {
@@ -205,6 +234,16 @@ describe("formulario de categoría", () => {
     expect(r.success).toBe(true);
     if (!r.success) return;
     expect(r.data).toMatchObject({ name: "Guarderías", slug: "guarderias", color: "#14532d", sort_order: 100, active: true });
+    // En un alta sin motivo se registra uno por omisión.
+    expect(r.data.reason).toBe("Alta de categoría");
+  });
+  it("al editar exige el motivo del cambio", () => {
+    const base = { id: "4", name: "Guarderías", icon: "baby", color: "#14532D", active: "1" };
+    const missing = categoryFormSchema.safeParse(readCategoryForm(fd(base)));
+    expect(missing.success).toBe(false);
+    if (!missing.success) expect(missing.error.issues.map((i) => i.path[0])).toEqual(["reason"]);
+    const ok = categoryFormSchema.safeParse(readCategoryForm(fd({ ...base, reason: "Cambio de nombre oficial" })));
+    expect(ok.success && ok.data.reason).toBe("Cambio de nombre oficial");
   });
   it("rechaza slug inválido, icono fuera de la lista y color inválido", () => {
     const r = categoryFormSchema.safeParse(readCategoryForm(fd({ name: "X1", slug: "Con Espacios", icon: "rocket", color: "verde" })));
