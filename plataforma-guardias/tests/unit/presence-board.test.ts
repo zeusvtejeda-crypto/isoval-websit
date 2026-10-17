@@ -345,6 +345,65 @@ describe("buildPresenceBoard", () => {
     expect(evening.inService).toHaveLength(0);
   });
 
+  it("una guardia cerrada manualmente no deja personas «pendientes de llegar»", () => {
+    const closed = build({ ...specOf("CERRADA"), status: "finalizada" });
+    const b = buildPresenceBoard([closed], NOW, { day: DAY, period: "todos" });
+    expect(closed.effectiveStatus).toBe("finalizada");
+    expect(b.shiftCount).toBe(1);
+    expect(b.expected).toHaveLength(0);
+    expect(b.incomplete).toHaveLength(0); // aún no termina su horario: no hay señal de revisión
+    expect(summarizeHome([closed], NOW, 7).shiftsInProgress).toBe(0);
+  });
+
+  it("con incompleteSince lista entradas olvidadas de días anteriores sin contarlas como guardias del día", () => {
+    // Guardia de ayer (06:00–14:00 local del 16) con entrada sin salida y otra persona sin registros.
+    const yesterday = build({
+      id: "AYER",
+      start: "2026-10-16T13:00:00Z",
+      end: "2026-10-16T21:00:00Z",
+      assignments: [
+        { id: "aOlvido", workerId: "wOlvido", name: "Olga", sessions: [{ in: "2026-10-16T13:01:00Z" }] },
+        { id: "aFalta", workerId: "wFalta", name: "Fausto" },
+      ],
+    });
+    // Otra sede, misma situación.
+    const otherFacility = build({
+      id: "AYER2",
+      facilityId: "F2",
+      start: "2026-10-16T13:00:00Z",
+      end: "2026-10-16T21:00:00Z",
+      assignments: [{ id: "aOtra", workerId: "wOtra", name: "Otilia", sessions: [{ in: "2026-10-16T13:01:00Z" }] }],
+    });
+    // Hace 10 días: fuera de la ventana.
+    const old = build({
+      id: "VIEJA",
+      start: "2026-10-07T13:00:00Z",
+      end: "2026-10-07T21:00:00Z",
+      assignments: [{ id: "aVieja", workerId: "wVieja", name: "Vicente", sessions: [{ in: "2026-10-07T13:01:00Z" }] }],
+    });
+    const input = [...ALL, yesterday, otherFacility, old];
+    const since = new Date(NOW.getTime() - 7 * 86_400_000);
+
+    const without = buildPresenceBoard(input, NOW, { day: DAY, period: "todos" });
+    expect(without.incomplete.map((i) => i.workerName)).not.toContain("Olga");
+
+    const withLookback = buildPresenceBoard(input, NOW, { day: DAY, period: "todos", incompleteSince: since });
+    const byName = Object.fromEntries(withLookback.incomplete.map((i) => [i.workerName, i]));
+    expect(byName["Olga"].reason).toBe("entrada_sin_salida");
+    expect(byName["Fausto"].reason).toBe("sin_registros");
+    expect(byName["Otilia"]).toBeDefined();
+    expect(byName["Vicente"]).toBeUndefined();
+    expect(byName["Raúl"]).toBeDefined(); // los del día se conservan
+    expect(withLookback.shiftCount).toBe(4); // solo cuenta guardias del día
+    expect(withLookback.expected.map((e) => e.workerName)).not.toContain("Fausto");
+
+    // Respeta el filtro de sede y de turno.
+    const f1 = buildPresenceBoard(input, NOW, { day: DAY, period: "todos", facilityId: "F1", incompleteSince: since });
+    expect(f1.incomplete.map((i) => i.workerName)).not.toContain("Otilia");
+    const evening = buildPresenceBoard(input, NOW, { day: DAY, period: "vespertino", incompleteSince: since });
+    expect(evening.incomplete.map((i) => i.workerName)).not.toContain("Olga");
+  });
+
   it("devuelve un tablero vacío sin guardias", () => {
     const empty = buildPresenceBoard([], NOW, { day: DAY, period: "todos" });
     expect(empty).toEqual({ shiftCount: 0, inService: [], responsibles: [], expected: [], left: [], uncovered: [], incomplete: [] });

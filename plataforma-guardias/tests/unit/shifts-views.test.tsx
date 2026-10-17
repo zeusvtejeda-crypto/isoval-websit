@@ -180,6 +180,8 @@ describe("vistas de guardias", () => {
     expect(within(saturday).getByText("22:00 – 06:00 (+1 día)")).toBeInTheDocument();
     expect(within(saturday).getByText("Hoy")).toBeInTheDocument();
     expect(within(saturday).getByText("Cobertura insuficiente")).toBeInTheDocument();
+    expect(within(saturday).getByText("Responsable: [DEMO] Responsable")).toBeInTheDocument();
+    expect(within(saturday).getByText(/Asignados 1\/2 \(máx\. 4\) · En servicio 0/)).toBeInTheDocument();
     const sunday = screen.getByRole("heading", { name: /dom 18 oct/ }).closest("li") as HTMLElement;
     expect(within(sunday).getByText("Sin guardias")).toBeInTheDocument();
     expect(screen.getAllByText("+ Programar")).toHaveLength(7);
@@ -231,6 +233,50 @@ describe("vistas de guardias", () => {
     expect(screen.getByRole("button", { name: "Agregar registro manual" })).toBeInTheDocument();
     expect(screen.queryByText("Quitar asignación")).not.toBeInTheDocument();
     expect(screen.getByDisplayValue("11111111-1111-4111-8111-111111111111")).toBeInTheDocument();
+  });
+
+  it("asignación con solicitudes pendientes: enlace a revisión solo para gestión", () => {
+    const pending = {
+      id: "c1",
+      assignment_id: "a1",
+      session_id: "s-fixed",
+      worker_id: "w1",
+      facility_id: FACILITY,
+      requested_by: "p-worker",
+      requested_check_in_at: "2026-10-18T05:05:00Z",
+      requested_check_out_at: null,
+      reason: "Llegué antes",
+      status: "pendiente" as const,
+      reviewed_by: null,
+      reviewed_at: null,
+      review_notes: null,
+      resulting_session_id: null,
+      created_at: "2026-10-18T15:00:00Z",
+    };
+    const props = {
+      item: buildAssignment(),
+      tz: TZ,
+      zoneLabel: "Tiempo del Pacífico (Mazatlán), GMT-7",
+      shift: { starts_at: shiftRow.starts_at, ends_at: shiftRow.ends_at, status: shiftRow.status },
+      actions,
+      names: {},
+      currentUserId: "p-admin",
+      workerProfileId: null,
+      notes: [],
+      corrections: [pending],
+      requestId: "11111111-1111-4111-8111-111111111111",
+      now,
+      checkInOpensAt: new Date("2026-10-18T03:00:00Z"),
+      correctionsHref: `/correcciones?sede=${FACILITY}`,
+    };
+    const { unmount } = render(<AssignmentCard {...props} canManage />);
+    // 05:05 UTC = 22:05 del sábado 17 en Mazatlán.
+    expect(screen.getByText(/Entrada solicitada: 17\/10\/2026 22:05/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Revisar solicitudes en Correcciones" })).toHaveAttribute("href", `/correcciones?sede=${FACILITY}`);
+    unmount();
+    render(<AssignmentCard {...props} canManage={false} />);
+    expect(screen.getByText(/Entrada solicitada/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Revisar solicitudes en Correcciones" })).not.toBeInTheDocument();
   });
 
   it("asignación en solo lectura (auditoría): sin formularios de acción", () => {

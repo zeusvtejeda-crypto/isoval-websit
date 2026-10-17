@@ -167,6 +167,65 @@ describe("AttendanceButtons", () => {
     expect(await screen.findByText(/Guardia: \[DEMO\] Hospital A/)).toBeInTheDocument();
   });
 
+  it("una respuesta sin JSON (p. ej. 502 del proxy) queda «no confirmada» y el reintento usa la misma solicitud", async () => {
+    fetchMock.mockReturnValueOnce(
+      Promise.resolve({ ok: false, status: 502, json: () => Promise.reject(new SyntaxError("Unexpected token <")) } as unknown as Response),
+    );
+    fetchMock.mockReturnValueOnce(okResponse({ ...created("entrada", "2026-10-17T15:05:00Z"), result: "duplicate" }));
+    renderButtons();
+    await userEvent.click(entrada());
+    expect(await screen.findByText("Registro NO confirmado")).toBeInTheDocument();
+    expect(screen.queryByText(/registrada a las/i)).toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Reintentar envío" }));
+    expect(await screen.findByText("Entrada registrada a las 08:05 (hora del servidor)")).toBeInTheDocument();
+    const first = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(second.requestId).toBe(first.requestId);
+  });
+
+  it("si se pierde la conexión tras «no confirmado», el reintento queda deshabilitado y no envía", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderButtons();
+    await userEvent.click(entrada());
+    const retry = await screen.findByRole("button", { name: "Reintentar envío" });
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    expect(retry).toBeDisabled();
+    expect(screen.getByText("Podrás reintentar cuando vuelva la conexión.")).toBeInTheDocument();
+    fireEvent.click(retry);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/registrada a las/i)).toBeNull();
+  });
+
+  it("«entrada abierta en otra guardia» y «sin entrada abierta» no se presentan como registros", async () => {
+    fetchMock.mockReturnValueOnce(
+      okResponse({
+        ok: true,
+        result: "open_elsewhere",
+        message: "Hay una entrada abierta en otra guardia. Registra la salida de esa guardia o solicita una corrección.",
+        serverTime: "2026-10-17T15:05:00Z",
+        session: null,
+      }),
+    );
+    const { unmount } = renderButtons();
+    await userEvent.click(entrada());
+    expect(await screen.findByText("No se registró la entrada")).toBeInTheDocument();
+    expect(screen.getByText(/entrada abierta en otra guardia/)).toBeInTheDocument();
+    expect(screen.queryByText(/registrada a las/i)).toBeNull();
+    unmount();
+
+    fetchMock.mockReturnValueOnce(
+      okResponse({ ok: true, result: "no_open_session", message: "No hay una entrada abierta en esta guardia.", serverTime: "2026-10-17T15:05:00Z", session: null }),
+    );
+    renderButtons({ canCheckIn: false, canCheckOut: true });
+    await userEvent.click(screen.getByRole("button", { name: "Registrar salida" }));
+    expect(await screen.findByText("No se registró la salida")).toBeInTheDocument();
+    expect(screen.queryByText(/registrada a las/i)).toBeNull();
+  });
+
   it("conserva el resultado del último envío aunque ya no haya asignación que registrar", async () => {
     fetchMock.mockReturnValue(okResponse(created("salida", "2026-10-17T21:02:00Z")));
     const { rerender } = renderButtons({ canCheckIn: false, canCheckOut: true });

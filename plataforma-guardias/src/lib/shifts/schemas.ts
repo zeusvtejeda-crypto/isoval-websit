@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 import type { ActionResult } from "@/lib/actions";
-import { DATETIME_LOCAL_RE, TIME_RE, isValidDay } from "./dates";
+import { TIME_RE, isValidDay, isValidLocalDateTime } from "./dates";
 
 /** Lee campos de un FormData: recorta espacios y convierte vacíos en undefined. */
 export function readForm<K extends string>(formData: FormData, keys: readonly K[]): Record<K, string | undefined> {
@@ -39,7 +39,7 @@ const reason = (min: number, label = "Indica el motivo") =>
     .min(min, { error: `${label} (mínimo ${min} caracteres).` })
     .max(500, { error: "Máximo 500 caracteres." });
 const localDateTime = (label: string) =>
-  z.string({ error: `Indica ${label}.` }).regex(DATETIME_LOCAL_RE, { error: `Indica ${label} con fecha y hora válidas.` });
+  z.string({ error: `Indica ${label}.` }).refine((v) => isValidLocalDateTime(v), { error: `Indica ${label} con fecha y hora válidas.` });
 
 export const SHIFT_FORM_FIELDS = [
   "id",

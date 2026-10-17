@@ -241,6 +241,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
                   requestId={newRequestId()}
                   now={now}
                   checkInOpensAt={checkInOpensAt}
+                  correctionsHref={canManage ? `/correcciones?sede=${shift.facility_id}` : null}
                 />
               ))}
             </div>

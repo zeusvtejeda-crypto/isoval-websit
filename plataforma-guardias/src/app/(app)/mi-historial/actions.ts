@@ -67,7 +67,12 @@ export async function requestCorrection(_prev: CorrectionState, formData: FormDa
     p_check_out_at: (resolved.checkOutAt?.toISOString() ?? null) as string,
     p_reason: resolved.reason,
   });
-  if (rpcError) return fail(friendlyDbError(rpcError, "No se pudo enviar la solicitud."));
+  if (rpcError) {
+    // Índice único: una sola solicitud pendiente por registro (el mensaje de la función no lleva acentos
+    // y friendlyDbError lo convertiría en un genérico «duplicado»).
+    if (rpcError.code === "23505") return fail("Ya existe una solicitud pendiente para ese registro.", { sessionId: "Ya tiene una solicitud pendiente." });
+    return fail(friendlyDbError(rpcError, "No se pudo enviar la solicitud."));
+  }
 
   revalidatePath("/mi-historial");
   revalidatePath("/correcciones");

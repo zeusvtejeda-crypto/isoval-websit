@@ -6,6 +6,8 @@ import {
   describeShiftClock,
   hasStarted,
   isValidDay,
+  isValidLocalDateTime,
+  localDateTimeToUtc,
   splitShiftTimes,
   startOfWeek,
   weekDays,
@@ -22,7 +24,15 @@ import {
   type FilterableShift,
 } from "@/lib/shifts/filters";
 import { formatSignedDuration, formatTimeRangeCompact, shiftDisplayTitle, staffingSummary, timezoneLabel } from "@/lib/shifts/format";
-import { addAssignmentSchema, fieldErrorsFrom, readForm, shiftFormSchema, SHIFT_FORM_FIELDS, correctSessionSchema } from "@/lib/shifts/schemas";
+import {
+  addAssignmentSchema,
+  correctSessionSchema,
+  fieldErrorsFrom,
+  manualSessionSchema,
+  readForm,
+  shiftFormSchema,
+  SHIFT_FORM_FIELDS,
+} from "@/lib/shifts/schemas";
 import { collectActorIds, describeActor } from "@/lib/shifts/actors";
 
 const MAZ = "America/Mazatlan";
@@ -102,6 +112,22 @@ describe("describeShiftClock y splitShiftTimes", () => {
     const now = new Date("2026-10-17T12:00:00Z");
     expect(hasStarted("2026-10-17T11:59:00Z", now)).toBe(true);
     expect(hasStarted("2026-10-17T12:01:00Z", now)).toBe(false);
+  });
+});
+
+describe("captura datetime-local en la zona de la sede", () => {
+  it("convierte a UTC según la sede", () => {
+    expect(localDateTimeToUtc("2026-10-17T22:05", MAZ)?.toISOString()).toBe("2026-10-18T05:05:00.000Z");
+    expect(localDateTimeToUtc("2026-10-17T22:05", BAH)?.toISOString()).toBe("2026-10-18T04:05:00.000Z");
+  });
+
+  it("rechaza fechas que no existen en lugar de producir una fecha inválida", () => {
+    expect(isValidLocalDateTime("2026-02-31T10:00")).toBe(false);
+    expect(isValidLocalDateTime("2026-13-01T10:00")).toBe(false);
+    expect(isValidLocalDateTime("2026-10-17T24:00")).toBe(false);
+    expect(isValidLocalDateTime("2026-10-17T22:05")).toBe(true);
+    expect(localDateTimeToUtc("2026-02-31T10:00", MAZ)).toBeNull();
+    expect(localDateTimeToUtc("17/10/2026 22:05", MAZ)).toBeNull();
   });
 });
 
@@ -306,6 +332,17 @@ describe("validación de formularios", () => {
     const bad = correctSessionSchema.safeParse({ session_id: FACILITY, check_in: "17/10/2026 22:05", reason: "no" });
     expect(bad.success).toBe(false);
     if (!bad.success) expect(Object.keys(fieldErrorsFrom(bad.error)).sort()).toEqual(["check_in", "reason"]);
+    const impossible = correctSessionSchema.safeParse({ session_id: FACILITY, check_in: "2026-02-31T22:05", reason: "Olvidó registrar" });
+    expect(impossible.success).toBe(false);
+    if (!impossible.success) expect(fieldErrorsFrom(impossible.error).check_in).toMatch(/fecha y hora válidas/);
+  });
+
+  it("registro manual: exige solicitud generada por el servidor y ambas horas", () => {
+    const base = { assignment_id: FACILITY, request_id: OTHER, check_in: "2026-10-17T22:00", check_out: "2026-10-18T06:00", reason: "No pudo registrar" };
+    expect(manualSessionSchema.safeParse(base).success).toBe(true);
+    const missing = manualSessionSchema.safeParse({ ...base, request_id: undefined, check_out: undefined });
+    expect(missing.success).toBe(false);
+    if (!missing.success) expect(Object.keys(fieldErrorsFrom(missing.error)).sort()).toEqual(["check_out", "request_id"]);
   });
 });
 

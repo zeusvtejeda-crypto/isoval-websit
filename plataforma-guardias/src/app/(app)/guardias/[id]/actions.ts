@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { canManageFacility, requireManager, type SessionUser } from "@/lib/auth";
 import { friendlyDbError, type ActionResult } from "@/lib/actions";
 import { createClient } from "@/lib/supabase/server";
-import { localInputToUtc } from "@/lib/time";
+import { localDateTimeToUtc } from "@/lib/shifts/dates";
 import { getAssignmentContext, getSessionContext, getShiftContext, type ShiftContext } from "@/lib/shifts/queries";
 import {
   addAssignmentSchema,
@@ -50,6 +50,21 @@ export async function addAssignment(_prev: ActionResult | null, formData: FormDa
   if (workerError) return { ok: false, message: friendlyDbError(workerError) };
   if (!worker || !worker.active) {
     return { ok: false, message: "La persona no está activa o no es visible para tu cuenta.", fieldErrors: { worker_id: "Elige un trabajador activo." } };
+  }
+  if (v.substitute_for_worker_id) {
+    const { data: substitute, error: substituteError } = await supabase
+      .from("workers")
+      .select("id")
+      .eq("id", v.substitute_for_worker_id)
+      .maybeSingle();
+    if (substituteError) return { ok: false, message: friendlyDbError(substituteError) };
+    if (!substitute) {
+      return {
+        ok: false,
+        message: "La persona sustituida no existe o no es visible para tu cuenta.",
+        fieldErrors: { substitute_for_worker_id: "Elige a una persona de la lista." },
+      };
+    }
   }
 
   const { error } = await supabase.from("shift_assignments").insert({
@@ -133,8 +148,12 @@ export async function correctSession(_prev: ActionResult | null, formData: FormD
   if (denied || !ctx) return denied ?? NO_ACCESS;
   if (ctx.session.record_status !== "vigente") return { ok: false, message: "Solo se corrige la versión vigente del registro." };
 
-  const checkIn = localInputToUtc(v.check_in, ctx.timezone);
-  const checkOut = v.check_out ? localInputToUtc(v.check_out, ctx.timezone) : null;
+  const checkIn = localDateTimeToUtc(v.check_in, ctx.timezone);
+  if (!checkIn) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { check_in: "Fecha y hora inválidas." } };
+  const checkOut = v.check_out ? localDateTimeToUtc(v.check_out, ctx.timezone) : null;
+  if (v.check_out && !checkOut) {
+    return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { check_out: "Fecha y hora inválidas." } };
+  }
   if (checkOut && checkOut <= checkIn) {
     return { ok: false, message: "La salida debe ser posterior a la entrada.", fieldErrors: { check_out: "Debe ser posterior a la entrada." } };
   }
@@ -186,8 +205,15 @@ export async function addManualSession(_prev: ActionResult | null, formData: For
   const denied = ensureManage(user, ctx);
   if (denied || !ctx) return denied ?? NO_ACCESS;
 
-  const checkIn = localInputToUtc(v.check_in, ctx.timezone);
-  const checkOut = localInputToUtc(v.check_out, ctx.timezone);
+  const checkIn = localDateTimeToUtc(v.check_in, ctx.timezone);
+  const checkOut = localDateTimeToUtc(v.check_out, ctx.timezone);
+  if (!checkIn || !checkOut) {
+    return {
+      ok: false,
+      message: "Revisa los campos marcados.",
+      fieldErrors: { ...(checkIn ? {} : { check_in: "Fecha y hora inválidas." }), ...(checkOut ? {} : { check_out: "Fecha y hora inválidas." }) },
+    };
+  }
   if (checkOut <= checkIn) {
     return { ok: false, message: "La salida debe ser posterior a la entrada.", fieldErrors: { check_out: "Debe ser posterior a la entrada." } };
   }

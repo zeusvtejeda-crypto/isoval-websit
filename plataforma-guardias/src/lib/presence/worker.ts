@@ -199,7 +199,9 @@ export function checkInBlockText(view: MyShiftView): string | null {
     case null:
       return null;
     case "already_open":
-      return "Ya tienes una entrada registrada en esta guardia. Registra tu salida al terminar.";
+      return view.checkOutBlock === "needs_review"
+        ? "Esta guardia tiene una entrada sin salida que requiere revisión; no se puede registrar otra entrada."
+        : "Ya tienes una entrada registrada en esta guardia. Registra tu salida al terminar.";
     case "cancelled":
       return "La guardia o tu asignación está cancelada; no se puede registrar entrada.";
     case "inactive":

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { AssignmentWithAttendance, SessionRow } from "@/lib/attendance/load";
@@ -167,6 +168,7 @@ export function AssignmentCard({
   requestId,
   now,
   checkInOpensAt,
+  correctionsHref,
 }: {
   item: AssignmentWithAttendance;
   tz: string;
@@ -184,6 +186,8 @@ export function AssignmentCard({
   now: Date;
   /** Momento en que abre el registro de entrada (inicio − ventana configurada). */
   checkInOpensAt: Date;
+  /** Enlace a la revisión de solicitudes de corrección (solo gestión). */
+  correctionsHref?: string | null;
 }) {
   const { assignment, worker, substituteFor, summary } = item;
   const sessions = [...item.sessions].sort((a, b) => a.check_in_at.localeCompare(b.check_in_at) || a.created_at.localeCompare(b.created_at));
@@ -354,6 +358,11 @@ export function AssignmentCard({
                 </li>
               ))}
             </ul>
+            {canManage && correctionsHref ? (
+              <Link href={correctionsHref} className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
+                Revisar solicitudes en Correcciones
+              </Link>
+            ) : null}
           </div>
         ) : null}
       </section>

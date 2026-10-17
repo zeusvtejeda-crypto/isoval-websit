@@ -99,8 +99,10 @@ export default async function EditarGuardiaPage({
         ) : null}
         {!split.representable ? (
           <Alert tone="warning" title="Horario fuera del formato del formulario">
-            Esta guardia dura {formatDuration(split.durationMinutes)}. El formulario permite hasta 24 horas: al guardar, el término será la hora indicada
-            (el mismo día o el siguiente).
+            {split.durationMinutes > 1440
+              ? `Esta guardia dura ${formatDuration(split.durationMinutes)}. El formulario permite hasta 24 horas: `
+              : "El horario guardado no coincide exactamente con una fecha y horas en minutos: "}
+            al guardar, el término será la hora indicada (el mismo día o el siguiente).
           </Alert>
         ) : null}
         {assignmentCount > 0 ? (

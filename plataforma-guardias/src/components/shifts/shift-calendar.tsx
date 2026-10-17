@@ -68,6 +68,7 @@ export function ShiftCalendar({
                       </span>
                       <span className="block break-words text-sm text-brand-900">{shiftDisplayTitle(item.shift)}</span>
                       {showFacility ? <span className="block break-words text-xs text-gray-600">{item.facility?.official_name ?? "—"}</span> : null}
+                      <span className="block break-words text-xs text-gray-600">Responsable: {item.responsible?.full_name ?? "Sin responsable"}</span>
                       <span className="mt-1 block text-xs text-gray-700">
                         Asignados {item.coverage.assigned}/{item.coverage.minStaff}
                         {item.coverage.maxStaff != null ? ` (máx. ${item.coverage.maxStaff})` : ""} · En servicio {item.coverage.inService}

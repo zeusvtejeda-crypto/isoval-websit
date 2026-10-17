@@ -37,13 +37,13 @@ export function summarizeHome(shifts: ShiftWithAttendance[], now: Date, recentDa
     const today = todayInTz(tz, now);
     const isToday = overlapsLocalDay(item.shift.starts_at, item.shift.ends_at, today, tz);
     const endMs = Date.parse(item.shift.ends_at);
-    const startMs = Date.parse(item.shift.starts_at);
 
     if (isToday) {
       shiftsToday += 1;
       if (item.coverage.insufficient) insufficientCoverage += 1;
     }
-    if (startMs <= nowMs && nowMs < endMs) shiftsInProgress += 1;
+    // Estado efectivo: una guardia cerrada manualmente no cuenta como en curso.
+    if (item.effectiveStatus === "en_curso") shiftsInProgress += 1;
 
     for (const a of item.assignments) {
       if (a.assignment.status === "cancelado") continue;

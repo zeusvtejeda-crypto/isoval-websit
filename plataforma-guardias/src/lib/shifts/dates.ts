@@ -25,6 +25,26 @@ export function isValidTime(value: string | null | undefined): value is string {
   return !!value && TIME_RE.test(value);
 }
 
+/** ¿Es un valor de <input type="datetime-local"> con fecha de calendario real? */
+export function isValidLocalDateTime(value: string | null | undefined): value is string {
+  return !!value && DATETIME_LOCAL_RE.test(value) && isValidDay(value.slice(0, 10));
+}
+
+/**
+ * Convierte un valor datetime-local capturado en la zona de la sede a UTC.
+ * Devuelve null si el valor no es una fecha y hora reales (p. ej. 31 de febrero),
+ * en lugar de producir una fecha inválida.
+ */
+export function localDateTimeToUtc(value: string, tz: string | null | undefined): Date | null {
+  if (!isValidLocalDateTime(value)) return null;
+  try {
+    const date = localInputToUtc(value, tz);
+    return Number.isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null;
+  }
+}
+
 export function addDays(day: string, n: number): string {
   if (!isValidDay(day)) throw new Error("Fecha inválida");
   return new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);

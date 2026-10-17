@@ -13,9 +13,10 @@ import {
   type Tone,
 } from "@/lib/attendance/labels";
 import { friendlyDbError } from "@/lib/actions";
-import { DEFAULT_TIMEZONE, dayRangeUtc, formatDate, formatDateTime, formatShiftRange, formatTime, todayInTz } from "@/lib/time";
+import { DEFAULT_TIMEZONE, dayRangeUtc, formatDate, formatDateTime, formatShiftRange, todayInTz } from "@/lib/time";
 import { addDays, isIsoDay } from "@/lib/presence/periods";
-import { EXTRA_TIME_NOTE, NOT_LINKED_MESSAGE, PRESENCE_DISCLAIMER } from "@/lib/presence/texts";
+import { daysInclusive, MAX_RANGE_DAYS as EXPORT_MAX_DAYS } from "@/lib/reports/params";
+import { NOT_LINKED_MESSAGE, PRESENCE_DISCLAIMER } from "@/lib/presence/texts";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ type CorrectionRow = {
   review_notes: string | null;
   reviewed_at: string | null;
   created_at: string;
+  assignment: { shift: { starts_at: string; ends_at: string; meeting_point: string } | null } | null;
 };
 
 function resolveRange(sp: Record<string, string | string[] | undefined>, today: string) {
@@ -94,13 +96,15 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
     loadShiftsWithAttendance(supabase, { from, to, workerId, includeCancelled: true, now }),
     supabase
       .from("correction_requests")
-      .select("id, assignment_id, session_id, facility_id, requested_check_in_at, requested_check_out_at, reason, status, review_notes, reviewed_at, created_at")
+      .select(
+        "id, assignment_id, session_id, facility_id, requested_check_in_at, requested_check_out_at, reason, status, review_notes, reviewed_at, created_at, assignment:shift_assignments!correction_requests_assignment_id_fkey(shift:shifts!shift_assignments_shift_id_fkey(starts_at, ends_at, meeting_point))",
+      )
       .eq("worker_id", workerId)
       .order("created_at", { ascending: false })
       .limit(100),
   ]);
   if (correctionsRes.error) throw new Error(friendlyDbError(correctionsRes.error, "No se pudieron cargar tus solicitudes."));
-  const corrections = (correctionsRes.data ?? []) as CorrectionRow[];
+  const corrections = (correctionsRes.data ?? []) as unknown as CorrectionRow[];
 
   // Sedes para mostrar las horas de las solicitudes en su zona.
   const facilities = new Map<string, { name: string; timezone: string }>();
@@ -125,6 +129,8 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
 
   const exportQuery = (formato: "xlsx" | "pdf") =>
     `/api/exportar?${new URLSearchParams({ formato, trabajador: "yo", desde, hasta }).toString()}`;
+  // La exportación tiene un rango máximo menor que la consulta en pantalla.
+  const canExport = daysInclusive(desde, hasta) <= EXPORT_MAX_DAYS;
 
   return (
     <div className="space-y-5">
@@ -146,16 +152,25 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
           </Button>
         </Form>
         <div className="mt-3 flex flex-wrap gap-2">
-          <a href={exportQuery("xlsx")} className={buttonClasses("outline", "md")}>
-            Descargar Excel
-          </a>
-          <a href={exportQuery("pdf")} className={buttonClasses("outline", "md")}>
-            Descargar PDF
-          </a>
+          {canExport ? (
+            <>
+              <a href={exportQuery("xlsx")} className={buttonClasses("outline", "md")}>
+                Descargar Excel
+              </a>
+              <a href={exportQuery("pdf")} className={buttonClasses("outline", "md")}>
+                Descargar PDF
+              </a>
+            </>
+          ) : null}
           <Link href="/mi-historial" className={buttonClasses("ghost", "md")}>
             Últimos 30 días
           </Link>
         </div>
+        {!canExport ? (
+          <p className="mt-2 text-sm text-gray-700">
+            La descarga en Excel o PDF admite periodos de hasta {EXPORT_MAX_DAYS} días. Acota las fechas para descargar.
+          </p>
+        ) : null}
         {notices.length ? (
           <Alert tone="info" className="mt-3">
             {notices.map((n) => (
@@ -188,7 +203,7 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
               .sort((a, b) => Date.parse(a.check_in_at) - Date.parse(b.check_in_at))
               .map((s) => ({
                 id: s.id,
-                label: `Entrada ${formatTime(s.check_in_at, tz)} · ${s.check_out_at ? `Salida ${formatTime(s.check_out_at, tz)}` : "sin salida"}`,
+                label: `Entrada ${formatDateTime(s.check_in_at, tz)} · ${s.check_out_at ? `Salida ${formatDateTime(s.check_out_at, tz)}` : "sin salida"}`,
                 pending: pendingSessions.has(s.id),
               }));
             const canRequest = !cancelled && mine.assignment.status !== "cancelado";
@@ -244,7 +259,6 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
             );
           })
         )}
-        {items.length ? <p className="text-sm text-gray-600">{EXTRA_TIME_NOTE}</p> : null}
       </section>
 
       <Card>
@@ -262,6 +276,11 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
                     <p className="font-semibold text-gray-900">{f?.name ?? "Sede"}</p>
                     <Badge tone={CORRECTION_TONE[c.status]}>{CORRECTION_STATUS_LABELS[c.status]}</Badge>
                   </div>
+                  {c.assignment?.shift ? (
+                    <p className="text-sm text-gray-700">
+                      Guardia: {formatShiftRange(c.assignment.shift.starts_at, c.assignment.shift.ends_at, tz)} · {c.assignment.shift.meeting_point}
+                    </p>
+                  ) : null}
                   <p className="text-sm text-gray-600">Enviada: {formatDateTime(c.created_at, tz)}</p>
                   <p className="text-gray-800">
                     {c.requested_check_in_at ? `Entrada propuesta: ${formatDateTime(c.requested_check_in_at, tz)}` : "Entrada sin cambio"}

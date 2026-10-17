@@ -1,0 +1,113 @@
+/* Mapa del directorio (Leaflet + markercluster). Paleta: verde oscuro, blanco y gris. */
+
+.dir-marker {
+  background: transparent;
+  border: 0;
+}
+.dir-marker svg {
+  display: block;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.35));
+}
+.dir-marker:focus-visible {
+  outline: 3px solid #15803d;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.dir-cluster {
+  background: transparent;
+  border: 0;
+}
+.dir-cluster > span {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: #14532d;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 3px rgb(20 83 45 / 0.35), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+.dir-cluster .dir-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.leaflet-container .dir-popup {
+  min-width: 200px;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: #111827;
+}
+.leaflet-container .dir-popup-title {
+  margin: 0;
+  /* Espacio para el botón de cerrar (44 px). */
+  padding-right: 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.leaflet-container .dir-popup-meta {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+}
+.leaflet-container .dir-popup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.leaflet-container a.dir-popup-btn {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  padding: 0 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #14532d;
+}
+.leaflet-container a.dir-popup-btn-primary {
+  border-color: #166534;
+  background: #166534;
+  color: #ffffff;
+}
+.leaflet-container a.dir-popup-btn:hover {
+  background: #f0fdf4;
+}
+.leaflet-container a.dir-popup-btn-primary:hover {
+  background: #14532d;
+}
+
+/* Botón de cerrar la ventana emergente con objetivo táctil de 44 px. */
+.dir-map a.leaflet-popup-close-button {
+  width: 44px;
+  height: 44px;
+  font: 24px/44px ui-sans-serif, system-ui, sans-serif;
+  color: #374151;
+}
+.dir-map a.leaflet-popup-close-button:hover {
+  color: #14532d;
+}
+
+/* Controles de zoom con objetivo táctil de 44 px. */
+.dir-map .leaflet-bar a,
+.dir-map.leaflet-touch .leaflet-bar a {
+  width: 44px;
+  height: 44px;
+  line-height: 44px;
+  font-size: 22px;
+}
+.dir-map .leaflet-control-attribution {
+  font-size: 11px;
+}

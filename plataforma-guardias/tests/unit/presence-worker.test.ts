@@ -76,6 +76,10 @@ describe("buildMyShifts / pickFeatured", () => {
     expect(other?.summary.status).toBe("registro_incompleto");
 
     expect(registrableViews(views).map((v) => v.row.assignment_id)).toEqual(["ayer"]);
+    // El texto de la entrada no contradice que la salida requiere revisión.
+    expect(other?.checkInBlock).toBe("already_open");
+    expect(checkInBlockText(other!)).toMatch(/requiere revisión/);
+    expect(checkInBlockText(other!)).not.toMatch(/Registra tu salida al terminar/);
   });
 
   it("sin entradas abiertas: se puede registrar la guardia en curso y la que abre su ventana", () => {

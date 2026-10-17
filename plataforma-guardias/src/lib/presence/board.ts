@@ -16,6 +16,12 @@ export type PresenceFilters = {
   day: string;
   period: ShiftPeriodFilter;
   facilityId?: string | null;
+  /**
+   * Además de las guardias del día: registros incompletos de guardias (misma
+   * sede y turno) que terminaron desde esta fecha. Así una entrada olvidada de
+   * ayer sigue visible para revisión en el tablero de hoy.
+   */
+  incompleteSince?: Date | null;
 };
 
 type ShiftRef = {
@@ -113,13 +119,32 @@ function isCancelled(item: ShiftWithAttendance): boolean {
   return item.shift.status === "cancelada" || item.effectiveStatus === "cancelada";
 }
 
-/** ¿La guardia entra en los filtros (sede, día local y turno por hora local de inicio)? */
-export function shiftMatchesFilters(item: ShiftWithAttendance, filters: PresenceFilters): boolean {
+/** ¿La guardia es de la sede y del turno filtrados (turno por hora local de inicio)? */
+function matchesFacilityAndPeriod(item: ShiftWithAttendance, filters: PresenceFilters): boolean {
   if (filters.facilityId && item.shift.facility_id !== filters.facilityId) return false;
   const tz = item.facility?.timezone ?? DEFAULT_TIMEZONE;
-  if (!overlapsLocalDay(item.shift.starts_at, item.shift.ends_at, filters.day, tz)) return false;
   if (filters.period !== "todos" && shiftPeriodOf(item.shift.starts_at, tz) !== filters.period) return false;
   return true;
+}
+
+/** ¿La guardia entra en los filtros (sede, día local y turno por hora local de inicio)? */
+export function shiftMatchesFilters(item: ShiftWithAttendance, filters: PresenceFilters): boolean {
+  if (!matchesFacilityAndPeriod(item, filters)) return false;
+  const tz = item.facility?.timezone ?? DEFAULT_TIMEZONE;
+  return overlapsLocalDay(item.shift.starts_at, item.shift.ends_at, filters.day, tz);
+}
+
+/** Motivo de revisión de una asignación (o null si no requiere revisión). */
+function incompleteEntry(item: ShiftWithAttendance, a: AssignmentWithAttendance, nowMs: number): IncompleteEntry | null {
+  if (a.assignment.status === "cancelado") return null;
+  const s = a.summary;
+  if (s.status === "registro_incompleto") {
+    return { ...personRef(item, a), reason: "entrada_sin_salida", checkInAt: s.openSession ? toIso(s.openSession.checkInAt) : null };
+  }
+  if (s.status === "pendiente" && a.assignment.status === "asignado" && s.needsReview && nowMs >= Date.parse(item.shift.ends_at)) {
+    return { ...personRef(item, a), reason: "sin_registros", checkInAt: null };
+  }
+  return null;
 }
 
 function shiftRef(item: ShiftWithAttendance): ShiftRef {
@@ -159,6 +184,17 @@ function presenceOf(a: AssignmentWithAttendance): { presence: ResponsiblePresenc
 export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, filters: PresenceFilters): PresenceBoard {
   const nowMs = now.getTime();
   const selected = shifts.filter((s) => !isCancelled(s) && shiftMatchesFilters(s, filters));
+  const selectedIds = new Set(selected.map((s) => s.shift.id));
+  const sinceMs = filters.incompleteSince ? filters.incompleteSince.getTime() : null;
+  // Guardias anteriores (fuera del día) que solo aportan registros incompletos.
+  const lookback =
+    sinceMs == null
+      ? []
+      : shifts.filter((s) => {
+          if (isCancelled(s) || selectedIds.has(s.shift.id) || !matchesFacilityAndPeriod(s, filters)) return false;
+          const endMs = Date.parse(s.shift.ends_at);
+          return endMs >= sinceMs && endMs <= nowMs;
+        });
 
   const inService: InServiceEntry[] = [];
   const expected: ExpectedEntry[] = [];
@@ -202,11 +238,8 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
           isResponsible: responsibleId != null && base.workerId === responsibleId,
         });
       } else if (s.status === "registro_incompleto") {
-        incomplete.push({
-          ...base,
-          reason: "entrada_sin_salida",
-          checkInAt: s.openSession ? toIso(s.openSession.checkInAt) : null,
-        });
+        const entry = incompleteEntry(item, a, nowMs);
+        if (entry) incomplete.push(entry);
       } else if (s.status === "finalizada" && s.hasLeft && s.lastCheckOut) {
         const lastSession = a.sessions
           .filter((x) => x.record_status === "vigente" && x.check_out_at)
@@ -218,7 +251,8 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
           method: lastSession?.check_out_method ?? null,
         });
       } else if (s.status === "pendiente" && a.assignment.status === "asignado") {
-        if (nowMs < endMs) {
+        // Una guardia cerrada manualmente por coordinación ya no espera llegadas.
+        if (nowMs < endMs && item.effectiveStatus !== "finalizada") {
           const sinceStart = Math.floor((nowMs - startMs) / MINUTE);
           expected.push({
             ...base,
@@ -227,8 +261,9 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
             minutesSinceStart: sinceStart,
             toleranceMinutes: tolerance,
           });
-        } else if (s.needsReview) {
-          incomplete.push({ ...base, reason: "sin_registros", checkInAt: null });
+        } else {
+          const entry = incompleteEntry(item, a, nowMs);
+          if (entry) incomplete.push(entry);
         }
       }
     }
@@ -265,6 +300,13 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
         maxStaff: item.coverage.maxStaff,
         missing: Math.max(0, item.coverage.minStaff - current),
       });
+    }
+  }
+
+  for (const item of lookback) {
+    for (const a of item.assignments) {
+      const entry = incompleteEntry(item, a, nowMs);
+      if (entry) incomplete.push(entry);
     }
   }
 

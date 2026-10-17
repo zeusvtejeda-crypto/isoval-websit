@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getFacilityOptions } from "@/lib/data/catalogs";
 import { loadShiftsWithAttendance } from "@/lib/attendance/load";
 import { buildPresenceBoard } from "@/lib/presence/board";
+import { facilitiesWithShifts, findFacility, mergeFacilityOptions } from "@/lib/presence/board-data";
 import { isIsoDay, parseShiftPeriod, SHIFT_PERIOD_LABELS } from "@/lib/presence/periods";
 import { PRESENCE_DISCLAIMER } from "@/lib/presence/texts";
 import { DEFAULT_TIMEZONE, dayRangeUtc, formatLongDate, todayInTz } from "@/lib/time";
@@ -28,6 +29,8 @@ export const metadata: Metadata = { title: "En servicio" };
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 const DAY = 86_400_000;
+/** Días hacia atrás para listar registros incompletos en el tablero de hoy. */
+const LOOKBACK_DAYS = 7;
 
 export default async function EnServicioPage({ searchParams }: { searchParams: SearchParams }) {
   const user = await requireStaff();
@@ -36,25 +39,32 @@ export default async function EnServicioPage({ searchParams }: { searchParams: S
 
   // Alcance: administración ve todas las sedes; coordinación y auditoría, solo las asignadas (RLS lo garantiza).
   const scope = user.isAdmin ? null : user.facilityIds;
-  const facilities = await getFacilityOptions(supabase, scope);
-  const facilityId = typeof sp.sede === "string" && facilities.some((f) => f.id === sp.sede) ? sp.sede : null;
-  const timeZone = facilities.find((f) => f.id === facilityId)?.timezone ?? DEFAULT_TIMEZONE;
+  const noScope = scope !== null && scope.length === 0;
+  const scopedOptions = scope ? await getFacilityOptions(supabase, scope) : null;
+  const selected = scopedOptions ? (scopedOptions.find((f) => f.id === sp.sede) ?? null) : await findFacility(supabase, sp.sede);
+  const facilityId = selected?.id ?? null;
+  const timeZone = selected?.timezone ?? DEFAULT_TIMEZONE;
 
   const now = new Date();
   const today = todayInTz(timeZone, now);
   const day = isIsoDay(sp.fecha) ? sp.fecha : today;
   const period = parseShiftPeriod(sp.turno);
+  // En el tablero de hoy también se listan entradas olvidadas de los últimos días.
+  const isToday = day === today;
+  const incompleteSince = isToday ? new Date(now.getTime() - LOOKBACK_DAYS * DAY) : null;
 
   // Se carga el día con un día de margen por lado: cubre todas las zonas horarias y guardias que cruzan medianoche.
   const range = dayRangeUtc(day, timeZone);
-  const shifts = await loadShiftsWithAttendance(supabase, {
-    from: new Date(range.start.getTime() - DAY),
-    to: new Date(range.end.getTime() + DAY),
-    facilityIds: facilityId ? [facilityId] : scope,
-    now,
-  });
-  const board = buildPresenceBoard(shifts, now, { day, period, facilityId });
-  const noScope = scope !== null && scope.length === 0;
+  const dayFrom = new Date(range.start.getTime() - DAY);
+  const loadTo = new Date(range.end.getTime() + DAY);
+  const loadFrom = incompleteSince && incompleteSince < dayFrom ? incompleteSince : dayFrom;
+  const [shifts, shiftFacilities] = await Promise.all([
+    loadShiftsWithAttendance(supabase, { from: loadFrom, to: loadTo, facilityIds: facilityId ? [facilityId] : scope, now }),
+    // Administración: solo sedes con guardias en la fecha (el directorio puede tener miles de instalaciones).
+    scopedOptions ? Promise.resolve([]) : facilitiesWithShifts(supabase, dayFrom, loadTo),
+  ]);
+  const facilities = scopedOptions ?? mergeFacilityOptions(shiftFacilities, selected);
+  const board = buildPresenceBoard(shifts, now, { day, period, facilityId, incompleteSince });
 
   return (
     <div className="space-y-5">
@@ -85,7 +95,13 @@ export default async function EnServicioPage({ searchParams }: { searchParams: S
       ) : null}
 
       <Card>
-        <PresenceFilters facilities={facilities} facilityId={facilityId} day={day} period={period} />
+        <PresenceFilters
+          facilities={facilities}
+          facilityId={facilityId}
+          day={day}
+          period={period}
+          facilityHint={scopedOptions ? "Solo tus sedes asignadas." : "Sedes con guardias alrededor de la fecha elegida."}
+        />
       </Card>
 
       <BoardStats board={board} />
@@ -95,7 +111,7 @@ export default async function EnServicioPage({ searchParams }: { searchParams: S
       <ExpectedSection items={board.expected} />
       <LeftSection items={board.left} day={day} />
       <CoverageSection items={board.uncovered} />
-      <IncompleteSection items={board.incomplete} day={day} />
+      <IncompleteSection items={board.incomplete} day={day} lookbackDays={isToday ? LOOKBACK_DAYS : null} />
     </div>
   );
 }

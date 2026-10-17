@@ -38,6 +38,7 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
 
   // Edición: la guardia debe existir, ser visible y gestionable.
   let existingResponsible: string | null = null;
+  let facilityChanged = false;
   if (v.id) {
     const current = await getShiftContext(supabase, v.id);
     if (!current) return { ok: false, message: "La guardia no existe o no tienes acceso." };
@@ -45,6 +46,7 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
       return { ok: false, message: "No puedes editar guardias de esa sede." };
     }
     if (current.shift.facility_id !== v.facility_id) {
+      facilityChanged = true;
       if (!facility.active) return { ok: false, message: "La sede elegida no está activa." };
       const assigned = await countAssignments(supabase, v.id);
       if (assigned > 0) {
@@ -61,9 +63,10 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
     return { ok: false, message: "La sede no está activa." };
   }
 
-  // Responsable: trabajador activo de la sede (se respeta el actual si no cambió).
+  // Responsable: trabajador activo de la sede (se respeta el actual si no cambió
+  // ni cambió la sede; al cambiar de sede se vuelve a validar).
   const responsible = v.responsible_worker_id ?? null;
-  if (responsible && responsible !== existingResponsible) {
+  if (responsible && (responsible !== existingResponsible || facilityChanged)) {
     const { data: worker, error: workerError } = await supabase
       .from("workers")
       .select("id, active, facility_id")
@@ -129,6 +132,9 @@ export async function setShiftStatus(_prev: ActionResult | null, formData: FormD
   }
   if (ctx.shift.status === status) {
     return { ok: false, message: "La guardia ya tiene ese estado." };
+  }
+  if (status === "finalizada" && ctx.shift.status === "cancelada") {
+    return { ok: false, message: "La guardia está cancelada. Reactívala antes de marcarla como finalizada." };
   }
   if (status === "finalizada" && Date.now() < Date.parse(ctx.shift.starts_at)) {
     return { ok: false, message: "Solo puedes finalizar manualmente una guardia que ya inició." };

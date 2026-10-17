@@ -6,7 +6,8 @@ import { loadShiftsWithAttendance } from "@/lib/attendance/load";
 import { friendlyDbError } from "@/lib/actions";
 import { summarizeHome } from "@/lib/presence/home";
 import { PRESENCE_DISCLAIMER } from "@/lib/presence/texts";
-import { DEFAULT_TIMEZONE, formatLongDate } from "@/lib/time";
+import { addDays } from "@/lib/presence/periods";
+import { DEFAULT_TIMEZONE, formatLongDate, todayInTz } from "@/lib/time";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Alert } from "@/components/ui/states";
@@ -71,6 +72,8 @@ export default async function InicioPage() {
   if (pendingRes.error) throw new Error(friendlyDbError(pendingRes.error, "No se pudieron contar las solicitudes de corrección."));
   const summary = summarizeHome(shifts, now, 7);
   const pendingCorrections = pendingRes.count ?? 0;
+  const today = todayInTz(DEFAULT_TIMEZONE, now);
+  const incompleteHref = `/historial?${new URLSearchParams({ asistencia: "registro_incompleto", desde: addDays(today, -7), hasta: today }).toString()}`;
 
   return (
     <div className="space-y-6">
@@ -115,8 +118,8 @@ export default async function InicioPage() {
           <SummaryTile
             label="Registros incompletos"
             value={summary.incompleteRecent}
-            hint={`Últimos 7 días · ${summary.noRecordsRecent} guardia(s) sin registros`}
-            href="/historial"
+            hint={`Últimos 7 días · ${summary.noRecordsRecent} asignación(es) sin registros`}
+            href={incompleteHref}
             attention={summary.incompleteRecent > 0}
           />
         </div>

@@ -272,12 +272,15 @@ export function CoverageSection({ items }: { items: CoverageEntry[] }) {
   );
 }
 
-export function IncompleteSection({ items, day }: { items: IncompleteEntry[]; day: string }) {
+export function IncompleteSection({ items, day, lookbackDays }: { items: IncompleteEntry[]; day: string; lookbackDays?: number | null }) {
+  const scope = lookbackDays
+    ? `De las guardias de este día y de las que terminaron en los últimos ${lookbackDays} días.`
+    : "De las guardias de este día.";
   return (
     <Section
       id="incompletos"
       title="Registros incompletos pendientes de revisión"
-      description="Entradas sin salida después del margen configurado o guardias terminadas sin registros. Coordinación decide si corresponde una corrección."
+      description={`Entradas sin salida después del margen configurado o guardias terminadas sin registros. ${scope} Coordinación decide si corresponde una corrección.`}
       count={items.length}
       empty="No hay registros incompletos en este filtro."
     >

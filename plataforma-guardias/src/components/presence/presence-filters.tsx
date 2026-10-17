@@ -10,15 +10,17 @@ export function PresenceFilters({
   facilityId,
   day,
   period,
+  facilityHint,
 }: {
   facilities: { id: string; official_name: string }[];
   facilityId: string | null;
   day: string;
   period: ShiftPeriodFilter;
+  facilityHint?: string;
 }) {
   return (
     <Form action="/en-servicio" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1.4fr_auto] lg:items-end">
-      <Field label="Sede" htmlFor="sede">
+      <Field label="Sede" htmlFor="sede" hint={facilityHint}>
         <Select id="sede" name="sede" defaultValue={facilityId ?? ""}>
           <option value="">Todas mis sedes</option>
           {facilities.map((f) => (
