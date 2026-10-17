@@ -46,7 +46,7 @@ export function WorkerFilters({
   const municipalityDisabled = !stateId || stateChanged || municipalities.length === 0;
 
   return (
-    <form method="get" action="/trabajadores" className="rounded-[--radius-card] border border-gray-200 bg-white p-4" aria-label="Filtros de trabajadores">
+    <form method="get" action="/trabajadores" className="rounded-card border border-gray-200 bg-white p-4" aria-label="Filtros de trabajadores">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field
           label="Buscar"

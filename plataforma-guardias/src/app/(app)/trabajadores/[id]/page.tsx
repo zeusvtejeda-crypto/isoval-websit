@@ -171,9 +171,19 @@ export default async function TrabajadorPage({
                   </Item>
                 </dl>
               ) : canSeeWorkerAccount(user, worker.facility_id) ? (
-                <p className="text-gray-700">
-                  Sin cuenta de acceso. Un trabajador puede existir sin cuenta; las cuentas se gestionan en Administración.
-                </p>
+                <div className="space-y-3">
+                  <p className="text-gray-700">
+                    Sin cuenta de acceso. Un trabajador puede existir sin cuenta; las cuentas se gestionan en Administración.
+                  </p>
+                  {user.isAdmin && worker.active ? (
+                    <Link
+                      href={`/administracion/usuarios/nueva?trabajador=${worker.id}`}
+                      className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline underline-offset-2"
+                    >
+                      Crear cuenta de acceso para esta persona
+                    </Link>
+                  ) : null}
+                </div>
               ) : (
                 <p className="text-gray-700">
                   No disponible: la cuenta de acceso solo es visible para administración y para quien tiene asignada la sede de adscripción de esta
@@ -239,7 +249,7 @@ export default async function TrabajadorPage({
         ) : null}
 
         {user.isAdmin ? (
-          <details className="rounded-[--radius-card] border border-red-200 bg-white p-4 sm:p-5">
+          <details className="rounded-card border border-red-200 bg-white p-4 sm:p-5">
             <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-red-900">Eliminar registro (solo administración)</summary>
             <div className="mt-3 space-y-3">
               <p className="text-sm text-gray-700">

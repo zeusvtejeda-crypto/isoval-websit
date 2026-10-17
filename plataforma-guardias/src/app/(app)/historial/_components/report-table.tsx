@@ -30,7 +30,7 @@ export function ReportTable({ rows, workerHref }: { rows: ReportRow[]; workerHre
       {/* Móvil: tarjetas */}
       <ul className="space-y-3 md:hidden" aria-label="Guardias del periodo">
         {rows.map((r) => (
-          <li key={r.assignmentId} className="rounded-[--radius-card] border border-gray-200 bg-white p-4 shadow-sm">
+          <li key={r.assignmentId} className="rounded-card border border-gray-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-sm font-medium capitalize text-gray-600">{r.dateLabel}</p>

@@ -116,7 +116,7 @@ export default async function UsuariosPage({ searchParams }: { searchParams: Pro
               {visible.map((row) => {
                 const status = accountStatus(row, now);
                 return (
-                  <li key={row.id} className="rounded-[--radius-card] border border-gray-200 bg-white p-4 shadow-sm">
+                  <li key={row.id} className="rounded-card border border-gray-200 bg-white p-4 shadow-sm">
                     <p className="font-semibold text-gray-900">{row.displayName ?? row.email ?? "Sin nombre"}</p>
                     <p className="break-all text-sm text-gray-600">{row.email ?? "Correo no disponible"}</p>
                     <div className="mt-2 flex flex-wrap gap-2">

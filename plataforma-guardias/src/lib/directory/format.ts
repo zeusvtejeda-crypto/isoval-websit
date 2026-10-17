@@ -23,6 +23,15 @@ export function safeExternalUrl(value: string | null | undefined): string | null
   }
 }
 
+/** Varias URLs de fuente («url1 | url2»): devuelve solo las http(s) válidas. */
+export function safeExternalUrls(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/\s+\|\s+|\s*\n\s*/)
+    .map((v) => safeExternalUrl(v))
+    .filter((v): v is string => Boolean(v));
+}
+
 /** Enlace tel: con solo dígitos y «+»; null si no hay suficientes dígitos. */
 export function telHref(phone: string | null | undefined): string | null {
   if (!phone) return null;

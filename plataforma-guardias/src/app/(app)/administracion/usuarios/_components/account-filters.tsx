@@ -7,7 +7,7 @@ import type { AppRole } from "@/lib/auth";
 /** Filtros por URL (GET): funcionan sin JavaScript y se pueden compartir. */
 export function AccountFiltersForm({ filters, roleOptions }: { filters: AccountFilters; roleOptions: { value: AppRole; label: string }[] }) {
   return (
-    <form method="get" action={USERS_BASE_PATH} className="rounded-[--radius-card] border border-gray-200 bg-white p-4" aria-label="Filtros de cuentas">
+    <form method="get" action={USERS_BASE_PATH} className="rounded-card border border-gray-200 bg-white p-4" aria-label="Filtros de cuentas">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Buscar" htmlFor="u-q" className="sm:col-span-2" hint="Correo, nombre visible o trabajador vinculado.">
           <Input id="u-q" name="q" type="search" maxLength={ACCOUNT_SEARCH_MAX} defaultValue={filters.q} autoComplete="off" />

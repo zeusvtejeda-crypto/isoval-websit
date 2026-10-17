@@ -107,7 +107,7 @@ export default async function ImportarInstalacionesPage() {
           </ul>
         </Card>
 
-        <details className="rounded-[--radius-card] border border-gray-200 bg-white p-4 sm:p-5">
+        <details className="rounded-card border border-gray-200 bg-white p-4 sm:p-5">
           <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-gray-900">Categorías registradas para la columna «categoria»</summary>
           <Table caption="Categorías registradas" className="mt-3">
             <thead>
@@ -129,7 +129,7 @@ export default async function ImportarInstalacionesPage() {
           </Table>
         </details>
 
-        <details className="rounded-[--radius-card] border border-gray-200 bg-white p-4 sm:p-5">
+        <details className="rounded-card border border-gray-200 bg-white p-4 sm:p-5">
           <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-gray-900">Zonas horarias válidas para «zona_horaria»</summary>
           <Table caption="Zonas horarias de México" className="mt-3">
             <thead>

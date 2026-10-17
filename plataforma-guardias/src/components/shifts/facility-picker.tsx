@@ -23,7 +23,7 @@ export function FacilityPicker({
   keep?: Record<string, string>;
 }) {
   return (
-    <form method="get" action={action} className="space-y-4 rounded-[--radius-card] border border-gray-200 bg-white p-4 sm:p-5">
+    <form method="get" action={action} className="space-y-4 rounded-card border border-gray-200 bg-white p-4 sm:p-5">
       {Object.entries(keep).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />
       ))}

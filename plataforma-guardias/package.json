@@ -16,7 +16,8 @@
     "db:reset": "supabase db reset",
     "db:types": "supabase gen types typescript --local --schema public > src/lib/types/database.ts && npx --yes oxfmt src/lib/types/database.ts",
     "demo:usuarios": "tsx scripts/crear-usuarios-demo.ts",
-    "crear-admin": "tsx scripts/crear-admin.ts"
+    "crear-admin": "tsx scripts/crear-admin.ts",
+    "iconos": "node scripts/generar-iconos.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

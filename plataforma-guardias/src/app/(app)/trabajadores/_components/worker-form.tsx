@@ -230,7 +230,7 @@ export function WorkerForm({
       </fieldset>
 
       {showPrivate ? (
-        <fieldset className="space-y-4 rounded-[--radius-card] border border-gray-200 bg-gray-50 p-4">
+        <fieldset className="space-y-4 rounded-card border border-gray-200 bg-gray-50 p-4">
           <legend className="px-1 text-lg font-semibold text-gray-900">Datos privados (opcionales)</legend>
           <p className="text-sm text-gray-600">{PRIVATE_DATA_NOTE}</p>
           <div className="grid gap-4 sm:grid-cols-2">

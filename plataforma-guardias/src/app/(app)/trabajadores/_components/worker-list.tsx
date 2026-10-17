@@ -42,7 +42,7 @@ export function WorkerList({ items }: { items: WorkerListItem[] }) {
           <li key={w.id}>
             <Link
               href={`/trabajadores/${w.id}`}
-              className="block rounded-[--radius-card] border border-gray-200 bg-white p-4 shadow-sm hover:border-brand-700 focus-visible:border-brand-700"
+              className="block rounded-card border border-gray-200 bg-white p-4 shadow-sm hover:border-brand-700 focus-visible:border-brand-700"
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">

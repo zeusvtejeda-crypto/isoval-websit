@@ -108,13 +108,15 @@ export default async function InicioPage() {
             href="/en-servicio#cobertura"
             attention={summary.insufficientCoverage > 0}
           />
-          <SummaryTile
-            label="Correcciones pendientes"
-            value={pendingCorrections}
-            hint="Solicitudes por revisar en tus sedes"
-            href="/correcciones"
-            attention={pendingCorrections > 0}
-          />
+          {user.canManage ? (
+            <SummaryTile
+              label="Correcciones pendientes"
+              value={pendingCorrections}
+              hint="Solicitudes por revisar en tus sedes"
+              href="/correcciones"
+              attention={pendingCorrections > 0}
+            />
+          ) : null}
           <SummaryTile
             label="Registros incompletos"
             value={summary.incompleteRecent}
@@ -134,7 +136,7 @@ export default async function InicioPage() {
           <QuickLink href="/guardias" title="Guardias" description="Programar, asignar y revisar guardias" />
           <QuickLink href="/en-servicio" title="En servicio" description="Quién está aquí ahora" />
           <QuickLink href="/historial" title="Historial" description="Reportes y exportaciones" />
-          <QuickLink href="/correcciones" title="Correcciones" description="Solicitudes de corrección de registros" />
+          {user.canManage ? <QuickLink href="/correcciones" title="Correcciones" description="Solicitudes de corrección de registros" /> : null}
           {user.workerId ? <QuickLink href="/mi-guardia" title="Mi guardia" description="Tu guardia y tus registros de entrada y salida" /> : null}
         </div>
       </Card>

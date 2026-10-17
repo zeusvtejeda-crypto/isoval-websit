@@ -39,7 +39,7 @@ export function FacilityFilters({
   const municipalityDisabled = !stateId || stateChanged || municipalities.length === 0;
 
   return (
-    <form method="get" action={FACILITIES_BASE_PATH} className="rounded-[--radius-card] border border-gray-200 bg-white p-4" aria-label="Filtros de instalaciones">
+    <form method="get" action={FACILITIES_BASE_PATH} className="rounded-card border border-gray-200 bg-white p-4" aria-label="Filtros de instalaciones">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Buscar" htmlFor="f-q" className="sm:col-span-2" hint="Nombre oficial, clave de unidad o identificador interno (INS-…).">
           <Input id="f-q" name="q" type="search" maxLength={SEARCH_MAX} defaultValue={filters.q} autoComplete="off" />

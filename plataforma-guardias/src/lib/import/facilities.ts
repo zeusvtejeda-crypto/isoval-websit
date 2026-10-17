@@ -8,7 +8,11 @@
  * - Duplicados dentro del archivo: misma clave de unidad, mismo identificador
  *   interno o mismo nombre normalizado en el mismo municipio.
  * - Duplicados contra la base: clave de unidad, identificador interno o nombre
- *   normalizado + estado + municipio (igual que el índice único).
+ *   normalizado + estado + municipio.
+ * - El nombre + lugar solo cuenta como duplicado cuando alguna de las dos
+ *   instalaciones no tiene clave de unidad: en catálogos oficiales (CLUES) hay
+ *   unidades distintas con el mismo nombre en el mismo municipio (p. ej. una
+ *   unidad médica rural y un centro de atención obstétrica co-ubicados).
  * - La fuente de información es obligatoria en cada fila.
  * - En actualizaciones, las celdas opcionales vacías conservan lo registrado.
  *
@@ -35,7 +39,7 @@ import {
   checkCoordinates,
   collapseSpaces,
   defaultTimezoneFor,
-  isHttpUrl,
+  isHttpUrlList,
   matchMexicoTimezone,
   namePlaceKey,
   normalizeText,
@@ -499,7 +503,9 @@ function parseCells(cells: CanonicalRow, catalogs: FacilityImportCatalogs, optio
   else if (source.length > SOURCE_MAX) errors.push(`La fuente admite máximo ${SOURCE_MAX} caracteres.`);
 
   const sourceUrl = cells.url_fuente?.trim() || undefined;
-  if (sourceUrl && !isHttpUrl(sourceUrl)) errors.push(`URL de la fuente inválida «${sourceUrl}»: debe empezar con https:// o http://.`);
+  if (sourceUrl && !isHttpUrlList(sourceUrl)) {
+    errors.push(`URL de la fuente inválida «${sourceUrl}»: cada dirección debe empezar con https:// o http:// (varias, separadas por « | »).`);
+  }
 
   let verifiedAt: string | undefined;
   if (cells.fecha_verificacion?.trim()) {
@@ -615,18 +621,27 @@ export function validateFacilityRows(
   // Índices de lo registrado.
   const byCode = new Map<string, ExistingFacilityRef>();
   const byUnit = new Map<string, ExistingFacilityRef>();
-  const byPlace = new Map<string, ExistingFacilityRef>();
+  const byPlace = new Map<string, ExistingFacilityRef[]>();
   for (const f of existing) {
     byCode.set(f.internal_code.toUpperCase(), f);
     const uk = unitKeyKey(f.unit_key);
     if (uk && !byUnit.has(uk)) byUnit.set(uk, f);
     const pk = namePlaceKey(f.official_name, f.state_id, f.municipality_id);
-    if (!byPlace.has(pk)) byPlace.set(pk, f);
+    byPlace.set(pk, [...(byPlace.get(pk) ?? []), f]);
   }
+  /** Mismo nombre y lugar solo es la misma instalación si alguna no tiene clave de unidad o si coinciden. */
+  const compatibleUnits = (a: string | null, b: string | null) => !a || !b || a === b;
+  const placeMatch = (key: string | null, unit: string | null, excludeId?: string): ExistingFacilityRef | undefined =>
+    key ? (byPlace.get(key) ?? []).find((f) => f.id !== excludeId && compatibleUnits(unit, unitKeyKey(f.unit_key))) : undefined;
 
   // Lo visto en el archivo (primera fila que usa cada clave).
   const seenUnit = new Map<string, number>();
-  const seenPlace = new Map<string, number>();
+  const seenPlace = new Map<string, { row: number; unit: string | null }[]>();
+  const firstSeenPlace = (key: string | null, unit: string | null) =>
+    key ? (seenPlace.get(key) ?? []).find((e) => compatibleUnits(unit, e.unit))?.row : undefined;
+  const rememberPlace = (key: string | null, unit: string | null, row: number) => {
+    if (key) seenPlace.set(key, [...(seenPlace.get(key) ?? []), { row, unit }]);
+  };
   const seenCode = new Map<string, number>();
   const seenTarget = new Map<string, number>();
   const remember = (map: Map<string, number>, key: string | null, row: number) => {
@@ -648,10 +663,10 @@ export function validateFacilityRows(
     const unitKey = unitKeyKey(p.unitKey);
     const placeKey = p.name && p.state && (!p.municipalityText || p.municipality) ? namePlaceKey(p.name, p.state.id, p.municipality?.id ?? null) : null;
     const firstUnitRow = unitKey ? seenUnit.get(unitKey) : undefined;
-    const firstPlaceRow = placeKey ? seenPlace.get(placeKey) : undefined;
+    const firstPlaceRow = firstSeenPlace(placeKey, unitKey);
     const firstCodeRow = p.internalCode ? seenCode.get(p.internalCode) : undefined;
     remember(seenUnit, unitKey, rowNumber);
-    remember(seenPlace, placeKey, rowNumber);
+    rememberPlace(placeKey, unitKey, rowNumber);
     remember(seenCode, p.internalCode ?? null, rowNumber);
 
     if (errors.length > 0 || !p.category || !p.state) {
@@ -697,7 +712,7 @@ export function validateFacilityRows(
       result.messages = [`La clave de unidad «${p.unitKey}» ya pertenece a ${describeFacility(matchUnit)}.`];
       return result;
     }
-    target = target ?? matchUnit ?? (placeKey ? byPlace.get(placeKey) : undefined);
+    target = target ?? matchUnit ?? placeMatch(placeKey, unitKey);
 
     if (!target) {
       // --- Nueva ---
@@ -837,15 +852,15 @@ export function validateFacilityRows(
       return result;
     }
     const finalPlace = namePlaceKey(final.official_name, final.state_id, final.municipality_id);
-    const placeClash = byPlace.get(finalPlace);
-    if (placeClash && placeClash.id !== target.id) {
+    const placeClash = placeMatch(finalPlace, finalUnit, target.id);
+    if (placeClash) {
       result.status = "duplicada";
       result.messages = [`Ya existe ${describeFacility(placeClash)} con el mismo nombre oficial en el mismo estado y municipio.`];
       return result;
     }
     // Las claves finales también cuentan para las filas siguientes.
     remember(seenUnit, finalUnit, rowNumber);
-    remember(seenPlace, finalPlace, rowNumber);
+    if (finalPlace !== placeKey) rememberPlace(finalPlace, finalUnit, rowNumber);
 
     const patch: Partial<FacilityWriteValues> = {};
     const changes: string[] = [];

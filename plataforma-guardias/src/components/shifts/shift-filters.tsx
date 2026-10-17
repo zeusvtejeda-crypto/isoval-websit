@@ -11,7 +11,7 @@ import { STATUS_FILTER_OPTIONS, type ShiftListFilters } from "@/lib/shifts/filte
 export function ShiftFilters({ filters, facilities }: { filters: ShiftListFilters; facilities: FacilityOption[] }) {
   const isCalendar = filters.view === "calendario";
   return (
-    <form method="get" action="/guardias" className="rounded-[--radius-card] border border-gray-200 bg-white p-4" aria-label="Filtros de guardias">
+    <form method="get" action="/guardias" className="rounded-card border border-gray-200 bg-white p-4" aria-label="Filtros de guardias">
       {isCalendar ? <input type="hidden" name="vista" value="calendario" /> : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Sede" htmlFor="f-sede">

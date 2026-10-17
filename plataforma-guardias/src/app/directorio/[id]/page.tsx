@@ -8,7 +8,7 @@ import { CategoryTag, DemoBadge, VerificationBadge } from "@/components/director
 import { DirectionsLinks } from "@/components/directory/directions-links";
 import { FacilityMiniMap } from "@/components/directory/facility-mini-map";
 import { formatCoordinates } from "@/lib/directory/directions";
-import { formatDateOnly, safeExternalUrl, telHref } from "@/lib/directory/format";
+import { formatDateOnly, safeExternalUrls, telHref } from "@/lib/directory/format";
 import { toDirectoryFacilityFromDetail } from "@/lib/directory/mappers";
 import { loadFacilityDetail } from "@/lib/directory/queries";
 import { formatDateTime } from "@/lib/time";
@@ -39,7 +39,7 @@ export default async function FichaInstalacionPage({ params }: { params: Params 
   if (!data) notFound();
   const { facility: f, category, state, municipality } = data;
 
-  const sourceUrl = safeExternalUrl(f.sourceUrl);
+  const sourceUrls = safeExternalUrls(f.sourceUrl);
   const phoneHref = telHref(f.phone);
   const verifiedOn = formatDateOnly(f.lastVerifiedAt);
   const coordinates = f.latitude != null && f.longitude != null ? formatCoordinates(f.latitude, f.longitude) : null;
@@ -112,14 +112,20 @@ export default async function FichaInstalacionPage({ params }: { params: Params 
             <CardHeader title="Procedencia de la información" />
             <dl>
               <Row label="Fuente de información">
-                {sourceUrl ? (
-                  <a href={sourceUrl} target="_blank" rel="noopener noreferrer nofollow" className="font-medium text-brand-800 underline underline-offset-2">
-                    {f.source}
-                    <span className="sr-only"> (se abre en otra pestaña)</span>
-                  </a>
-                ) : (
-                  f.source
-                )}
+                <span className="block">{f.source}</span>
+                {sourceUrls.length > 0 ? (
+                  <ul className="mt-1 space-y-1">
+                    {sourceUrls.map((url, i) => (
+                      <li key={url}>
+                        <a href={url} target="_blank" rel="noopener noreferrer nofollow" className="break-all font-medium text-brand-800 underline underline-offset-2">
+                          {sourceUrls.length > 1 ? `Consultar fuente ${i + 1}` : "Consultar fuente"}
+                          <span className="sr-only"> (se abre en otra pestaña): {new URL(url).hostname}</span>
+                        </a>
+                        <span className="ml-1 text-sm text-gray-500">({new URL(url).hostname})</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </Row>
               <Row label="Estado de verificación">
                 <VerificationBadge verified={f.verificationStatus === "verificado"} />

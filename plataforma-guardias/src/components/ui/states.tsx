@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 
 export function EmptyState({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="rounded-[--radius-card] border border-dashed border-gray-300 bg-white px-4 py-10 text-center">
+    <div className="rounded-card border border-dashed border-gray-300 bg-white px-4 py-10 text-center">
       <p className="text-lg font-semibold text-gray-900">{title}</p>
       {description ? <p className="mx-auto mt-1 max-w-prose text-gray-600">{description}</p> : null}
       {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
@@ -13,7 +13,7 @@ export function EmptyState({ title, description, action }: { title: string; desc
 
 export function ErrorState({ title = "No se pudo cargar la información", description, action }: { title?: string; description?: ReactNode; action?: ReactNode }) {
   return (
-    <div role="alert" className="rounded-[--radius-card] border border-red-200 bg-red-50 px-4 py-6 text-red-900">
+    <div role="alert" className="rounded-card border border-red-200 bg-red-50 px-4 py-6 text-red-900">
       <p className="font-semibold">{title}</p>
       {description ? <p className="mt-1 text-sm">{description}</p> : null}
       {action ? <div className="mt-3">{action}</div> : null}

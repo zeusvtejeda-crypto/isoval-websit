@@ -28,7 +28,8 @@ type ImportAction = (prev: ActionResult<ImportOutcome> | null, formData: FormDat
  * Las Server Actions aceptan hasta 1 MB por solicitud (valor por omisión de
  * Next.js). Se deja margen para los encabezados multipart.
  */
-const UPLOAD_LIMIT_BYTES = 1_000_000 - 40_000;
+// Límite de Server Actions configurado en next.config.ts (6 MB) menos margen del formulario.
+const UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024;
 const PAGE = 100;
 
 type StatusFilter = "" | WorkerImportStatus;
@@ -268,7 +269,7 @@ function PreviewCards({ rows }: { rows: ImportPreviewRow[] }) {
   return (
     <ul className="space-y-3 md:hidden" aria-label="Filas del archivo">
       {rows.map((r) => (
-        <li key={r.row} className="rounded-[--radius-card] border border-gray-200 bg-white p-4">
+        <li key={r.row} className="rounded-card border border-gray-200 bg-white p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="text-sm text-gray-600">Fila {r.row}</p>

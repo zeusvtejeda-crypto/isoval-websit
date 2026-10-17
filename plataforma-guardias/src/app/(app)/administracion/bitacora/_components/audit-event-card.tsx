@@ -31,7 +31,7 @@ export function AuditEventCard({
   const facility = event.facility_id ? (facilityNames[event.facility_id] ?? `Sede ${shortId(event.facility_id)}`) : null;
 
   return (
-    <li className="rounded-[--radius-card] border border-gray-200 bg-white p-4 shadow-sm">
+    <li className="rounded-card border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={auditActionTone(event.action)}>{auditActionLabel(event.action)}</Badge>
         <span className="font-semibold text-gray-900">{auditTableLabel(event.table_name)}</span>

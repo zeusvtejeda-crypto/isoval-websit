@@ -360,10 +360,27 @@ describe("duplicados contra la base", () => {
     expect(result.rows[0].messages[0]).toMatch(/INS-000002/);
   });
 
-  it("renombrar a un nombre que ya usa otra instalación en el mismo lugar", () => {
+  it("el mismo nombre en el mismo lugar se permite si ambas tienen claves de unidad distintas", () => {
+    // Catálogos oficiales (CLUES) tienen unidades co-ubicadas con el mismo nombre.
     const result = run([{ ...base, clave_unidad: "NAY-HG-01", nombre_oficial: "Unidad de Medicina Familiar 1" }]);
-    expect(result.rows[0].status).toBe("duplicada");
-    expect(result.rows[0].messages[0]).toMatch(/INS-000002/);
+    expect(result.rows[0].status).toBe("actualizacion");
+  });
+
+  it("dos filas con el mismo nombre y lugar pero claves distintas son instalaciones nuevas distintas", () => {
+    const result = run([
+      { ...base, clave_unidad: "NTIMS000721", nombre_oficial: "Linda Vista" },
+      { ...base, clave_unidad: "NTIMS001235", nombre_oficial: "LINDA VISTA" },
+    ]);
+    expect(result.rows.map((r) => r.status)).toEqual(["nueva", "nueva"]);
+  });
+
+  it("el mismo nombre y lugar es duplicado si alguna fila no tiene clave de unidad", () => {
+    const result = run([
+      { ...base, clave_unidad: "NTIMS000721", nombre_oficial: "Linda Vista" },
+      { ...base, clave_unidad: "", nombre_oficial: "Linda Vista" },
+    ]);
+    expect(result.rows[1].status).toBe("duplicada");
+    expect(result.rows[1].messages[0]).toMatch(/fila 2/);
   });
 
   it("cambiar de estado quita el municipio y ajusta la zona horaria", () => {

@@ -26,7 +26,7 @@ export function FacilityList({ items }: { items: FacilityListItem[] }) {
     <>
       <ul className="space-y-3 md:hidden" aria-label="Instalaciones">
         {items.map((f) => (
-          <li key={f.id} className="rounded-[--radius-card] border border-gray-200 bg-white p-4 shadow-sm">
+          <li key={f.id} className="rounded-card border border-gray-200 bg-white p-4 shadow-sm">
             <div className="min-w-0">
               <p className="font-semibold text-gray-900">{f.official_name}</p>
               <p className="text-sm text-gray-600">

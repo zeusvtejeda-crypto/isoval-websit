@@ -53,7 +53,7 @@ insert into public.municipalities (state_id, inegi_code, name, timezone) values
   (18, '008', 'Xalisco', null),
   (18, '009', 'Del Nayar', null),
   (18, '010', 'Rosamorada', null),
-  (18, '011', 'Ruíz', null),
+  (18, '011', 'Ruiz', null),
   (18, '012', 'San Blas', null),
   (18, '013', 'San Pedro Lagunillas', null),
   (18, '014', 'Santa María del Oro', null),

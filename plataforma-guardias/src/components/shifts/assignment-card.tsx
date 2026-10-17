@@ -214,7 +214,7 @@ export function AssignmentCard({
   const minutesByType = new Map(summary.incidents.map((i) => [i.type, i.minutes]));
 
   return (
-    <article className="rounded-[--radius-card] border border-gray-200 bg-white p-4 shadow-sm sm:p-5" aria-labelledby={`asig-${assignment.id}`}>
+    <article className="rounded-card border border-gray-200 bg-white p-4 shadow-sm sm:p-5" aria-labelledby={`asig-${assignment.id}`}>
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 id={`asig-${assignment.id}`} className="text-lg font-semibold text-gray-900">

@@ -107,7 +107,7 @@ export default async function ImportarTrabajadoresPage() {
           </Card>
 
           {keys && keys.length > 0 ? (
-            <details className="rounded-[--radius-card] border border-gray-200 bg-white p-4 sm:p-5">
+            <details className="rounded-card border border-gray-200 bg-white p-4 sm:p-5">
               <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-gray-900">
                 Claves de {user.isAdmin ? "las instalaciones activas" : "tus sedes"} para la columna «instalacion»
               </summary>

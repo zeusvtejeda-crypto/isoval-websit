@@ -26,7 +26,7 @@ export function AuditFiltersForm({
   const sortedTables = [...tables].sort((a, b) => auditTableLabel(a).localeCompare(auditTableLabel(b), "es"));
 
   return (
-    <form method="get" action={AUDIT_PATH} className="rounded-[--radius-card] border border-gray-200 bg-white p-4" aria-label="Filtros de la bitácora">
+    <form method="get" action={AUDIT_PATH} className="rounded-card border border-gray-200 bg-white p-4" aria-label="Filtros de la bitácora">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Tabla" htmlFor="b-tabla">
           <Select id="b-tabla" name="tabla" defaultValue={filters.table}>

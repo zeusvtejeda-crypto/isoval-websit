@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
 /** Tabla con desplazamiento horizontal en pantallas pequeñas. */
 export function Table({ children, caption, className }: { children: ReactNode; caption?: string; className?: string }) {
   return (
-    <div className={cn("overflow-x-auto rounded-[--radius-card] border border-gray-200 bg-white", className)}>
+    <div className={cn("overflow-x-auto rounded-card border border-gray-200 bg-white", className)}>
       <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         {children}

@@ -234,6 +234,24 @@ export function todayYmd(now: Date = new Date(), timeZone = "America/Cancun"): s
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+/** Separador para varias URLs de fuente en un solo campo («url1 | url2»). */
+export const SOURCE_URL_SEPARATOR = " | ";
+
+/** Divide un campo de URL(s) de fuente en URLs individuales. */
+export function splitSourceUrls(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/\s+\|\s+|\s*\n\s*/)
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+/** Una o varias URLs http(s) separadas por « | ». */
+export function isHttpUrlList(value: string): boolean {
+  const parts = splitSourceUrls(value);
+  return parts.length > 0 && parts.every((part) => isHttpUrl(part));
+}
+
 export function isHttpUrl(value: string): boolean {
   if (value.length > URL_MAX) return false;
   try {
@@ -436,7 +454,7 @@ export function facilityFormSchema(today: string = todayYmd()) {
         ),
       source_url: z
         .string()
-        .refine(isHttpUrl, { error: "Escribe una dirección web completa que empiece con https:// o http://." })
+        .refine(isHttpUrlList, { error: "Escribe direcciones web completas que empiecen con https:// o http:// (varias, separadas por « | »)." })
         .optional(),
       last_verified_at: z
         .string()

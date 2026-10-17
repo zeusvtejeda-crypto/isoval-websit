@@ -73,6 +73,13 @@ export function AppNav({
       <div className="border-t border-gray-200 pt-4">
         <p className="px-3 text-sm font-semibold text-gray-900">{userLabel}</p>
         <p className="px-3 text-xs text-gray-600">{roleLabel}</p>
+        <Link
+          href="/cuenta"
+          onClick={() => setOpen(false)}
+          className="mt-2 flex min-h-11 items-center rounded-xl px-3 font-medium text-gray-800 hover:bg-gray-100"
+        >
+          Mi cuenta
+        </Link>
         <form action={logoutAction} className="mt-2 px-1">
           <button type="submit" className="min-h-11 w-full rounded-xl px-2 text-left font-medium text-red-800 hover:bg-red-50">
             Cerrar sesión

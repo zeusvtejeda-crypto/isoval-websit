@@ -10,6 +10,7 @@ export const STAFF_NAV: NavItem[] = [
   { href: "/guardias", label: "Guardias", roles: ["admin", "coordinador", "auditor"] },
   { href: "/en-servicio", label: "En servicio", roles: ["admin", "coordinador", "auditor"] },
   { href: "/historial", label: "Historial y reportes", short: "Reportes", roles: ["admin", "coordinador", "auditor"] },
+  { href: "/correcciones", label: "Correcciones", roles: ["admin", "coordinador"] },
   { href: "/administracion", label: "Administración", roles: ["admin", "coordinador", "auditor"] },
 ];
 

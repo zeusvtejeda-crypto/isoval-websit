@@ -57,7 +57,7 @@ export default async function CategoriasPage({ searchParams }: { searchParams: P
           <>
             <ul className="space-y-3 md:hidden" aria-label="Categorías">
               {categories.map((c) => (
-                <li key={c.id} className="rounded-[--radius-card] border border-gray-200 bg-white p-4 shadow-sm">
+                <li key={c.id} className="rounded-card border border-gray-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <p className="inline-flex items-center gap-2 font-semibold text-gray-900">
                       <Swatch color={c.color} />

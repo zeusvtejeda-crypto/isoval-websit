@@ -86,7 +86,7 @@ describe("Ficha pública de instalación", () => {
     // 2026-10-17T05:00Z en la zona de la sede (Mazatlán, UTC−7).
     expect(screen.getByText("16/10/2026 22:00")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "311 000 0000" })).toHaveAttribute("href", "tel:3110000000");
-    expect(screen.getByRole("link", { name: /Datos de demostración/ })).toHaveAttribute("href", "https://example.org/fuente");
+    expect(screen.getByRole("link", { name: /Consultar fuente/ })).toHaveAttribute("href", "https://example.org/fuente");
 
     const directions = within(screen.getByRole("heading", { name: "Cómo llegar" }).closest("section")!);
     expect(directions.getByRole("link", { name: "Cómo llegar (Google Maps)" })).toHaveAttribute(
@@ -122,7 +122,7 @@ describe("Ficha pública de instalación", () => {
     expect(screen.getByText("Sin coordenadas (no aparece en el mapa)")).toBeInTheDocument();
     expect(screen.queryByText(/Modo de demostración/)).not.toBeInTheDocument();
     // Una URL no http(s) se muestra como texto, nunca como enlace.
-    expect(screen.queryByRole("link", { name: /Datos de demostración/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Consultar fuente/ })).not.toBeInTheDocument();
     // Sin coordenadas: indicaciones por dirección y sin mapa.
     expect(screen.getByRole("link", { name: "Cómo llegar (Google Maps)" }).getAttribute("href")).toContain(
       encodeURIComponent("Domicilio de demostración 100, Tepic, Nayarit, México"),
@@ -133,5 +133,15 @@ describe("Ficha pública de instalación", () => {
   it("responde «no encontrado» si la instalación no es pública", async () => {
     data.current = null;
     await expect(FichaInstalacionPage({ params: Promise.resolve({ id: ID }) })).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+});
+
+describe("Varias URLs de fuente", () => {
+  it("separa «url1 | url2» en enlaces individuales y descarta las inválidas", async () => {
+    const { safeExternalUrls } = await import("@/lib/directory/format");
+    expect(safeExternalUrls("https://a.gob.mx/x.xlsx | https://www.imss.gob.mx/directorio?x=1 | javascript:alert(1)")).toEqual([
+      "https://a.gob.mx/x.xlsx",
+      "https://www.imss.gob.mx/directorio?x=1",
+    ]);
   });
 });
