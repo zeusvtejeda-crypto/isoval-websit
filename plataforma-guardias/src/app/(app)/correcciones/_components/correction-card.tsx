@@ -74,7 +74,7 @@ export function CorrectionCard({
         </div>
       </div>
 
-      <div className="mt-3 overflow-x-auto">
+      <div className="relative mt-3 overflow-x-auto">
         <table className="min-w-full text-left text-sm">
           <caption className="sr-only">Horas actuales y solicitadas, en la zona horaria de la sede</caption>
           <thead>

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ServiceWorkerRegistration } from "@/components/layout/service-worker-registration";
+import { ClientInit } from "@/components/layout/client-init";
 
 export const metadata: Metadata = {
   title: {
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es-MX" className="h-full antialiased">
       <body className="min-h-full">
+        <ClientInit />
         {children}
         <ServiceWorkerRegistration />
       </body>

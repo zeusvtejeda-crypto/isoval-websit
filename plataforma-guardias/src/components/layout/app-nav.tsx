@@ -93,7 +93,7 @@ export function AppNav({
     <>
       {/* Barra superior móvil */}
       <div className="no-print sticky top-0 z-30 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2 lg:hidden">
-        <Link href="/" className="font-bold text-brand-900">
+        <Link href="/" className="inline-flex min-h-11 items-center font-bold text-brand-900">
           Guardias y Directorio
         </Link>
         <button
@@ -124,7 +124,7 @@ export function AppNav({
 
       {/* Barra lateral en escritorio */}
       <aside className="no-print hidden w-64 shrink-0 border-r border-gray-200 bg-white p-4 lg:block">
-        <Link href="/" className="mb-6 block px-3 text-lg font-bold leading-tight text-brand-900">
+        <Link href="/" className="mb-6 flex min-h-11 items-center px-3 text-lg font-bold leading-tight text-brand-900">
           Guardias y Directorio
         </Link>
         {menu}
