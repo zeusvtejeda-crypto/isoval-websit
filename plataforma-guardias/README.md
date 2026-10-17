@@ -1,36 +1,204 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Guardias y Directorio de Instalaciones
 
-## Getting Started
+Aplicación web responsiva e instalable (PWA) con dos módulos conectados:
 
-First, run the development server:
+1. **Directorio y mapa de instalaciones** (público): búsqueda, filtros, mapa con agrupación de marcadores, ficha de instalación e indicaciones.
+2. **Control de guardias de huelga** (privado): directorio de trabajadores, programación de guardias, registro de entradas y salidas, panel «Quién está aquí», historial, reportes y exportación.
+
+> **Aviso:** esta plataforma **no es una aplicación oficial del IMSS** ni está afiliada al Instituto. No usa logotipos oficiales.
+> El repositorio **no incluye un directorio real de instalaciones**: solo datos de demostración marcados como tales.
+
+---
+
+## Contenido
+
+- [Funcionalidades](#funcionalidades)
+- [Arquitectura](#arquitectura)
+- [Ejecutar en local](#ejecutar-en-local)
+- [Variables de entorno](#variables-de-entorno)
+- [Configurar Supabase en la nube](#configurar-supabase-en-la-nube)
+- [Proveedor de mapas](#proveedor-de-mapas)
+- [Datos: fuentes oficiales, importación y demostración](#datos-fuentes-oficiales-importación-y-demostración)
+- [Despliegue](#despliegue)
+- [Pruebas](#pruebas)
+- [Seguridad y privacidad](#seguridad-y-privacidad)
+- [Configuración externa pendiente](#configuración-externa-pendiente)
+
+---
+
+## Funcionalidades
+
+| Área | Qué incluye |
+| --- | --- |
+| Directorio público | Lista (funciona sin mapa y sin JavaScript), mapa Leaflet + OpenStreetMap con agrupación, búsqueda por nombre/clave/municipio/estado/dirección, filtros por categoría/estado/municipio, ficha completa, botón «Cómo llegar». |
+| Instalaciones | Alta, edición, desactivación e importación CSV/Excel con validación y detección de duplicados. Categorías editables (nombre, descripción, icono, color). |
+| Trabajadores | Directorio privado por entidad federativa, alta/edición/importación, datos privados (número de trabajador y teléfono) en tabla separada. Un trabajador puede existir sin cuenta. |
+| Guardias | Sede, punto de reunión, inicio/término (cruza medianoche), responsable, cupo mínimo/máximo, asignaciones, sustituciones, instrucciones, estados. Vista de lista y calendario semanal. |
+| Registro | Botones grandes «Registrar entrada» / «Registrar salida», hora del servidor, idempotencia contra doble clic y reintentos, varias sesiones por guardia, registro por coordinación con motivo. |
+| En servicio | Panel con actualización automática: en servicio, responsables, pendientes de llegar, quienes salieron, guardias sin cobertura y registros incompletos. |
+| Historial y reportes | Por trabajador, sede, estado y rango de fechas; horas programadas, dentro/fuera del horario, total y diferencia; incidencias; exportación a Excel y PDF según permisos. |
+| Correcciones | Solicitudes del trabajador, revisión por coordinación, correcciones que conservan el registro original, anulaciones con motivo y bitácora completa. |
+| Administración | Usuarios y permisos por sede, aviso de privacidad configurable, política de conservación, parámetros de registro, eliminación de datos de demostración, bitácora. |
+
+Roles: **Administración general**, **Coordinación** (solo sedes asignadas), **Trabajador** (sus propios registros) y **Consulta o auditoría** (solo lectura en su alcance).
+
+## Arquitectura
+
+- **Next.js 16.4** (App Router, TypeScript, React 19) + **Tailwind CSS 4**.
+- **Supabase**: Postgres 17, Auth (correo y contraseña), **Row Level Security** en todas las tablas, funciones SQL para la asistencia y bitácora por triggers.
+- **Leaflet** + **leaflet.markercluster** con teselas de OpenStreetMap (atribución conservada).
+- **PWA**: `app/manifest.ts` y `public/sw.js` propio que solo cachea recursos estáticos (nunca páginas privadas ni la API).
+
+Convenciones y reglas de seguridad: [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+
+### Modelo de datos (resumen)
+
+| Tabla | Propósito |
+| --- | --- |
+| `states`, `municipalities` | Catálogos INEGI (32 entidades; municipios de Nayarit precargados). |
+| `facility_categories`, `facilities` | Categorías editables e instalaciones (sedes) con procedencia, verificación y zona horaria. |
+| `workers`, `worker_private` | Trabajadores y sus datos privados (separados). |
+| `profiles`, `user_facility_scopes` | Cuentas de acceso (1:1 con Auth) y sedes asignadas. |
+| `shifts`, `shift_assignments` | Guardias y asignaciones (incluye sustituciones). |
+| `attendance_sessions` | Entradas/salidas. Solo se escriben por funciones; las correcciones crean versión nueva. |
+| `correction_requests`, `incident_notes` | Solicitudes de corrección y justificación de incidencias. |
+| `audit_log` | Bitácora inmutable: autor, fecha, valor anterior, valor nuevo, motivo. |
+| `app_settings` | Aviso de privacidad, conservación y parámetros de registro. |
+
+Restricciones anti-duplicados clave: una sola entrada abierta por trabajador (índice único parcial), sin traslapes de sesiones (restricción de exclusión GiST), identificador de solicitud único (idempotencia), salida posterior a la entrada (CHECK), clave de unidad única, nombre normalizado único por municipio, número de trabajador único, asignación única por guardia.
+
+## Ejecutar en local
+
+Requisitos: Node.js ≥ 20.9, Docker (para Supabase local) y npm.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd plataforma-guardias
+npm install
+cp .env.example .env.local          # completa con los valores que imprime el paso siguiente
+
+npm run db:start                    # levanta Supabase local (Postgres, Auth, API)
+npx supabase status                 # copia API URL, anon key y service_role key a .env.local
+npm run db:reset                    # aplica migraciones y DATOS DE DEMOSTRACIÓN
+npm run demo:usuarios               # crea cuentas de demostración (solo contra Supabase local)
+
+npm run dev                         # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Cuentas de demostración (contraseña `Demo-Guardias-2026!`, o la definida en `DEMO_PASSWORD`):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Correo | Rol |
+| --- | --- |
+| `admin@demo.local` | Administración general |
+| `coordinacion@demo.local` | Coordinación de «[DEMO] Hospital de demostración A» y «[DEMO] UMF de demostración 1» |
+| `auditoria@demo.local` | Consulta o auditoría (Hospital A) |
+| `trabajador@demo.local` | Trabajador |
+| `trabajador2@demo.local` | Trabajador |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Variables de entorno
 
-## Learn More
+Todas están documentadas en [`.env.example`](.env.example).
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Dónde se usa | Notas |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Navegador y servidor | URL del proyecto. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Navegador y servidor | Llave pública (anon/publishable). RLS protege los datos. |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Solo servidor** | Solo para crear/desactivar cuentas desde Administración. Nunca con prefijo `NEXT_PUBLIC_`. |
+| `NEXT_PUBLIC_SITE_URL` | Servidor | URL pública del sitio. |
+| `NEXT_PUBLIC_DEFAULT_TIMEZONE` | Ambos | Zona por omisión (`America/Mazatlan`). Cada sede define la suya. |
+| `NEXT_PUBLIC_DEMO_MODE` | Ambos | Muestra la franja de datos de demostración. Usa `false` en producción. |
+| `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_ATTRIBUTION` | Navegador | Proveedor de teselas y su atribución obligatoria. |
+| `NEXT_PUBLIC_MAP_CENTER_LAT`, `NEXT_PUBLIC_MAP_CENTER_LNG`, `NEXT_PUBLIC_MAP_ZOOM` | Navegador | Vista inicial (Nayarit). |
+| `TEST_DATABASE_URL` | Pruebas | Conexión directa a Postgres local para pruebas de BD/RLS. |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Configurar Supabase en la nube
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Crea un proyecto en [supabase.com](https://supabase.com). Elige una región cercana.
+2. Vincula y aplica las migraciones (no aplica los datos de demostración):
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <REF_DEL_PROYECTO>
+   npx supabase db push
+   ```
+   **Nunca** ejecutes `supabase/seeds/demo.sql` en producción ni uses `db push --include-seed`.
+3. En **Authentication → Providers → Email**: deja habilitado el inicio con correo y contraseña y **desactiva el registro público** («Allow new users to sign up» = off). Las cuentas las crea Administración.
+4. En **Authentication → URL Configuration**: define *Site URL* con tu dominio (HTTPS).
+5. Copia las llaves de **Project Settings → API** a las variables de entorno del despliegue.
+6. Crea la primera cuenta de administración:
+   ```bash
+   ADMIN_PASSWORD='una-contraseña-larga-y-segura' npm run crear-admin -- persona@dominio.mx "Nombre"
+   ```
+7. En **Administración → Configuración**, revisa el aviso de privacidad (marcado *pendiente de revisión jurídica*), la política de conservación y los parámetros de registro.
+8. Habilita la cobertura de otras entidades editando `states.enabled` cuando cargues datos.
 
-## Deploy on Vercel
+## Proveedor de mapas
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Por omisión se usan las teselas públicas de OpenStreetMap. Su [política de uso](https://operations.osmfoundation.org/policies/tiles/) **no permite tráfico intenso**: para producción usa un proveedor con clave (MapTiler, Stadia Maps, Thunderforest, etc.) o un servidor propio.
+- Configura `NEXT_PUBLIC_MAP_TILE_URL` (plantilla `{z}/{x}/{y}`, incluye la clave si el proveedor la exige) y **conserva la atribución** en `NEXT_PUBLIC_MAP_ATTRIBUTION` (OpenStreetMap y la del proveedor).
+- El directorio sigue funcionando en modo lista si el mapa no carga.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Datos: fuentes oficiales, importación y demostración
+
+- **No se inventa un directorio.** Carga solo datos de fuentes oficiales accesibles y conserva su procedencia (`fuente`, `url_fuente`, fecha de verificación y estado verificado/pendiente).
+- Valida nombres oficiales y categorías antes de cargar datos reales.
+- Importación: **Administración → Instalaciones → Importar** (CSV/Excel) y **Trabajadores → Importar**. Plantillas en `public/plantillas/`. El flujo valida, detecta duplicados (en el archivo y contra la base) y muestra una vista previa antes de aplicar.
+- Datos de demostración: viven solo en `supabase/seeds/demo.sql`, tienen `is_demo = true` y el prefijo «[DEMO]». Se eliminan con **Administración → Configuración → Eliminar datos de demostración** (función `purge_demo_data`).
+
+## Despliegue
+
+Funciona en cualquier hospedaje de Node.js (Vercel, Render, Fly.io, servidor propio):
+
+```bash
+npm run build
+npm run start
+```
+
+- Define las variables de entorno del proyecto (con `NEXT_PUBLIC_DEMO_MODE=false`).
+- Sirve por **HTTPS** (requisito de la PWA y de cookies seguras).
+- El service worker solo se registra en producción.
+
+## Pruebas
+
+```bash
+npm run typecheck        # TypeScript
+npm run lint             # ESLint
+npm run test             # unidad (Vitest): cálculos, zonas horarias, importación, reportes, PWA…
+npm run test:db          # base de datos real (Supabase local): RLS, funciones, triggers
+npm run build && npm run test:e2e   # E2E (Playwright, móvil) contra next start + Supabase local
+```
+
+Requisitos de `test:db` y `test:e2e`: `npm run db:start`, `npm run db:reset` y `npm run demo:usuarios`. Si Playwright no encuentra Chromium, define `PLAYWRIGHT_CHROMIUM_PATH`.
+
+### Criterios de aceptación y dónde se prueban
+
+| # | Criterio | Pruebas |
+| --- | --- | --- |
+| 1 | Crear una instalación y encontrarla en mapa y lista | `tests/db/acceptance.test.ts` (1), `tests/e2e/criterios.spec.ts` |
+| 2 | Registrar un trabajador y asignarlo a una sede | `tests/db` (2), `tests/e2e` |
+| 3 | Crear una guardia y asignar trabajadores | `tests/db` (3), `tests/e2e` |
+| 4 | Registrar entrada y verla en «En servicio» | `tests/db` (4–5), `tests/e2e` |
+| 5 | Registrar salida y actualizar el historial | `tests/db` (4–5), `tests/e2e` |
+| 6 | Guardia que cruza medianoche | `tests/unit/calc.test.ts`, `tests/unit/time.test.ts`, `tests/db` (6) |
+| 7 | Salida y regreso sin contar el tiempo ausente | `tests/unit/calc.test.ts`, `tests/db` (7) |
+| 8 | Detectar una entrada sin salida | `tests/unit/calc.test.ts`, `tests/db` (8) |
+| 9 | Evitar duplicados por doble clic o reintento | `tests/db` (9), pruebas del componente de registro, `tests/e2e` |
+| 10 | Corregir conservando la auditoría | `tests/db` (10), `tests/e2e` |
+| 11 | Un trabajador no ve datos privados de otros | `tests/db` (11), `tests/e2e` |
+| 12 | Un coordinador no accede a sedes ajenas | `tests/db` (12), `tests/e2e` |
+
+## Seguridad y privacidad
+
+- Permisos validados en el servidor (DAL `src/lib/auth.ts` y cada Server Action) **y** en la base de datos (RLS + funciones con verificación de rol y sede).
+- Directorio público separado (`public_facilities`): nunca expone trabajadores, teléfonos ni guardias.
+- No se recopilan CURP, datos médicos, biométricos ni ubicación. Sin reconocimiento facial ni rastreo.
+- «Entrada registrada» no equivale a presencia física verificada (se indica en la interfaz).
+- Sin conexión, la interfaz nunca muestra un registro como guardado si el servidor no lo confirmó.
+- Correcciones sin borrar el original; bitácora inmutable (triggers impiden editarla o borrarla).
+- Política de conservación configurable; exportaciones restringidas por permisos (RLS).
+- La llave de servicio solo existe en el servidor.
+
+## Configuración externa pendiente
+
+- Proyecto de Supabase en la nube, llaves y primera cuenta de administración.
+- Proveedor de teselas para producción y su clave.
+- Fuentes oficiales de instalaciones y su validación antes de cargar datos reales.
+- **Revisión jurídica del aviso de privacidad** (el texto incluido es un borrador marcado como pendiente).
