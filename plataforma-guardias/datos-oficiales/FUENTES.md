@@ -93,3 +93,7 @@ Resumen: 396 filas · hospitales 21 · umf 21 · otras-unidades-medicas 349 · o
 ## Mantenimiento
 - CLUES se publica mensualmente: cambiar `CLUES_VERSION`, reemplazar el extracto en `fuentes/` y reejecutar.
 - Las 17 filas `revisar` no bloquean la carga; solo 10 pertenecen al conjunto IMSS y son unidades co-ubicadas o móviles.
+
+## Variante solo IMSS (`instalaciones_nayarit_solo_imss_plantilla.csv`)
+
+Mismas columnas que `instalaciones_nayarit_imss_plantilla.csv`, filtrada a las unidades con `clave_institucion = IMS` (Instituto Mexicano del Seguro Social). Excluye las 273 unidades de Servicios de Salud IMSS-Bienestar, que son otra institución. Úsala si el alcance del directorio es solo el IMSS ordinario. Se generó a partir de los dos CSV anteriores (cruce por CLUES); no requiere volver a consultar las fuentes.

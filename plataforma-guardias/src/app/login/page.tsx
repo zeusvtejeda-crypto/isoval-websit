@@ -5,6 +5,7 @@ import { Disclaimer } from "@/components/layout/disclaimer";
 import { getSessionUser, homePathFor } from "@/lib/auth";
 import { isSupabaseConfigured } from "@/lib/env";
 import { Alert } from "@/components/ui/states";
+import { safeNextPath } from "@/lib/security/safe-next";
 
 export const metadata: Metadata = { title: "Iniciar sesión" };
 
@@ -23,7 +24,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             Faltan las variables de Supabase. Revisa el README.
           </Alert>
         ) : null}
-        <LoginForm next={next ?? ""} />
+        <LoginForm next={safeNextPath(next) ?? ""} />
       </main>
       <Disclaimer />
     </div>

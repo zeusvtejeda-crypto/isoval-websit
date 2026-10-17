@@ -13,8 +13,6 @@ const PUBLIC_PREFIXES = [
   "/login",
   "/aviso-de-privacidad",
   "/offline",
-  "/auth",
-  "/api/public",
 ];
 
 function isPublic(pathname: string) {

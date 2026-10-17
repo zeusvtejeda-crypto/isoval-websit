@@ -6,7 +6,7 @@ Aplicación web responsiva e instalable (PWA) con dos módulos conectados:
 2. **Control de guardias de huelga** (privado): directorio de trabajadores, programación de guardias, registro de entradas y salidas, panel «Quién está aquí», historial, reportes y exportación.
 
 > **Aviso:** esta plataforma **no es una aplicación oficial del IMSS** ni está afiliada al Instituto. No usa logotipos oficiales.
-> El repositorio **no incluye un directorio real de instalaciones**: solo datos de demostración marcados como tales.
+> La semilla de la base de datos solo trae **datos de demostración** marcados como tales. Aparte, en `datos-oficiales/` se incluye un catálogo de Nayarit construido con fuentes oficiales (CLUES, IMSS e INEGI) que se carga con el importador; ver [Datos](#datos-fuentes-oficiales-importación-y-demostración).
 
 ---
 
@@ -55,7 +55,7 @@ Convenciones y reglas de seguridad: [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.m
 
 | Tabla | Propósito |
 | --- | --- |
-| `states`, `municipalities` | Catálogos INEGI (32 entidades; municipios de Nayarit precargados). |
+| `states`, `municipalities` | Catálogos INEGI: 32 entidades y 2,478 municipios (Marco Geoestadístico). Cobertura activa por entidad (`states.enabled`), editable en Administración → Catálogos geográficos. |
 | `facility_categories`, `facilities` | Categorías editables e instalaciones (sedes) con procedencia, verificación y zona horaria. |
 | `workers`, `worker_private` | Trabajadores y sus datos privados (separados). |
 | `profiles`, `user_facility_scopes` | Cuentas de acceso (1:1 con Auth) y sedes asignadas. |
@@ -89,7 +89,7 @@ Cuentas de demostración (contraseña `Demo-Guardias-2026!`, o la definida en `D
 | Correo | Rol |
 | --- | --- |
 | `admin@demo.local` | Administración general |
-| `coordinacion@demo.local` | Coordinación de «[DEMO] Hospital de demostración A» y «[DEMO] UMF de demostración 1» |
+| `coordinacion@demo.local` | Coordinación de «[DEMO] Hospital de demostración A» y «[DEMO] Unidad de Medicina Familiar de demostración 1». También es la trabajadora «[DEMO] María López Díaz»: no puede corregir su propia asistencia |
 | `auditoria@demo.local` | Consulta o auditoría (Hospital A) |
 | `trabajador@demo.local` | Trabajador |
 | `trabajador2@demo.local` | Trabajador |
@@ -109,6 +109,10 @@ Todas están documentadas en [`.env.example`](.env.example).
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_ATTRIBUTION` | Navegador | Proveedor de teselas y su atribución obligatoria. |
 | `NEXT_PUBLIC_MAP_CENTER_LAT`, `NEXT_PUBLIC_MAP_CENTER_LNG`, `NEXT_PUBLIC_MAP_ZOOM` | Navegador | Vista inicial (Nayarit). |
 | `TEST_DATABASE_URL` | Pruebas | Conexión directa a Postgres local para pruebas de BD/RLS. |
+| `NEXT_PUBLIC_ENABLE_SW` | Navegador | `true` registra el service worker también en desarrollo. |
+| `DEMO_PASSWORD`, `ALLOW_DEMO_USERS` | Script `demo:usuarios` | Contraseña de las cuentas demo; forzar su creación fuera de local (no recomendado). |
+| `ADMIN_PASSWORD` | Script `crear-admin` | Solo al ejecutar el comando; no la guardes en archivos. |
+| `PLAYWRIGHT_CHROMIUM_PATH`, `E2E_PORT`, `E2E_DEV` | Pruebas E2E | Ruta de Chromium, puerto y modo de desarrollo. |
 
 ## Configurar Supabase en la nube
 
@@ -121,6 +125,7 @@ Todas están documentadas en [`.env.example`](.env.example).
    ```
    **Nunca** ejecutes `supabase/seeds/demo.sql` en producción ni uses `db push --include-seed`.
 3. En **Authentication → Providers → Email**: deja habilitado el inicio con correo y contraseña y **desactiva el registro público** («Allow new users to sign up» = off). Las cuentas las crea Administración.
+   En **Authentication → Policies/Passwords** usa longitud mínima de 12, requisitos de minúsculas, mayúsculas y dígitos, y «Secure password change». Activa CAPTCHA si el sitio es público. (`supabase/config.toml` ya lo configura así en local.)
 4. En **Authentication → URL Configuration**: define *Site URL* con tu dominio (HTTPS).
 5. Copia las llaves de **Project Settings → API** a las variables de entorno del despliegue.
 6. Crea la primera cuenta de administración:
@@ -156,6 +161,7 @@ Incluye un catálogo listo para el importador, construido solo con fuentes ofici
 - **Coordenadas:** algunas se corrigieron con el directorio del IMSS o con el centro de la localidad del INEGI. La coordenada original queda en `observaciones`.
 - **Antes de usarlo en producción:** revisa las filas pendientes y las marcadas `revisar` en `observaciones`, y confirma que el corte de CLUES sigue vigente.
 - **Cómo cargarlo:** Administración → Instalaciones → Importar → `instalaciones_nayarit_imss_plantilla.csv` → Validar → Importar. Las unidades co-ubicadas con el mismo nombre se distinguen por su CLUES.
+- **IMSS o IMSS-Bienestar:** 273 de las 396 unidades son de Servicios de Salud IMSS-Bienestar, que es otra institución. Si el directorio debe incluir solo el IMSS ordinario, carga `instalaciones_nayarit_solo_imss_plantilla.csv` (123 unidades). La institución de cada unidad queda en `descripcion` y `observaciones`.
 - Importación: **Administración → Instalaciones → Importar** (CSV/Excel) y **Trabajadores → Importar**. Plantillas en `public/plantillas/`. El flujo valida, detecta duplicados (en el archivo y contra la base) y muestra una vista previa antes de aplicar.
 - Datos de demostración: viven solo en `supabase/seeds/demo.sql`, tienen `is_demo = true` y el prefijo «[DEMO]». Se eliminan con **Administración → Configuración → Eliminar datos de demostración** (función `purge_demo_data`).
 
@@ -200,6 +206,8 @@ Requisitos de `test:db` y `test:e2e`: `npm run db:start`, `npm run db:reset` y `
 | 10 | Corregir conservando la auditoría | `tests/db` (10), `tests/e2e` |
 | 11 | Un trabajador no ve datos privados de otros | `tests/db` (11), `tests/e2e` |
 | 12 | Un coordinador no accede a sedes ajenas | `tests/db` (12), `tests/e2e` |
+| — | Importación del catálogo oficial (396 unidades, CLUES co-ubicadas) | `tests/e2e/importacion-oficial.spec.ts` |
+| — | Endurecimiento: separación de funciones, salida inventada, alcance, columnas protegidas, servicios públicos | `tests/db/hardening.test.ts` |
 
 ## Seguridad y privacidad
 
@@ -211,6 +219,11 @@ Requisitos de `test:db` y `test:e2e`: `npm run db:start`, `npm run db:reset` y `
 - Correcciones sin borrar el original; bitácora inmutable (triggers impiden editarla o borrarla).
 - Política de conservación configurable; exportaciones restringidas por permisos (RLS).
 - La llave de servicio solo existe en el servidor.
+- **Separación de funciones:** nadie (salvo administración) corrige, agrega, anula o revisa su propia asistencia. Las horas capturadas a mano deben caer dentro de la guardia (±12 h).
+- Una entrada olvidada nunca se cierra con la hora actual pasado el margen: se corrige con la hora real.
+- Cabeceras: Content-Security-Policy (orígenes de teselas y Supabase), HSTS cuando el sitio es HTTPS, `X-Frame-Options: DENY`, `nosniff`, `Permissions-Policy` sin cámara, micrófono ni ubicación. `/api/asistencia` exige mismo origen y JSON.
+- Límite de intentos de inicio de sesión por IP y por correo (en memoria, por instancia). Con varias instancias, usa un almacén compartido o el CAPTCHA de Supabase.
+- Importación XLSX: se rechazan archivos de más de 5 MB o de más de 50 MB descomprimidos.
 
 ## Configuración externa pendiente
 

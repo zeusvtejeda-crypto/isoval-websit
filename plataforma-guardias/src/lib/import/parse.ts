@@ -60,7 +60,51 @@ function cellToString(value: ExcelJS.CellValue): string {
   return String(value);
 }
 
+/** Máximo descomprimido de un .xlsx (defensa contra bombas zip). */
+export const MAX_XLSX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 2000;
+
+/**
+ * Suma los tamaños descomprimidos declarados en el directorio central del ZIP
+ * sin descomprimir nada. Devuelve null si el archivo no es un ZIP válido o usa
+ * ZIP64 (tamaños de 4 GB o más), que se rechaza.
+ */
+export function zipDeclaredUncompressedSize(buffer: ArrayBuffer): { bytes: number; entries: number } | null {
+  const view = new DataView(buffer);
+  const len = buffer.byteLength;
+  // Fin del directorio central: firma 0x06054b50 en los últimos 64 KB + 22 bytes.
+  let eocd = -1;
+  for (let i = len - 22; i >= Math.max(0, len - 65_557); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return null;
+  const entries = view.getUint16(eocd + 10, true);
+  const cdOffset = view.getUint32(eocd + 16, true);
+  if (entries === 0xffff || cdOffset === 0xffffffff || cdOffset >= len) return null;
+  let ptr = cdOffset;
+  let total = 0;
+  for (let n = 0; n < entries; n++) {
+    if (ptr + 46 > len || view.getUint32(ptr, true) !== 0x02014b50) return null;
+    const uncompressed = view.getUint32(ptr + 24, true);
+    if (uncompressed === 0xffffffff) return null;
+    total += uncompressed;
+    const nameLen = view.getUint16(ptr + 28, true);
+    const extraLen = view.getUint16(ptr + 30, true);
+    const commentLen = view.getUint16(ptr + 32, true);
+    ptr += 46 + nameLen + extraLen + commentLen;
+  }
+  return { bytes: total, entries };
+}
+
 export async function parseXlsx(buffer: ArrayBuffer): Promise<ParsedFile> {
+  const declared = zipDeclaredUncompressedSize(buffer);
+  if (!declared) throw new Error("El archivo de Excel no es válido o está dañado.");
+  if (declared.entries > MAX_ZIP_ENTRIES || declared.bytes > MAX_XLSX_UNCOMPRESSED_BYTES) {
+    throw new Error("El archivo de Excel es demasiado grande una vez descomprimido. Divídelo en partes o usa CSV.");
+  }
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const sheet = workbook.worksheets[0];

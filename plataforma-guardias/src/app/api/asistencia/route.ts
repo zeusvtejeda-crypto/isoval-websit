@@ -43,7 +43,30 @@ const MESSAGES: Record<string, { entrada: string; salida: string }> = {
   no_open_session: { entrada: "", salida: "No hay una entrada abierta en esta guardia." },
 };
 
+/** Rechaza solicitudes de otros sitios (defensa en profundidad además de SameSite). */
+function isSameOrigin(request: Request): boolean {
+  const site = request.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin") return false;
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  // Detrás de un proxy, el host público llega en x-forwarded-host.
+  const hosts = [request.headers.get("x-forwarded-host"), request.headers.get("host")]
+    .flatMap((h) => (h ? h.split(",") : []))
+    .map((h) => h.trim().toLowerCase());
+  try {
+    return hosts.includes(new URL(origin).host.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: Request): Promise<NextResponse<AttendanceApiResult>> {
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ ok: false, message: "Origen no permitido." }, { status: 403 });
+  }
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+    return NextResponse.json({ ok: false, message: "Solicitud inválida." }, { status: 415 });
+  }
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ ok: false, message: "Tu sesión terminó. Vuelve a iniciar sesión." }, { status: 401 });

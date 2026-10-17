@@ -31,7 +31,7 @@ export default async function CuentaPage() {
           <p className="mt-3 text-sm text-gray-600">Para cambiar tu nombre, rol o sedes asignadas, contacta a administración.</p>
         </Card>
         <Card>
-          <CardHeader title="Cambiar contraseña" description="Mínimo 12 caracteres." />
+          <CardHeader title="Cambiar contraseña" description="Mínimo 12 caracteres, con minúsculas, mayúsculas y números." />
           <PasswordForm />
         </Card>
       </div>

@@ -10,7 +10,9 @@ type ReasonTable = "facilities" | "workers" | "worker_private" | "profiles" | "s
  * Una actualización que solo toca change_reason no genera entrada en la bitácora.
  */
 export async function clearStoredReason(supabase: ServerSupabase, table: ReasonTable, id: string): Promise<{ message: string } | null> {
-  const key = table === "worker_private" ? "worker_id" : "id";
-  const { error } = await supabase.from(table).update({ change_reason: null }).eq(key, id);
+  const { error } =
+    table === "worker_private"
+      ? await supabase.from("worker_private").update({ change_reason: null }).eq("worker_id", id)
+      : await supabase.from(table).update({ change_reason: null }).eq("id", id);
   return error ? { message: error.message } : null;
 }

@@ -8,7 +8,11 @@ import type { ActionResult } from "@/lib/actions";
 const schema = z
   .object({
     current: z.string().min(1, "Escribe tu contraseña actual."),
-    password: z.string().min(12, "La nueva contraseña debe tener al menos 12 caracteres.").max(128),
+    password: z
+      .string()
+      .min(12, "La nueva contraseña debe tener al menos 12 caracteres.")
+      .max(72, "La contraseña no puede superar 72 caracteres.")
+      .refine((v) => /[a-z]/.test(v) && /[A-Z]/.test(v) && /\d/.test(v), "Incluye minúsculas, mayúsculas y al menos un número."),
     confirm: z.string(),
   })
   .refine((v) => v.password === v.confirm, { message: "Las contraseñas no coinciden.", path: ["confirm"] })
@@ -34,6 +38,7 @@ export async function changePassword(_prev: ActionResult | null, formData: FormD
   if (authError) return { ok: false, message: "La contraseña actual no es correcta.", fieldErrors: { current: "Contraseña incorrecta." } };
 
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
+  if (error?.code === "weak_password") return { ok: false, message: "La contraseña no cumple la política de seguridad: usa al menos 12 caracteres con minúsculas, mayúsculas y números." };
   if (error) return { ok: false, message: "No se pudo cambiar la contraseña. Inténtalo de nuevo." };
   return { ok: true, message: "Contraseña actualizada." };
 }
