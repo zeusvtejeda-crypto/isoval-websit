@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { getCategories, getMunicipalities, getStates } from "@/lib/data/catalogs";
+import { getCategories, getMunicipalities, labelRepeatedMunicipalities, getStates } from "@/lib/data/catalogs";
 import {
   DEFAULT_FACILITY_STATE_ID,
   FACILITIES_BASE_PATH,
@@ -21,7 +21,7 @@ export const metadata = { title: "Nueva instalación" };
 export default async function NuevaInstalacionPage() {
   await requireAdmin();
   const supabase = await createClient();
-  const [categories, states, municipalities] = await Promise.all([getCategories(supabase), getStates(supabase), getMunicipalities(supabase)]);
+  const [categories, states, municipalities] = await Promise.all([getCategories(supabase), getStates(supabase), getMunicipalities(supabase).then(labelRepeatedMunicipalities)]);
 
   const back = (
     <nav aria-label="Ruta" className="mb-2 text-sm">

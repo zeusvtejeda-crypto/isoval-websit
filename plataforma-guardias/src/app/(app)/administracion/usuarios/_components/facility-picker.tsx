@@ -26,6 +26,8 @@ export function FacilityPicker({
   const indexed = useMemo(() => choices.map((c) => ({ choice: c, text: normalizeSearch(c.name) })), [choices]);
   const needle = normalizeSearch(query);
   const visibleIds = new Set(indexed.filter((i) => !needle || i.text.includes(needle)).map((i) => i.choice.id));
+  // Nombres de las sedes marcadas (en el orden de la lista), aunque la búsqueda las oculte.
+  const selectedChoices = choices.filter((c) => selected.has(c.id));
   const errorId = `${idPrefix}-facilities-error`;
 
   function toggle(id: string, on: boolean) {
@@ -74,6 +76,23 @@ export function FacilityPicker({
               </button>
             ) : null}
           </div>
+          {selectedChoices.length > 0 ? (
+            <ul aria-label="Sedes seleccionadas" className="flex max-h-40 flex-wrap gap-2 overflow-y-auto">
+              {selectedChoices.map((c) => (
+                <li key={c.id} className="inline-flex items-center rounded-full bg-brand-50 pl-3 text-sm text-brand-900 ring-1 ring-inset ring-brand-200">
+                  <span className="py-1">{facilityChoiceLabel(c)}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggle(c.id, false)}
+                    aria-label={`Quitar ${c.name}`}
+                    className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-lg leading-none hover:bg-brand-100 focus-visible:outline-2 focus-visible:outline-brand-700"
+                  >
+                    <span aria-hidden="true">×</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className="max-h-80 space-y-1 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2">
             {choices.map((c) => {
               const id = `${idPrefix}-facility-${c.id}`;

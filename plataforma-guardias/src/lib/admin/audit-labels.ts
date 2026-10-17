@@ -27,12 +27,14 @@ export const AUDIT_TABLE_LABELS: Record<string, string> = {
   app_settings: "Configuración",
   retention: "Política de conservación de datos",
   demo_data: "Datos de demostración",
+  states: "Entidades federativas",
+  municipalities: "Municipios",
 };
 
 /** Tablas cuya bitácora solo ve administración (política audit_read). */
 export const ADMIN_ONLY_AUDIT_TABLES = ["worker_private", "profiles", "user_facility_scopes"] as const;
 /** Eventos sin sede: solo administración los ve. */
-export const GLOBAL_AUDIT_TABLES = ["facility_categories", "app_settings", "retention", "demo_data"] as const;
+export const GLOBAL_AUDIT_TABLES = ["facility_categories", "app_settings", "retention", "demo_data", "states", "municipalities"] as const;
 
 /** Tablas que puede filtrar cada perfil (las demás nunca le aparecerían por RLS). */
 export function auditTablesFor(isAdmin: boolean): string[] {

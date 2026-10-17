@@ -6,7 +6,15 @@ import { DEFAULT_TIMEZONE, formatDuration } from "@/lib/time";
 import { hasStarted, splitShiftTimes } from "@/lib/shifts/dates";
 import { firstParam, isGuid, type RawSearchParams } from "@/lib/shifts/filters";
 import { shiftDisplayTitle } from "@/lib/shifts/format";
-import { countAssignments, countOpenSessions, getActiveWorkersOfFacility, getManageableFacilities, getShiftRow } from "@/lib/shifts/queries";
+import {
+  countAssignments,
+  countOpenSessions,
+  countValidSessions,
+  getActiveWorkersOfFacility,
+  getManageableFacilities,
+  getShiftRow,
+} from "@/lib/shifts/queries";
+import { FACILITY_LOCKED_NOTICE, SCHEDULE_LOCKED_NOTICE, isScheduleLocked } from "@/lib/shifts/rules";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Alert, ErrorState } from "@/components/ui/states";
@@ -51,15 +59,18 @@ export default async function EditarGuardiaPage({
   }
 
   const sp = await searchParams;
-  const [facilities, assignmentCount, openSessions, currentFacilityRow] = await Promise.all([
+  const [facilities, assignmentCount, openSessions, validSessions, currentFacilityRow] = await Promise.all([
     getManageableFacilities(supabase, user),
     countAssignments(supabase, id),
     countOpenSessions(supabase, id),
+    countValidSessions(supabase, id),
     supabase.from("facilities").select("id, official_name, timezone").eq("id", shift.facility_id).maybeSingle(),
   ]);
   const currentFacility = currentFacilityRow.data ?? { id: shift.facility_id, official_name: "Sede no disponible", timezone: DEFAULT_TIMEZONE };
 
   const canChangeFacility = assignmentCount === 0 && facilities.length > 1;
+  // La BD rechaza cambiar el horario si hay asistencia vigente (salvo administración).
+  const scheduleLocked = isScheduleLocked(user, validSessions);
   if (canChangeFacility && firstParam(sp.cambiar_sede) === "1") {
     return (
       <>
@@ -100,15 +111,16 @@ export default async function EditarGuardiaPage({
         {!split.representable ? (
           <Alert tone="warning" title="Horario fuera del formato del formulario">
             {split.durationMinutes > 1440
-              ? `Esta guardia dura ${formatDuration(split.durationMinutes)}. El formulario permite hasta 24 horas: `
-              : "El horario guardado no coincide exactamente con una fecha y horas en minutos: "}
-            al guardar, el término será la hora indicada (el mismo día o el siguiente).
+              ? `Esta guardia dura ${formatDuration(split.durationMinutes)}. El formulario permite hasta 24 horas. `
+              : "El horario guardado no coincide exactamente con una fecha y horas en minutos. "}
+            {scheduleLocked
+              ? "Se conserva el horario guardado."
+              : "Si no cambias la fecha ni las horas, se conserva el horario guardado; si las cambias, el término será la hora indicada (el mismo día o el siguiente)."}
           </Alert>
         ) : null}
-        {assignmentCount > 0 ? (
+        {validSessions > 0 && !scheduleLocked ? (
           <p className="text-sm text-gray-600">
-            La guardia tiene {assignmentCount} {assignmentCount === 1 ? "asignación" : "asignaciones"}: no se puede cambiar de sede. Los cambios de horario
-            recalculan la asistencia registrada.
+            La guardia ya tiene registros de asistencia: si cambias el horario, se recalculan las métricas de esos registros.
           </p>
         ) : null}
         <Card>
@@ -131,6 +143,13 @@ export default async function EditarGuardiaPage({
             }}
             cancelHref={backHref}
             changeFacilityHref={canChangeFacility ? `/guardias/${id}/editar?cambiar_sede=1` : null}
+            facilityLockedReason={
+              assignmentCount > 0 && facilities.length > 1
+                ? `${FACILITY_LOCKED_NOTICE} (Tiene ${assignmentCount} ${assignmentCount === 1 ? "asignación" : "asignaciones"}.)`
+                : null
+            }
+            scheduleLocked={scheduleLocked}
+            scheduleLockedReason={SCHEDULE_LOCKED_NOTICE}
           />
         </Card>
         <Card>

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  INCIDENT_FILTER_OPTIONS,
+  INCIDENT_TYPES,
   MAX_RANGE_DAYS,
   daysInclusive,
   exportHref,
   filtersToSearchParams,
+  incidentFilterLabel,
   parseExportParams,
   parseReportFilters,
   type ExportRequester,
@@ -65,6 +68,23 @@ describe("parseExportParams", () => {
     expect(ok.ok && ok.filters).toMatchObject({ facilityId: SEDE, stateId: 18, attendance: "registro_incompleto" });
   });
 
+  it("valida el filtro de incidencia", () => {
+    for (const incidencia of INCIDENT_TYPES) {
+      const r = parseExportParams(sp({ formato: "xlsx", incidencia }), admin, TODAY);
+      expect(r.ok && r.filters.incident).toBe(incidencia);
+    }
+    const none = parseExportParams(sp({ formato: "xlsx" }), admin, TODAY);
+    expect(none.ok && none.filters.incident).toBe("");
+    for (const incidencia of ["peor", "mejor", "tardia", "LLEGADA_TARDIA"]) {
+      const bad = parseExportParams(sp({ formato: "xlsx", incidencia }), admin, TODAY);
+      expect(bad).toMatchObject({ ok: false, status: 400 });
+      if (!bad.ok) expect(bad.message).toContain("registro_incompleto");
+    }
+    // El rol trabajador también puede filtrar por incidencia (siempre sobre lo propio).
+    const own = parseExportParams(sp({ formato: "pdf", incidencia: "sustitucion", trabajador: OTHER }), worker, TODAY);
+    expect(own.ok && own.filters).toMatchObject({ workerId: OWN, incident: "sustitucion" });
+  });
+
   it("fuerza SIEMPRE el registro propio para el rol trabajador", () => {
     for (const trabajador of [undefined, "yo", OTHER, "basura"]) {
       const params: Record<string, string> = { formato: "xlsx" };
@@ -104,7 +124,7 @@ describe("parseExportParams", () => {
 describe("parseReportFilters (páginas)", () => {
   it("por omisión muestra los últimos 7 días sin avisos", () => {
     const r = parseReportFilters({}, TODAY);
-    expect(r.filters).toEqual({ desde: "2026-10-11", hasta: "2026-10-17", facilityId: null, stateId: null, workerId: null, attendance: "" });
+    expect(r.filters).toEqual({ desde: "2026-10-11", hasta: "2026-10-17", facilityId: null, stateId: null, workerId: null, attendance: "", incident: "" });
     expect(r.notices).toEqual([]);
     expect(r.page).toBe(1);
   });
@@ -120,6 +140,13 @@ describe("parseReportFilters (páginas)", () => {
     expect(r.page).toBe(1);
   });
 
+  it("interpreta la incidencia y avisa si no es válida", () => {
+    expect(parseReportFilters({ incidencia: "permanencia_adicional" }, TODAY)).toMatchObject({ filters: { incident: "permanencia_adicional" }, notices: [] });
+    const bad = parseReportFilters({ incidencia: "peor" }, TODAY);
+    expect(bad.filters.incident).toBe("");
+    expect(bad.notices).toEqual(["La incidencia indicada no es válida; se muestran todas las guardias."]);
+  });
+
   it("ajusta periodos mayores a 93 días", () => {
     const r = parseReportFilters({ desde: "2026-01-01", hasta: "2026-10-17" }, TODAY);
     expect(daysInclusive(r.filters.desde, r.filters.hasta)).toBe(MAX_RANGE_DAYS);
@@ -130,7 +157,15 @@ describe("parseReportFilters (páginas)", () => {
 
 describe("enlaces con filtros", () => {
   it("conserva los filtros en los enlaces de exportación", () => {
-    const filters = { desde: "2026-10-11", hasta: "2026-10-17", facilityId: SEDE, stateId: 18, workerId: OTHER, attendance: "finalizada" as const };
+    const filters = {
+      desde: "2026-10-11",
+      hasta: "2026-10-17",
+      facilityId: SEDE,
+      stateId: 18,
+      workerId: OTHER,
+      attendance: "finalizada" as const,
+      incident: "llegada_tardia" as const,
+    };
     const href = exportHref(filters, "pdf");
     const url = new URL(href, "http://localhost");
     expect(url.pathname).toBe("/api/exportar");
@@ -142,6 +177,7 @@ describe("enlaces con filtros", () => {
       estado: "18",
       trabajador: OTHER,
       asistencia: "finalizada",
+      incidencia: "llegada_tardia",
     });
     // Ida y vuelta: lo que genera el enlace lo acepta la exportación.
     const back = parseExportParams(url.searchParams, admin, TODAY);
@@ -149,8 +185,28 @@ describe("enlaces con filtros", () => {
   });
 
   it("omite filtros vacíos", () => {
-    expect(filtersToSearchParams({ desde: "2026-10-11", hasta: "2026-10-17", facilityId: null, attendance: "" }, { pagina: 2 }).toString()).toBe(
+    expect(filtersToSearchParams({ desde: "2026-10-11", hasta: "2026-10-17", facilityId: null, attendance: "", incident: "" }, { pagina: 2 }).toString()).toBe(
       "pagina=2&desde=2026-10-11&hasta=2026-10-17",
     );
+    // La paginación del historial conserva el filtro de incidencia.
+    const page = new URLSearchParams(filtersToSearchParams({ desde: "2026-10-11", hasta: "2026-10-17", incident: "sustitucion" }, { pagina: 3 }).toString());
+    expect(parseReportFilters(page, TODAY)).toMatchObject({ filters: { incident: "sustitucion" }, page: 3 });
+  });
+});
+
+describe("opciones del filtro de incidencia", () => {
+  it("siguen el orden del catálogo con «Cualquiera» primero (sin orden de mejor a peor)", () => {
+    expect(INCIDENT_FILTER_OPTIONS.map((o) => o.value)).toEqual(["", ...INCIDENT_TYPES]);
+    expect(INCIDENT_TYPES).toEqual([
+      "llegada_tardia",
+      "salida_anticipada",
+      "permanencia_adicional",
+      "sustitucion",
+      "correccion_administrativa",
+      "registro_incompleto",
+    ]);
+    expect(INCIDENT_FILTER_OPTIONS.some((o) => /mejor|peor|ranking/i.test(o.label))).toBe(false);
+    expect(incidentFilterLabel("")).toBe("Cualquiera (con o sin incidencias)");
+    expect(incidentFilterLabel("registro_incompleto")).toBe("Registro incompleto");
   });
 });

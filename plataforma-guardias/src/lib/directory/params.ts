@@ -97,6 +97,11 @@ export function directoryHref(
   return qs ? `${DIRECTORY_PATH}?${qs}` : DIRECTORY_PATH;
 }
 
+/** Formulario de edición de una instalación en administración (la ruta exige requireAdmin). */
+export function facilityEditHref(id: string): string {
+  return `/administracion/instalaciones/${encodeURIComponent(id)}/editar`;
+}
+
 /** Texto plural en español: "1 instalación", "3 instalaciones". */
 export function pluralize(count: number, singular: string, plural: string): string {
   return `${count.toLocaleString("es-MX")} ${count === 1 ? singular : plural}`;

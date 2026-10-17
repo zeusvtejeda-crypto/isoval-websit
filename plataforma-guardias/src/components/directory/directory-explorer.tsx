@@ -26,8 +26,16 @@ import {
   pluralize,
   reconcileFilters,
 } from "@/lib/directory/params";
-import { buildLookupMaps, buildSearchIndex, filterFacilities, hasCoordinates, municipalitiesForState } from "@/lib/directory/search";
+import {
+  buildLookupMaps,
+  buildSearchIndex,
+  filterFacilities,
+  hasCoordinates,
+  mapLegend,
+  municipalitiesForState,
+} from "@/lib/directory/search";
 import type { DirectoryFacility, DirectoryFilters, DirectoryLookups, DirectoryParams, DirectoryView } from "@/lib/directory/types";
+import { CategoryTag } from "./facility-badges";
 import { FacilityList } from "./facility-list";
 import { MapNoScript, MapPanel, MapPlaceholder } from "./map-panel";
 import type { MapFocusRequest } from "./map-types";
@@ -113,6 +121,7 @@ export function DirectoryExplorer({ facilities, lookups, initialParams }: Direct
   const results = useMemo(() => filterFacilities(index, deferredFilters), [index, deferredFilters]);
   const visible = results.slice(0, limit);
   const withoutCoords = useMemo(() => results.filter((f) => !hasCoordinates(f)).length, [results]);
+  const legend = useMemo(() => mapLegend(results, maps.categories), [results, maps]);
   const showDemo = results.some((f) => f.isDemo);
   const active = hasActiveFilters(filters);
   const updating = deferredFilters !== filters;
@@ -288,14 +297,14 @@ export function DirectoryExplorer({ facilities, lookups, initialParams }: Direct
                     <optgroup key={s.id} label={s.name}>
                       {municipalitiesForState(lookups.municipalities, s.id).map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.name}
+                          {m.label}
                         </option>
                       ))}
                     </optgroup>
                   ))
                 : municipalityOptions.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.name}
+                      {m.label}
                     </option>
                   ))}
             </Select>
@@ -415,6 +424,20 @@ export function DirectoryExplorer({ facilities, lookups, initialParams }: Direct
           ) : (
             <MapPlaceholder className={MAP_SIZE} text={hydrated ? "Cargando mapa…" : "El mapa se muestra al abrir esta vista."} />
           )}
+          {legend.categories.length > 0 || legend.uncategorized ? (
+            <ul aria-label="Leyenda del mapa: categorías" className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+              {legend.categories.map((c) => (
+                <li key={c.id}>
+                  <CategoryTag name={c.name} color={c.color} icon={c.icon} />
+                </li>
+              ))}
+              {legend.uncategorized ? (
+                <li>
+                  <CategoryTag name={null} />
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
           <p className="mt-2 text-xs text-gray-600">
             Los números agrupan instalaciones cercanas: toca uno para acercar. Las instalaciones sin coordenadas aparecen solo en la lista.
           </p>

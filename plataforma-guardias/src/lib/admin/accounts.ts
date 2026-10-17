@@ -12,6 +12,18 @@ export const USERS_BASE_PATH = "/administracion/usuarios";
 
 export const APP_ROLES = ["admin", "coordinador", "auditor", "trabajador"] as const satisfies readonly AppRole[];
 
+/**
+ * Separación de funciones (la base de datos lo exige): solo administración
+ * corrige, agrega, anula, cambia el estado o revisa solicitudes de su propia
+ * asistencia. Aplica a cuentas de coordinación vinculadas a un trabajador.
+ */
+export function ownAttendanceRestricted(role: AppRole, workerId: string | null | undefined): boolean {
+  return role === "coordinador" && Boolean(workerId);
+}
+
+export const OWN_ATTENDANCE_NOTICE =
+  "Esta cuenta está vinculada a un trabajador: no puede corregir, agregar a mano, anular, cambiar el estado ni revisar solicitudes de su propia asistencia. Eso lo hace otra persona de coordinación o administración.";
+
 /** Roles que trabajan con sedes asignadas (user_facility_scopes). */
 export const SCOPED_ROLES: readonly AppRole[] = ["coordinador", "auditor"];
 
@@ -21,7 +33,7 @@ export function roleUsesFacilityScopes(role: AppRole): boolean {
 
 export const ROLE_HINTS: Record<AppRole, string> = {
   admin: "Acceso total: instalaciones, cuentas, configuración y bitácora completa.",
-  coordinador: "Gestiona guardias y registros solo en las sedes asignadas.",
+  coordinador: "Gestiona guardias y registros solo en las sedes asignadas. No puede corregir, anular ni revisar su propia asistencia.",
   auditor: "Consulta de solo lectura en las sedes asignadas. No ve teléfonos ni números de trabajador.",
   trabajador: "Solo ve y registra sus propias guardias. Vincula la cuenta con su registro de trabajador.",
 };

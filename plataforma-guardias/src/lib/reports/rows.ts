@@ -7,11 +7,28 @@
  * Las horas se expresan en la zona horaria de la sede de cada guardia.
  */
 import { formatInTimeZone } from "date-fns-tz";
-import { totalize, type AttendanceStatus, type AttendanceSummary, type TotalsSummary } from "@/lib/attendance/calc";
+import { totalize, type AttendanceStatus, type AttendanceSummary, type IncidentType, type TotalsSummary } from "@/lib/attendance/calc";
 import type { ShiftWithAttendance } from "@/lib/attendance/load";
 import { ATTENDANCE_STATUS_LABELS, INCIDENT_LABELS } from "@/lib/attendance/labels";
 import { DEFAULT_TIMEZONE, formatDate, formatDateTime, formatOffset, formatTime, isValidTimezone } from "@/lib/time";
-import type { AttendanceFilter } from "./params";
+import { INCIDENT_TYPES, type AttendanceFilter, type IncidentFilter } from "./params";
+
+/** Justificación registrada por coordinación para una incidencia (tabla incident_notes). */
+export type IncidentNoteLite = {
+  assignment_id: string;
+  incident_type: IncidentType;
+  note: string;
+  justified: boolean;
+};
+
+export type Justification = {
+  type: IncidentType;
+  label: string;
+  note: string;
+  justified: boolean;
+  /** La incidencia ya no se calcula para la asignación (p. ej., tras una corrección). */
+  stale: boolean;
+};
 
 export type ReportRow = {
   assignmentId: string;
@@ -49,6 +66,8 @@ export type ReportRow = {
   earlyLeaveMinutes: number | null;
   /** Permanencia adicional = tiempo registrado después del término (no son horas extra pagadas). */
   extraStayMinutes: number;
+  /** Tiempo entre una salida y el regreso dentro de la guardia: NO cuenta como tiempo registrado. */
+  gapMinutes: number;
   firstCheckInLocal: string | null;
   lastCheckOutLocal: string | null;
   substitution: boolean;
@@ -59,6 +78,10 @@ export type ReportRow = {
   openSession: boolean;
   needsReview: boolean;
   incidentLabels: string[];
+  /** Notas de las sesiones vigentes, en orden de entrada. */
+  observations: string[];
+  /** Justificaciones (incident_notes) de la asignación; vacío hasta `attachIncidentNotes`. */
+  justifications: Justification[];
   summary: AttendanceSummary;
 };
 
@@ -69,6 +92,8 @@ export type BuildRowsOptions = {
   hasta?: string | null;
   workerId?: string | null;
   attendance?: AttendanceFilter;
+  /** Solo asignaciones con esta incidencia calculada ("" o ausente = sin filtrar). */
+  incident?: IncidentFilter | null;
   /** Excluye guardias que aún no inician (requiere `now`). */
   onlyStarted?: boolean;
   now?: Date;
@@ -106,6 +131,56 @@ function matchesAttendance(summary: AttendanceSummary, filter: AttendanceFilter 
 
 const collator = new Intl.Collator("es-MX", { sensitivity: "base" });
 
+type SessionNoteLike = { notes: string | null; record_status: string; check_in_at: string; created_at?: string };
+
+/** Notas (observaciones) de las sesiones vigentes, en orden de entrada y sin repetir. */
+export function sessionObservations(sessions: readonly SessionNoteLike[] | null | undefined): string[] {
+  const out: string[] = [];
+  const sorted = (sessions ?? [])
+    .filter((x) => x.record_status === "vigente" && x.notes?.trim())
+    .sort((a, b) => Date.parse(a.check_in_at) - Date.parse(b.check_in_at) || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+  for (const x of sorted) {
+    const note = (x.notes as string).trim();
+    if (!out.includes(note)) out.push(note);
+  }
+  return out;
+}
+
+/** Texto de una justificación: «Tipo: nota», con aclaraciones si aplica. */
+export function justificationText(j: Justification): string {
+  const extra = [j.stale ? "ya no se calcula" : null, j.justified ? null : "nota sin justificar"].filter(Boolean).join("; ");
+  return `${j.label}${extra ? ` (${extra})` : ""}: ${j.note}`;
+}
+
+/**
+ * Agrega a cada fila las justificaciones de su asignación (lo que RLS permitió
+ * leer de incident_notes), en el orden del catálogo de incidencias.
+ */
+export function attachIncidentNotes(rows: ReportRow[], notes: readonly IncidentNoteLite[]): ReportRow[] {
+  if (notes.length === 0) return rows;
+  const byAssignment = new Map<string, IncidentNoteLite[]>();
+  for (const n of notes) {
+    const list = byAssignment.get(n.assignment_id) ?? [];
+    list.push(n);
+    byAssignment.set(n.assignment_id, list);
+  }
+  return rows.map((r) => {
+    const own = byAssignment.get(r.assignmentId);
+    if (!own?.length) return r;
+    const justifications = own
+      .slice()
+      .sort((a, b) => INCIDENT_TYPES.indexOf(a.incident_type) - INCIDENT_TYPES.indexOf(b.incident_type))
+      .map((n) => ({
+        type: n.incident_type,
+        label: INCIDENT_LABELS[n.incident_type] ?? n.incident_type,
+        note: n.note.trim(),
+        justified: n.justified,
+        stale: !r.summary.incidents.some((i) => i.type === n.incident_type),
+      }));
+    return { ...r, justifications };
+  });
+}
+
 /**
  * Aplana guardias → filas por asignación, filtra y ordena por fecha
  * (luego sede y nombre, alfabéticamente). Nunca ordena por desempeño.
@@ -126,6 +201,7 @@ export function buildReportRows(shifts: ShiftWithAttendance[], options: BuildRow
       if (options.workerId && a.assignment.worker_id !== options.workerId) continue;
       const s = a.summary;
       if (!matchesAttendance(s, options.attendance)) continue;
+      if (options.incident && !s.incidents.some((i) => i.type === options.incident)) continue;
 
       const has = (type: (typeof s.incidents)[number]["type"]) => s.incidents.some((i) => i.type === type);
       rows.push({
@@ -157,6 +233,7 @@ export function buildReportRows(shifts: ShiftWithAttendance[], options: BuildRow
         lateMinutes: s.lateMinutes,
         earlyLeaveMinutes: s.earlyLeaveMinutes,
         extraStayMinutes: s.afterEndMinutes,
+        gapMinutes: s.gapMinutes,
         firstCheckInLocal: s.firstCheckIn ? formatDateTime(s.firstCheckIn, tz) : null,
         lastCheckOutLocal: s.lastCheckOut ? formatDateTime(s.lastCheckOut, tz) : null,
         substitution: has("sustitucion"),
@@ -166,6 +243,8 @@ export function buildReportRows(shifts: ShiftWithAttendance[], options: BuildRow
         openSession: s.openSession != null,
         needsReview: s.needsReview,
         incidentLabels: s.incidents.map((i) => INCIDENT_LABELS[i.type]),
+        observations: sessionObservations(a.sessions),
+        justifications: [],
         summary: s,
       });
     }

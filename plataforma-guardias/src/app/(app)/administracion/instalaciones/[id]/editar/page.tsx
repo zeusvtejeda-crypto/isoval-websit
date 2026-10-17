@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { getCategories, getMunicipalities, getStates } from "@/lib/data/catalogs";
+import { getCategories, getMunicipalities, labelRepeatedMunicipalities, getStates } from "@/lib/data/catalogs";
 import { formatDateTime } from "@/lib/time";
 import { FACILITIES_BASE_PATH, firstParam, isUuid, osmLink, servicesToText, todayYmd, type RawSearchParams } from "@/lib/validation/facility";
 import { PageHeader } from "@/components/ui/page-header";
@@ -29,7 +29,7 @@ export default async function EditarInstalacionPage({ params, searchParams }: { 
   const [categories, states, municipalities, relations] = await Promise.all([
     getCategories(supabase),
     getStates(supabase),
-    getMunicipalities(supabase),
+    getMunicipalities(supabase).then(labelRepeatedMunicipalities),
     countFacilityRelations(supabase, id),
   ]);
   const relationList = describeRelations(relations);

@@ -1,5 +1,6 @@
 import { format, isValid, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import { categoryIconMarkup, contrastInk, resolveCategoryIcon } from "./icons";
 
 /**
  * Fecha sin hora (columna date, "2026-10-17") → "17 de octubre de 2026".
@@ -53,17 +54,22 @@ export function safeHexColor(value: string | null | undefined): string {
 }
 
 /**
- * Marcador del mapa (SVG en línea) con el color de la categoría y un título
- * accesible. Todo el texto se escapa.
+ * Marcador del mapa (SVG en línea) con el color y el ícono de la categoría y un
+ * título accesible. Todo el texto se escapa; el ícono sale de datos constantes
+ * (un valor desconocido usa el ícono por omisión) y su tinta contrasta con el
+ * color de fondo.
  */
-export function markerSvg(color: string | null | undefined, label: string): string {
+export function markerSvg(color: string | null | undefined, label: string, icon?: string | null): string {
   const fill = safeHexColor(color);
   const text = escapeHtml(label);
+  const name = resolveCategoryIcon(icon);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 42" width="32" height="42" role="img" aria-label="${text}" focusable="false">` +
     `<title>${text}</title>` +
     `<path d="M16 1.5C8 1.5 1.5 7.9 1.5 15.8c0 10.4 14.5 24.7 14.5 24.7s14.5-14.3 14.5-24.7C30.5 7.9 24 1.5 16 1.5z" fill="${fill}" stroke="#ffffff" stroke-width="2"/>` +
-    `<circle cx="16" cy="15.5" r="5.5" fill="#ffffff"/>` +
+    `<g data-icon="${name}" transform="translate(8.5 8) scale(0.625)" fill="none" stroke="${contrastInk(fill)}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">` +
+    categoryIconMarkup(name) +
+    `</g>` +
     `</svg>`
   );
 }

@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { createElement, type ReactNode } from "react";
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import {
   summarizeAttendance,
   type AssignmentStatus,
@@ -7,8 +9,23 @@ import {
   type ShiftStatus,
 } from "@/lib/attendance/calc";
 import type { AssignmentRow, AssignmentWithAttendance, SessionRow, ShiftRow, ShiftWithAttendance } from "@/lib/attendance/load";
-import { buildPresenceBoard, shiftMatchesFilters } from "@/lib/presence/board";
-import { summarizeHome } from "@/lib/presence/home";
+import { allFacilitiesLabel, buildPresenceBoard, incidentLabels, shiftMatchesFilters, workerHistoryHref } from "@/lib/presence/board";
+import { guardiasQuickLinkDescription, summarizeHome } from "@/lib/presence/home";
+import { AbsenceSection, InServiceSection, LeftSection, ResponsiblesSection } from "@/components/presence/board-sections";
+import { PresenceFilters } from "@/components/presence/presence-filters";
+
+vi.mock("next/link", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => h("a", { href, ...rest }, children),
+  };
+});
+vi.mock("next/form", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    default: ({ action, children, ...rest }: { action: string; children: ReactNode }) => h("form", { action, ...rest }, children),
+  };
+});
 import { addDays, isIsoDay, overlapsLocalDay, parseShiftPeriod, shiftPeriodOf } from "@/lib/presence/periods";
 
 // -----------------------------------------------------------------------------
@@ -20,7 +37,17 @@ const NOW = new Date("2026-10-17T16:00:00Z"); // 09:00 hora de Mazatlán
 const GRACE = 240;
 
 type SessSpec = { in: string; out?: string | null; method?: AttendanceMethod; status?: RecordStatus };
-type AsgSpec = { id: string; workerId: string; name: string; status?: AssignmentStatus; point?: string | null; sessions?: SessSpec[] };
+type AsgSpec = {
+  id: string;
+  workerId: string;
+  name: string;
+  status?: AssignmentStatus;
+  statusReason?: string | null;
+  point?: string | null;
+  sessions?: SessSpec[];
+  /** Persona a quien cubre; `name: null` simula que RLS oculta el nombre. */
+  substituteFor?: { id: string; name: string | null };
+};
 type ShiftSpec = {
   id: string;
   facilityId?: string;
@@ -68,7 +95,7 @@ function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
     const assignmentStatus = a.status ?? "asignado";
     const summary = summarizeAttendance(
       { startsAt: spec.start, endsAt: spec.end, status },
-      { status: assignmentStatus, substituteForWorkerId: null },
+      { status: assignmentStatus, substituteForWorkerId: a.substituteFor?.id ?? null },
       sessions.map((s) => ({
         id: s.id,
         checkInAt: s.check_in_at,
@@ -85,11 +112,11 @@ function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
       shift_id: spec.id,
       worker_id: a.workerId,
       assigned_point: a.point ?? null,
-      substitute_for_worker_id: null,
+      substitute_for_worker_id: a.substituteFor?.id ?? null,
       status: assignmentStatus,
-      status_reason: null,
+      status_reason: a.statusReason ?? null,
       status_changed_by: null,
-      status_changed_at: null,
+      status_changed_at: assignmentStatus === "asignado" ? null : "2026-10-17T15:30:00Z",
       notes: null,
       change_reason: null,
       created_by: null,
@@ -99,7 +126,7 @@ function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
     return {
       assignment,
       worker: { id: a.workerId, full_name: a.name, internal_code: `TRA-${a.workerId}`, area: null, position: null, facility_id: facilityId },
-      substituteFor: null,
+      substituteFor: a.substituteFor?.name ? { id: a.substituteFor.id, full_name: a.substituteFor.name } : null,
       sessions,
       summary,
     };
@@ -406,7 +433,198 @@ describe("buildPresenceBoard", () => {
 
   it("devuelve un tablero vacío sin guardias", () => {
     const empty = buildPresenceBoard([], NOW, { day: DAY, period: "todos" });
-    expect(empty).toEqual({ shiftCount: 0, inService: [], responsibles: [], expected: [], left: [], uncovered: [], incomplete: [] });
+    expect(empty).toEqual({
+      shiftCount: 0,
+      rosterCount: 0,
+      inService: [],
+      responsibles: [],
+      expected: [],
+      left: [],
+      absences: [],
+      uncovered: [],
+      incomplete: [],
+      incidentCounts: { late: 0, earlyLeave: 0, afterEnd: 0, substitutions: 0 },
+    });
+  });
+
+  it("cuenta quién tiene guardia (asignaciones no canceladas de las guardias del filtro)", () => {
+    expect(board.rosterCount).toBe(9); // A: 5 (sin Pedro), B: 1, C: 2, D: 1
+    expect(board.absences).toEqual([]);
+  });
+
+  it("agrega a «en servicio» la llegada tardía del resumen", () => {
+    const luis = board.inService.find((i) => i.workerName === "Luis");
+    expect(luis?.lateMinutes).toBe(20); // 13:20 con inicio 13:00 y tolerancia 10
+    expect(luis?.earlyLeaveMinutes).toBeNull();
+    expect(luis?.afterEndMinutes).toBe(0);
+    expect(luis?.substituteFor).toBeNull();
+    expect(luis?.shiftEnded).toBe(false);
+    expect(luis?.checkOutDeadline).toBeNull();
+    const ana = board.inService.find((i) => i.workerName === "Ana");
+    expect(ana?.lateMinutes).toBeNull(); // 13:05, dentro de la tolerancia
+    expect(board.incidentCounts).toEqual({ late: 1, earlyLeave: 0, afterEnd: 0, substitutions: 0 });
+    // Jorge salió antes, pero la guardia sigue en curso: aún no es «salida anticipada».
+    expect(board.left[0].earlyLeaveMinutes).toBeNull();
+  });
+});
+
+describe("buildPresenceBoard: incidencias, sustituciones y ausencias", () => {
+  // Guardia de madrugada (00:00–08:00 local = 07:00Z–15:00Z) que terminó hace 1 h.
+  const ended = build({
+    id: "G",
+    start: "2026-10-17T07:00:00Z",
+    end: "2026-10-17T15:00:00Z",
+    minStaff: 1,
+    responsible: { id: "wAus", full_name: "Aurora Ausente" },
+    assignments: [
+      { id: "aTemp", workerId: "wTemp", name: "Teresa", sessions: [{ in: "2026-10-17T06:58:00Z", out: "2026-10-17T14:30:00Z" }] },
+      { id: "aTarde", workerId: "wTarde", name: "Tadeo", sessions: [{ in: "2026-10-17T07:20:00Z", out: "2026-10-17T15:45:00Z" }] },
+      {
+        id: "aCubre",
+        workerId: "wCubre",
+        name: "Carmen",
+        substituteFor: { id: "wAus", name: "Aurora Ausente" },
+        sessions: [{ in: "2026-10-17T06:55:00Z", out: "2026-10-17T15:00:00Z" }],
+      },
+      // Sigue con entrada abierta después del término, dentro del margen (240 min).
+      { id: "aSigue", workerId: "wSigue", name: "Simón", substituteFor: { id: "wOculta", name: null }, sessions: [{ in: "2026-10-17T07:05:00Z" }] },
+      { id: "aAus", workerId: "wAus", name: "Aurora Ausente", status: "ausencia_justificada", statusReason: "  Incapacidad médica  " },
+      { id: "aFalto", workerId: "wFalto", name: "Fidel", status: "inasistencia_confirmada", statusReason: "No se presentó; confirmado con la sede" },
+      { id: "aSinMotivo", workerId: "wSinMotivo", name: "Beatriz", status: "ausencia_justificada", statusReason: null },
+      { id: "aCancel", workerId: "wCancel", name: "Cancelado", status: "cancelado" },
+    ],
+  });
+  const b = buildPresenceBoard([ended], NOW, { day: DAY, period: "todos" }, { graceMinutes: GRACE });
+
+  it("registra salida anticipada, llegada tardía y permanencia adicional de quienes ya salieron", () => {
+    const byName = Object.fromEntries(b.left.map((l) => [l.workerName, l]));
+    expect(byName["Teresa"]).toMatchObject({ lateMinutes: null, earlyLeaveMinutes: 30, afterEndMinutes: 0, substituteFor: null });
+    expect(byName["Tadeo"]).toMatchObject({ lateMinutes: 20, earlyLeaveMinutes: null, afterEndMinutes: 45 });
+    expect(byName["Carmen"]).toMatchObject({ lateMinutes: null, earlyLeaveMinutes: null, afterEndMinutes: 0, substituteFor: "Aurora Ausente" });
+    expect(b.incidentCounts).toEqual({ late: 1, earlyLeave: 1, afterEnd: 1, substitutions: 2 });
+  });
+
+  it("marca a quien sigue en servicio después del término y hasta cuándo puede registrar salida", () => {
+    expect(b.inService).toHaveLength(1);
+    const simon = b.inService[0];
+    expect(simon.workerName).toBe("Simón");
+    expect(simon.shiftEnded).toBe(true);
+    expect(simon.checkOutDeadline).toBe("2026-10-17T19:00:00.000Z"); // término + 240 min (mismo margen que check_out)
+    expect(simon.substituteFor).toBe("otra persona"); // RLS ocultó el nombre
+    // Sin margen conocido no se inventa una hora límite.
+    const noGrace = buildPresenceBoard([ended], NOW, { day: DAY, period: "todos" });
+    expect(noGrace.inService[0].shiftEnded).toBe(true);
+    expect(noGrace.inService[0].checkOutDeadline).toBeNull();
+  });
+
+  it("lista ausencias justificadas e inasistencias con su motivo, fuera de pendientes e incompletos", () => {
+    expect(b.absences.map((a) => [a.workerName, a.status, a.reason])).toEqual([
+      ["Aurora Ausente", "ausencia_justificada", "Incapacidad médica"],
+      ["Beatriz", "ausencia_justificada", null],
+      ["Fidel", "inasistencia_confirmada", "No se presentó; confirmado con la sede"],
+    ]);
+    expect(b.absences[0].changedAt).toBe("2026-10-17T15:30:00.000Z");
+    expect(b.absences[0].workerId).toBe("wAus");
+    const others = [...b.expected, ...b.incomplete, ...b.left, ...b.inService].map((x) => x.workerName);
+    expect(others).not.toContain("Fidel");
+    expect(others).not.toContain("Aurora Ausente");
+    expect(b.rosterCount).toBe(7); // sin la asignación cancelada
+    expect(b.responsibles[0].presence).toBe("ausente");
+  });
+
+  it("no toma ausencias de guardias anteriores (solo aportan registros incompletos)", () => {
+    const later = new Date("2026-10-18T16:00:00Z");
+    const next = buildPresenceBoard([ended], later, { day: "2026-10-18", period: "todos", incompleteSince: new Date(later.getTime() - 7 * 86_400_000) });
+    expect(next.absences).toEqual([]);
+    expect(next.rosterCount).toBe(0);
+  });
+});
+
+describe("textos del tablero", () => {
+  it("etiqueta las incidencias con texto (señales, no sanciones)", () => {
+    expect(incidentLabels({ lateMinutes: 12, earlyLeaveMinutes: 30, afterEndMinutes: 45, substituteFor: "Ana López" })).toEqual([
+      "Llegada tardía 12 min",
+      "Salida anticipada 30 min",
+      "Permanencia adicional 45 min (tiempo registrado adicional)",
+      "Cubre a Ana López",
+    ]);
+    expect(incidentLabels({ lateMinutes: null, earlyLeaveMinutes: null, afterEndMinutes: 0, substituteFor: null })).toEqual([]);
+    expect(incidentLabels({ lateMinutes: 0, earlyLeaveMinutes: 0 })).toEqual([]);
+  });
+
+  it("filtro de sedes: «Todas las sedes» para administración, «Todas mis sedes» para los demás", () => {
+    expect(allFacilitiesLabel(true)).toBe("Todas las sedes");
+    expect(allFacilitiesLabel(false)).toBe("Todas mis sedes");
+  });
+
+  it("enlaza al historial del trabajador", () => {
+    expect(workerHistoryHref("d1000000-0000-4000-8000-000000000001")).toBe("/historial/trabajador/d1000000-0000-4000-8000-000000000001");
+  });
+
+  it("acceso rápido a Guardias: auditoría solo consulta", () => {
+    expect(guardiasQuickLinkDescription(false)).toBe("Consultar guardias");
+    expect(guardiasQuickLinkDescription(true)).toBe("Programar, asignar y revisar guardias");
+  });
+});
+
+describe("secciones del tablero (interfaz)", () => {
+  const ended = build({
+    id: "H",
+    start: "2026-10-17T07:00:00Z",
+    end: "2026-10-17T15:00:00Z",
+    responsible: { id: "wTarde", full_name: "Tadeo" },
+    assignments: [
+      { id: "hTarde", workerId: "wTarde", name: "Tadeo", sessions: [{ in: "2026-10-17T07:20:00Z", out: "2026-10-17T15:45:00Z" }] },
+      { id: "hTemp", workerId: "wTemp", name: "Teresa", substituteFor: { id: "wAus", name: "Aurora" }, sessions: [{ in: "2026-10-17T07:00:00Z", out: "2026-10-17T14:30:00Z" }] },
+      { id: "hSigue", workerId: "wSigue", name: "Simón", sessions: [{ in: "2026-10-17T07:30:00Z" }] },
+      { id: "hAus", workerId: "wAus", name: "Aurora", status: "ausencia_justificada", statusReason: "Cita médica" },
+    ],
+  });
+  const b = buildPresenceBoard([ended], NOW, { day: DAY, period: "todos" }, { graceMinutes: GRACE });
+
+  it("«Ya salieron» muestra incidencias y enlaza cada nombre a su historial", () => {
+    render(createElement(LeftSection, { items: b.left, day: DAY }));
+    const tadeo = screen.getByRole("link", { name: "Tadeo" });
+    expect(tadeo).toHaveAttribute("href", "/historial/trabajador/wTarde");
+    const row = tadeo.closest("tr") as HTMLElement;
+    expect(within(row).getByText("Llegada tardía 20 min")).toBeInTheDocument();
+    expect(within(row).getByText("Permanencia adicional 45 min (tiempo registrado adicional)")).toBeInTheDocument();
+    const teresa = screen.getByRole("link", { name: "Teresa" }).closest("tr") as HTMLElement;
+    expect(within(teresa).getByText("Salida anticipada 30 min")).toBeInTheDocument();
+    expect(within(teresa).getByText("Cubre a Aurora")).toBeInTheDocument();
+  });
+
+  it("«En servicio» explica que la salida con la hora actual tiene límite tras el término", () => {
+    render(createElement(InServiceSection, { items: b.inService, day: DAY }));
+    expect(screen.getByRole("link", { name: "Simón" })).toHaveAttribute("href", "/historial/trabajador/wSigue");
+    expect(screen.getByText("Llegada tardía 30 min")).toBeInTheDocument();
+    expect(screen.getByText(/Su guardia ya terminó/)).toBeInTheDocument();
+    // 19:00Z = 12:00 en Mazatlán.
+    expect(screen.getByText(/hasta las 12:00; después requiere «Corregir registro» con la hora real/)).toBeInTheDocument();
+  });
+
+  it("«Ausencias justificadas e inasistencias» muestra estado y motivo", () => {
+    render(createElement(AbsenceSection, { items: b.absences }));
+    expect(screen.getByText("Ausencias justificadas e inasistencias (1)")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Aurora" })).toHaveAttribute("href", "/historial/trabajador/wAus");
+    expect(screen.getByText("Ausencia justificada")).toBeInTheDocument();
+    expect(screen.getByText("Motivo: Cita médica")).toBeInTheDocument();
+  });
+
+  it("el responsable también enlaza a su historial", () => {
+    render(createElement(ResponsiblesSection, { items: b.responsibles, day: DAY }));
+    expect(screen.getByRole("link", { name: "Tadeo" })).toHaveAttribute("href", "/historial/trabajador/wTarde");
+    expect(screen.getByText("Ya registró salida")).toBeInTheDocument();
+  });
+
+  it("el filtro de sedes usa «Todas las sedes» solo para administración", () => {
+    const props = { facilities: [{ id: "F1", official_name: "Sede F1" }], facilityId: null, day: DAY, period: "todos" as const };
+    const { unmount } = render(createElement(PresenceFilters, { ...props, isAdmin: true }));
+    expect(screen.getByRole("option", { name: "Todas las sedes" })).toBeInTheDocument();
+    unmount();
+    render(createElement(PresenceFilters, { ...props, isAdmin: false }));
+    expect(screen.getByRole("option", { name: "Todas mis sedes" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Todas las sedes" })).toBeNull();
   });
 });
 

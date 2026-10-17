@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { canManageFacility, getSessionUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyDbError, type ActionResult } from "@/lib/actions";
-import { parseReview } from "@/lib/reports/corrections";
+import { OWN_REVIEW_DB_MESSAGES, ownReviewBlock, parseReview } from "@/lib/reports/corrections";
 import { isGuid } from "@/lib/reports/params";
 
 export type ReviewState = ActionResult | null;
@@ -14,6 +14,7 @@ type RequestLookup = {
   id: string;
   facility_id: string;
   worker_id: string;
+  requested_by: string;
   status: "pendiente" | "aprobada" | "rechazada";
   assignment: { shift_id: string } | null;
 };
@@ -39,7 +40,7 @@ export async function reviewCorrection(_prev: ReviewState, formData: FormData): 
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("correction_requests")
-    .select("id, facility_id, worker_id, status, assignment:shift_assignments!correction_requests_assignment_id_fkey(shift_id)")
+    .select("id, facility_id, worker_id, requested_by, status, assignment:shift_assignments!correction_requests_assignment_id_fkey(shift_id)")
     .eq("id", requestId)
     .maybeSingle<RequestLookup>();
   if (error) return { ok: false, message: friendlyDbError(error, "No se pudo leer la solicitud.") };
@@ -48,6 +49,9 @@ export async function reviewCorrection(_prev: ReviewState, formData: FormData): 
     return { ok: false, message: "No tienes permiso para revisar solicitudes de esta sede." };
   }
   if (data.status !== "pendiente") return { ok: false, message: "La solicitud ya fue revisada por otra persona. Actualiza la página." };
+  // La base de datos también lo rechaza; se avisa antes con el mismo mensaje.
+  const ownBlock = ownReviewBlock(data, { id: user.id, workerId: user.workerId, isAdmin: user.isAdmin });
+  if (ownBlock) return { ok: false, message: OWN_REVIEW_DB_MESSAGES[ownBlock] };
 
   const { error: rpcError } = await supabase.rpc("review_correction", {
     p_request_id: requestId,

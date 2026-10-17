@@ -4,8 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getFacilityOptions, getStates } from "@/lib/data/catalogs";
 import { DEFAULT_TIMEZONE, todayInTz } from "@/lib/time";
 import { filtersToSearchParams, parseReportFilters, type RawParams } from "@/lib/reports/params";
-import { getWorkerOptions, loadReport } from "@/lib/reports/load";
-import { reportTotals } from "@/lib/reports/rows";
+import { getWorkerOptions, loadIncidentNotes, loadReport } from "@/lib/reports/load";
+import { attachIncidentNotes, reportTotals } from "@/lib/reports/rows";
 import { dayLabel } from "@/lib/reports/document";
 import { ONLY_STARTED_NOTICE, PRESENCE_NOTICE } from "@/lib/reports/texts";
 import { PageHeader } from "@/components/ui/page-header";
@@ -46,7 +46,9 @@ export default async function HistorialPage({ searchParams }: { searchParams: Pr
   const totals = reportTotals(rows);
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const page = Math.min(requestedPage, pageCount);
-  const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pageSlice = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Justificaciones (incident_notes, con RLS) solo de las filas de esta página.
+  const pageRows = attachIncidentNotes(pageSlice, await loadIncidentNotes(supabase, pageSlice.map((r) => r.assignmentId)));
   const hrefFor = (n: number) => `/historial?${filtersToSearchParams(filters, { pagina: n }).toString()}`;
   const workerHref = (workerId: string) =>
     `/historial/trabajador/${workerId}?${new URLSearchParams({ desde: filters.desde, hasta: filters.hasta }).toString()}`;
@@ -112,7 +114,7 @@ export default async function HistorialPage({ searchParams }: { searchParams: Pr
         {rows.length === 0 ? (
           <EmptyState
             title="Sin guardias con estos filtros"
-            description="No hay guardias iniciadas que coincidan. Cambia el periodo, la sede o el estado de asistencia."
+            description="No hay guardias iniciadas que coincidan. Cambia el periodo, la sede, el estado de asistencia o la incidencia."
             action={
               <LinkButton href="/historial" variant="outline">
                 Ver los últimos 7 días

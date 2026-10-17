@@ -4,7 +4,15 @@ import Link from "next/link";
 import { canManageFacility, requireManager } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getFacilityOptions } from "@/lib/data/catalogs";
-import { describeCorrection, parseCorrectionTab, parseReviewResult, type CorrectionTab } from "@/lib/reports/corrections";
+import {
+  OWN_REVIEW_MESSAGE,
+  correctionContext,
+  describeCorrection,
+  ownReviewBlock,
+  parseCorrectionTab,
+  parseReviewResult,
+  type CorrectionTab,
+} from "@/lib/reports/corrections";
 import { countPendingCorrections, loadCorrection, loadCorrections } from "@/lib/reports/corrections-load";
 import { getProfileNames, getWorkerProfileIds } from "@/lib/reports/load";
 import { isGuid, readParam, type RawParams } from "@/lib/reports/params";
@@ -160,14 +168,23 @@ export default async function CorreccionesPage({ searchParams }: { searchParams:
         <div className="space-y-3">
           {items.map((item) => {
             const tz = item.facility?.timezone ?? DEFAULT_TIMEZONE;
-            const canReview = item.status === "pendiente" && canManageFacility(user, item.facility_id);
-            const view = describeCorrection(item, item.session, tz);
+            const inScope = item.status === "pendiente" && canManageFacility(user, item.facility_id);
+            // Separación de funciones: salvo administración, nadie revisa lo propio (la base de datos lo rechaza).
+            const ownBlock = inScope ? ownReviewBlock(item, { id: user.id, workerId: user.workerId, isAdmin: user.isAdmin }) : null;
+            const view = describeCorrection(item, item.session, tz, correctionContext(item));
             return (
               <CorrectionCard key={item.id} item={item} actors={actors} workerProfileIds={workerProfileIds}>
-                {canReview ? (
+                {inScope && ownBlock ? (
+                  <div className="space-y-1 text-sm text-gray-800">
+                    <p className="font-medium">
+                      {ownBlock === "own_request" ? "Tú enviaste esta solicitud." : "Esta solicitud es sobre tu propia asistencia."}
+                    </p>
+                    <p>{OWN_REVIEW_MESSAGE}.</p>
+                  </div>
+                ) : inScope ? (
                   <>
                     {item.requested_by === user.id ? (
-                      <p className="mb-3 text-sm text-amber-900">Tú enviaste esta solicitud; de ser posible, pide que la revise otra persona de coordinación.</p>
+                      <p className="mb-3 text-sm text-amber-900">Tú enviaste esta solicitud; de ser posible, pide que la revise otra persona.</p>
                     ) : null}
                     <ReviewForm requestId={item.id} canApprove={view.canApprove} sede={sede} />
                   </>

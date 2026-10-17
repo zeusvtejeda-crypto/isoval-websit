@@ -83,6 +83,6 @@ test("Importación del catálogo oficial: valida 396 filas sin errores, importa 
   await page.goto("/directorio");
   await page.getByLabel("Buscar", { exact: true }).fill("Del Nayar");
   await expect(list.getByText(/instalaciones? encontradas?/)).toBeVisible();
-  await page.getByLabel("Categoría").selectOption({ label: "Hospitales" });
+  await page.getByLabel("Categoría", { exact: true }).selectOption({ label: "Hospitales" });
   await expect(list.getByRole("link", { name: "LINDA VISTA", exact: true })).toHaveCount(0);
 });

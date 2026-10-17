@@ -27,6 +27,14 @@ function ReasonTextarea({ id, label, error, min = 5, hint }: { id: string; label
   );
 }
 
+function CaptureRangeHint({ rangeLabel }: { rangeLabel: string }) {
+  return (
+    <p className="text-sm text-gray-600">
+      Las horas deben estar entre {rangeLabel} (máximo 12 h antes del inicio o después del término de la guardia) y no pueden ser futuras.
+    </p>
+  );
+}
+
 /** Agregar asignación: prioriza trabajadores de la sede; permite sustituciones. */
 export function AddAssignmentForm({
   action,
@@ -41,7 +49,7 @@ export function AddAssignmentForm({
   facilityWorkers: WorkerOption[];
   otherWorkers: WorkerOption[];
   otherTruncated: boolean;
-  /** Personas ya asignadas (para «sustituye a»). */
+  /** Personas ya asignadas (para «cubre a»). */
   assignedWorkers: { id: string; full_name: string }[];
 }) {
   const [query, setQuery] = useState("");
@@ -105,7 +113,12 @@ export function AddAssignmentForm({
           <Field label="Punto asignado" htmlFor={`point-${shiftId}`} error={fieldError(state, "assigned_point")} hint="Si es distinto del punto de reunión.">
             <Input id={`point-${shiftId}`} name="assigned_point" maxLength={200} {...aria(fieldError(state, "assigned_point"), `point-${shiftId}`)} />
           </Field>
-          <Field label="Sustituye a" htmlFor={`sub-${shiftId}`} error={fieldError(state, "substitute_for_worker_id")}>
+          <Field
+            label="Cubre a (sustitución)"
+            htmlFor={`sub-${shiftId}`}
+            error={fieldError(state, "substitute_for_worker_id")}
+            hint="Si esta persona cubre a otra, elígela; en la guardia se verá «Cubre a <nombre>»."
+          >
             <Select id={`sub-${shiftId}`} name="substitute_for_worker_id" defaultValue="" {...aria(fieldError(state, "substitute_for_worker_id"), `sub-${shiftId}`)}>
               <option value="">No es sustitución</option>
               {assignedWorkers.length > 0 ? (
@@ -224,7 +237,9 @@ export function ManualSessionForm({
   requestId,
   defaultCheckIn,
   defaultCheckOut,
+  minLocal,
   maxLocal,
+  rangeLabel,
   zoneLabel,
 }: {
   action: FormAction;
@@ -232,7 +247,11 @@ export function ManualSessionForm({
   requestId: string;
   defaultCheckIn: string;
   defaultCheckOut: string;
+  /** Límites de captura (la guardia ±12 h, nunca en el futuro), en la zona de la sede. */
+  minLocal: string;
   maxLocal: string;
+  /** Texto del rango permitido («17/10/2026 10:00 y 18/10/2026 18:00»). */
+  rangeLabel: string;
   zoneLabel: string;
 }) {
   return (
@@ -244,6 +263,7 @@ export function ManualSessionForm({
           <p className="text-sm text-gray-600">
             Para cuando la persona no pudo registrar. Horas en {zoneLabel}. Se marcará como corrección administrativa.
           </p>
+          <CaptureRangeHint rangeLabel={rangeLabel} />
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Entrada" htmlFor={`m-in-${assignmentId}`} required error={fieldError(state, "check_in")}>
               <Input
@@ -251,6 +271,7 @@ export function ManualSessionForm({
                 name="check_in"
                 type="datetime-local"
                 required
+                min={minLocal}
                 max={maxLocal}
                 defaultValue={defaultCheckIn}
                 {...aria(fieldError(state, "check_in"), `m-in-${assignmentId}`)}
@@ -262,6 +283,7 @@ export function ManualSessionForm({
                 name="check_out"
                 type="datetime-local"
                 required
+                min={minLocal}
                 max={maxLocal}
                 defaultValue={defaultCheckOut}
                 {...aria(fieldError(state, "check_out"), `m-out-${assignmentId}`)}
@@ -285,7 +307,10 @@ export function CorrectSessionForm({
   defaultCheckIn,
   defaultCheckOut,
   hasCheckOut,
+  requireCheckOut = false,
+  minLocal,
   maxLocal,
+  rangeLabel,
   zoneLabel,
 }: {
   action: FormAction;
@@ -293,15 +318,21 @@ export function CorrectSessionForm({
   defaultCheckIn: string;
   defaultCheckOut: string;
   hasCheckOut: boolean;
+  /** Entrada sin salida fuera del margen: hay que capturar la hora real de salida. */
+  requireCheckOut?: boolean;
+  minLocal: string;
   maxLocal: string;
+  rangeLabel: string;
   zoneLabel: string;
 }) {
+  const outRequired = hasCheckOut || requireCheckOut;
   return (
     <ActionForm action={action} submitLabel="Guardar corrección">
       {(state) => (
         <>
           <input type="hidden" name="session_id" value={sessionId} />
           <p className="text-sm text-gray-600">Horas en {zoneLabel}. El registro original se conserva como «corregido».</p>
+          <CaptureRangeHint rangeLabel={rangeLabel} />
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Entrada correcta" htmlFor={`c-in-${sessionId}`} required error={fieldError(state, "check_in")}>
               <Input
@@ -309,6 +340,7 @@ export function CorrectSessionForm({
                 name="check_in"
                 type="datetime-local"
                 required
+                min={minLocal}
                 max={maxLocal}
                 defaultValue={defaultCheckIn}
                 {...aria(fieldError(state, "check_in"), `c-in-${sessionId}`)}
@@ -317,15 +349,22 @@ export function CorrectSessionForm({
             <Field
               label="Salida correcta"
               htmlFor={`c-out-${sessionId}`}
-              required={hasCheckOut}
+              required={outRequired}
               error={fieldError(state, "check_out")}
-              hint={hasCheckOut ? undefined : "Déjala vacía si la persona sigue en servicio."}
+              hint={
+                requireCheckOut && !hasCheckOut
+                  ? "Indica la hora real en que terminó (no la hora actual)."
+                  : hasCheckOut
+                    ? undefined
+                    : "Déjala vacía si la persona sigue en servicio."
+              }
             >
               <Input
                 id={`c-out-${sessionId}`}
                 name="check_out"
                 type="datetime-local"
-                required={hasCheckOut}
+                required={outRequired}
+                min={minLocal}
                 max={maxLocal}
                 defaultValue={defaultCheckOut}
                 {...aria(fieldError(state, "check_out"), `c-out-${sessionId}`)}

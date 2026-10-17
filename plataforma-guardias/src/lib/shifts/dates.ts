@@ -184,3 +184,26 @@ export function hasStarted(startsAt: Date | string, now: Date = new Date()): boo
   const t = startsAt instanceof Date ? startsAt.getTime() : Date.parse(startsAt);
   return t <= now.getTime();
 }
+
+/**
+ * Horario a guardar al editar una guardia. Si la sede (zona) no cambia y la
+ * fecha y las horas capturadas son las mismas que muestra el formulario para el
+ * horario guardado, se conserva el guardado tal cual (así no se recorta una
+ * guardia de más de 24 h ni se toca el horario de una guardia con asistencia).
+ */
+export function resolveEditedSchedule(
+  current: { starts_at: string; ends_at: string },
+  input: { date: string; start_time: string; end_time: string },
+  currentTz: string,
+  targetTz: string,
+): { startsAt: Date; endsAt: Date; changed: boolean } {
+  if (currentTz === targetTz) {
+    const split = splitShiftTimes(current.starts_at, current.ends_at, currentTz);
+    if (split.date === input.date && split.startTime === input.start_time && split.endTime === input.end_time) {
+      return { startsAt: new Date(current.starts_at), endsAt: new Date(current.ends_at), changed: false };
+    }
+  }
+  const built = buildShiftTimes(input.date, input.start_time, input.end_time, targetTz);
+  const changed = built.startsAt.getTime() !== Date.parse(current.starts_at) || built.endsAt.getTime() !== Date.parse(current.ends_at);
+  return { startsAt: built.startsAt, endsAt: built.endsAt, changed };
+}

@@ -24,7 +24,7 @@ afterAll(() => {
   }
 });
 
-const categories: CategoryOption[] = [{ id: 1, slug: "hospitales", name: "Hospitales", color: "#14532d", active: true }];
+const categories: CategoryOption[] = [{ id: 1, slug: "hospitales", name: "Hospitales", color: "#14532d", icon: "hospital", active: true }];
 
 function facility(id: string, name: string, lat: number | null, lng: number | null): DirectoryFacility {
   return {
@@ -65,6 +65,9 @@ describe("FacilityMap (Leaflet)", () => {
     expect(marker).toHaveAttribute("title", "Hospital <A> (Hospitales)");
     expect(marker).toHaveAttribute("role", "button");
     expect(marker?.querySelector("svg title")?.textContent).toBe("Hospital <A> (Hospitales)");
+    // Ícono de la categoría dentro del marcador (además del color).
+    expect(marker?.querySelector('svg g[data-icon="hospital"] path')).not.toBeNull();
+    expect(marker?.querySelector("svg path")?.getAttribute("fill")).toBe("#14532d");
     expect(container.querySelectorAll(".dir-marker")).toHaveLength(1);
     // Controles de Leaflet en español.
     expect(container.querySelector(".leaflet-control-zoom-in")).toHaveAttribute("aria-label", "Acercar");

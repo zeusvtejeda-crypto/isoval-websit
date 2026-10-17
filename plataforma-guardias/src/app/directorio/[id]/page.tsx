@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, unstable_rethrow } from "next/navigation";
 import type { ReactNode } from "react";
 import { DemoBanner } from "@/components/layout/disclaimer";
+import { buttonClasses } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CategoryTag, DemoBadge, VerificationBadge } from "@/components/directory/facility-badges";
 import { DirectionsLinks } from "@/components/directory/directions-links";
 import { FacilityMiniMap } from "@/components/directory/facility-mini-map";
+import { getSessionUser } from "@/lib/auth";
 import { formatCoordinates } from "@/lib/directory/directions";
 import { formatDateOnly, safeExternalUrls, telHref } from "@/lib/directory/format";
 import { toDirectoryFacilityFromDetail } from "@/lib/directory/mappers";
+import { facilityEditHref } from "@/lib/directory/params";
 import { loadFacilityDetail } from "@/lib/directory/queries";
 import { formatDateTime } from "@/lib/time";
 
@@ -30,12 +33,24 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** ¿La sesión es de administración? Si la consulta falla se trata como visitante. */
+async function canEditFacility(): Promise<boolean> {
+  try {
+    const user = await getSessionUser();
+    return user?.isAdmin === true;
+  } catch (error) {
+    // Errores internos de Next.js (uso de cookies al prerenderizar, etc.) se relanzan.
+    unstable_rethrow(error);
+    return false;
+  }
+}
+
 const Missing = ({ children = "Sin dato registrado" }: { children?: ReactNode }) => <span className="text-gray-500">{children}</span>;
 
 /** Ficha pública de una instalación. Solo datos de public_facilities. */
 export default async function FichaInstalacionPage({ params }: { params: Params }) {
   const { id } = await params;
-  const data = await loadFacilityDetail(id);
+  const [data, canEdit] = await Promise.all([loadFacilityDetail(id), canEditFacility()]);
   if (!data) notFound();
   const { facility: f, category, state, municipality } = data;
 
@@ -48,16 +63,23 @@ export default async function FichaInstalacionPage({ params }: { params: Params 
     <div className="space-y-5">
       {f.isDemo ? <DemoBanner /> : null}
 
-      <nav aria-label="Ruta de navegación">
-        <Link href="/directorio" className="inline-flex min-h-11 items-center font-medium text-brand-800 underline underline-offset-2">
-          ← Volver al directorio
-        </Link>
-      </nav>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <nav aria-label="Ruta de navegación">
+          <Link href="/directorio" className="inline-flex min-h-11 items-center font-medium text-brand-800 underline underline-offset-2">
+            ← Volver al directorio
+          </Link>
+        </nav>
+        {canEdit ? (
+          <Link href={facilityEditHref(f.id)} className={buttonClasses("outline", "md")}>
+            Editar instalación
+          </Link>
+        ) : null}
+      </div>
 
       <header className="space-y-2">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{f.name}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <CategoryTag name={category?.name ?? null} color={category?.color} />
+          <CategoryTag name={category?.name ?? null} color={category?.color} icon={category?.icon} />
           <VerificationBadge verified={f.verificationStatus === "verificado"} />
           {f.isDemo ? <DemoBadge /> : null}
         </div>
@@ -74,7 +96,7 @@ export default async function FichaInstalacionPage({ params }: { params: Params 
               <Row label="Categoría">{category?.name ?? <Missing>Sin categoría</Missing>}</Row>
               <Row label="Descripción">{f.description ?? <Missing />}</Row>
               <Row label="Estado">{state?.name ?? <Missing />}</Row>
-              <Row label="Municipio">{municipality?.name ?? <Missing />}</Row>
+              <Row label="Municipio">{municipality?.label ?? <Missing />}</Row>
               <Row label="Dirección">{f.address ?? <Missing />}</Row>
               <Row label="Coordenadas">
                 {coordinates ?? <Missing>Sin coordenadas (no aparece en el mapa)</Missing>}

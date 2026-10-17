@@ -9,7 +9,15 @@ export type CorrectionListItem = CorrectionRow & {
   facility: { id: string; official_name: string; timezone: string } | null;
   assignment: {
     id: string;
-    shift: { id: string; title: string | null; meeting_point: string; starts_at: string; ends_at: string } | null;
+    status: Database["public"]["Enums"]["assignment_status"];
+    shift: {
+      id: string;
+      title: string | null;
+      meeting_point: string;
+      starts_at: string;
+      ends_at: string;
+      status: Database["public"]["Enums"]["shift_status"];
+    } | null;
   } | null;
   session: { id: string; check_in_at: string; check_out_at: string | null; record_status: Database["public"]["Enums"]["record_status"] } | null;
   resulting: { id: string; check_in_at: string; check_out_at: string | null } | null;
@@ -19,7 +27,7 @@ const CORRECTION_SELECT = [
   "*",
   "worker:workers!correction_requests_worker_id_fkey(id, full_name, internal_code)",
   "facility:facilities!correction_requests_facility_id_fkey(id, official_name, timezone)",
-  "assignment:shift_assignments!correction_requests_assignment_id_fkey(id, shift:shifts!shift_assignments_shift_id_fkey(id, title, meeting_point, starts_at, ends_at))",
+  "assignment:shift_assignments!correction_requests_assignment_id_fkey(id, status, shift:shifts!shift_assignments_shift_id_fkey(id, title, meeting_point, starts_at, ends_at, status))",
   "session:attendance_sessions!correction_requests_session_id_fkey(id, check_in_at, check_out_at, record_status)",
   "resulting:attendance_sessions!correction_requests_resulting_session_id_fkey(id, check_in_at, check_out_at)",
 ].join(", ");

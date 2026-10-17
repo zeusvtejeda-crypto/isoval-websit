@@ -1,7 +1,7 @@
 import "server-only";
 import ExcelJS from "exceljs";
 import { minutesToHours } from "@/lib/time";
-import { DETAIL_COLUMNS, EXPORT_NOTICES, GROUP_COLUMNS, headerLines, totalsEntries, xlsxCell, type ReportDocument } from "./document";
+import { DETAIL_COLUMNS, EXPORT_NOTICES, GAP_LABEL, GROUP_COLUMNS, headerLines, totalsEntries, xlsxCell, type ReportDocument } from "./document";
 import type { GroupSummary } from "./rows";
 
 const BRAND = "FF14532D"; // verde oscuro
@@ -71,6 +71,7 @@ export async function renderXlsx(doc: ReportDocument): Promise<Uint8Array<ArrayB
     DETAIL_COLUMNS.forEach((c, i) => {
       if (c.kind === "hours") row.getCell(i + 1).numFmt = "0.00";
       if (c.kind === "minutes") row.getCell(i + 1).numFmt = "0";
+      if (c.wrap) row.getCell(i + 1).alignment = { wrapText: true, vertical: "top" };
     });
   }
   if (doc.rows.length === 0) {
@@ -84,6 +85,7 @@ export async function renderXlsx(doc: ReportDocument): Promise<Uint8Array<ArrayB
   detail.views = [{ state: "frozen", ySplit: headerRowNumber, xSplit: 2 }];
   detail.addRow([]);
   detail.addRow(["Horas en formato decimal (7.50 = 7 h 30 min). Retraso y salida anticipada en minutos."]).font = { italic: true };
+  detail.addRow([`«${GAP_LABEL}»: tiempo fuera entre una salida y el regreso dentro de la guardia; no suma al tiempo registrado.`]).font = { italic: true };
 
   // Hoja «Resumen»
   const summary = wb.addWorksheet("Resumen", {

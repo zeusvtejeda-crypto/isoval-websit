@@ -89,7 +89,15 @@ export function renderPdf(doc: ReportDocument): Uint8Array<ArrayBuffer> {
   pdf.setTextColor(17, 24, 39);
   y = writeLines(pdf, headerLines(doc.meta), y + 2, 8);
   y = writeLines(pdf, EXPORT_NOTICES, y + 2, 8, "bold");
-  y = writeLines(pdf, ["Horas en la zona horaria de cada sede (columna «Zona»). Tiempos en formato h:mm; retraso y salida anticipada en minutos."], y + 2, 7.5);
+  y = writeLines(
+    pdf,
+    [
+      "Horas en la zona horaria de cada sede (desfase debajo del horario). Tiempos en formato h:mm; retraso y salida anticipada en minutos.",
+      "«Entre salida y regreso (no cuenta)»: tiempo fuera entre una salida y el regreso dentro de la guardia; no suma al tiempo registrado.",
+    ],
+    y + 2,
+    7.5,
+  );
 
   // Detalle
   const columns = DETAIL_COLUMNS.filter((c) => c.pdf);
@@ -100,9 +108,14 @@ export function renderPdf(doc: ReportDocument): Uint8Array<ArrayBuffer> {
     : [[{ content: "Sin guardias para los filtros seleccionados.", colSpan: columns.length }]];
   const columnStyles: Record<string, { cellWidth?: number; halign?: "right" | "center" }> = {};
   columns.forEach((c, i) => {
-    if (c.key === "trabajador") columnStyles[i] = { cellWidth: 78 };
-    else if (c.key === "sede") columnStyles[i] = { cellWidth: 92 };
-    else if (c.key === "estado") columnStyles[i] = { cellWidth: 64 };
+    if (c.key === "fecha") columnStyles[i] = { cellWidth: 34 };
+    else if (c.key === "trabajador") columnStyles[i] = { cellWidth: 62 };
+    else if (c.key === "sede") columnStyles[i] = { cellWidth: 64 };
+    else if (c.key === "estado") columnStyles[i] = { cellWidth: 48 };
+    else if (c.key === "horario") columnStyles[i] = { cellWidth: 36 };
+    else if (c.key === "entre_salidas") columnStyles[i] = { cellWidth: 38, halign: "right" };
+    else if (c.key === "observaciones") columnStyles[i] = { cellWidth: 66 };
+    else if (c.key === "justificacion") columnStyles[i] = { cellWidth: 78 };
     else if (c.kind === "hours" || c.kind === "minutes") columnStyles[i] = { halign: "right" };
     else if (c.kind === "flag") columnStyles[i] = { halign: "center" };
   });
@@ -112,7 +125,7 @@ export function renderPdf(doc: ReportDocument): Uint8Array<ArrayBuffer> {
     body: detailBody,
     theme: "grid",
     margin: { left: MARGIN, right: MARGIN, bottom: 40 },
-    styles: { font: "helvetica", fontSize: 6, cellPadding: 1.5, overflow: "linebreak", valign: "top" },
+    styles: { font: "helvetica", fontSize: 6, cellPadding: 1.2, overflow: "linebreak", valign: "top" },
     headStyles: { fillColor: BRAND, textColor: 255, fontStyle: "bold", fontSize: 6 },
     alternateRowStyles: { fillColor: [243, 244, 246] },
     columnStyles,

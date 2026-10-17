@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { USERS_BASE_PATH, accountStatus, isBanned, roleUsesFacilityScopes } from "@/lib/admin/accounts";
+import { OWN_ATTENDANCE_NOTICE, USERS_BASE_PATH, accountStatus, isBanned, ownAttendanceRestricted, roleUsesFacilityScopes } from "@/lib/admin/accounts";
 import { facilityChoices, facilityNameMap, loadAccountDetail, loadWorkerOptions, roleOptions } from "@/lib/admin/accounts-server";
 import { AUDIT_PATH, isGuid } from "@/lib/admin/audit-filters";
 import { DEFAULT_TIMEZONE, formatDateTime } from "@/lib/time";
@@ -60,6 +60,11 @@ export default async function CuentaPage({ params }: { params: Promise<{ id: str
         {row.role === "trabajador" && !row.workerId ? (
           <Alert tone="warning" title="Cuenta sin trabajador vinculado">
             Sin vínculo, la persona no verá guardias ni podrá registrar entradas y salidas.
+          </Alert>
+        ) : null}
+        {ownAttendanceRestricted(row.role, row.workerId) ? (
+          <Alert tone="info" title="Separación de funciones">
+            {OWN_ATTENDANCE_NOTICE}
           </Alert>
         ) : null}
         {roleUsesFacilityScopes(row.role) && facilityIds.length === 0 ? (

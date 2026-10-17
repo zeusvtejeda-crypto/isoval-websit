@@ -2,7 +2,7 @@ import Form from "next/form";
 import Link from "next/link";
 import type { FacilityOption, State } from "@/lib/data/catalogs";
 import type { WorkerOption } from "@/lib/reports/load";
-import { ATTENDANCE_FILTER_OPTIONS, type ReportFilters } from "@/lib/reports/params";
+import { ATTENDANCE_FILTER_OPTIONS, INCIDENT_FILTER_OPTIONS, type ReportFilters } from "@/lib/reports/params";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/form";
 
@@ -37,6 +37,19 @@ export function ReportFiltersForm({
           <Select id="asistencia" name="asistencia" defaultValue={filters.attendance}>
             {ATTENDANCE_FILTER_OPTIONS.map((o) => (
               <option key={o.value || "todos"} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field
+          label="Incidencia"
+          htmlFor="incidencia"
+          hint="Muestra solo las guardias con esa señal para revisión. No es una sanción ni una clasificación de personas."
+        >
+          <Select id="incidencia" name="incidencia" defaultValue={filters.incident}>
+            {INCIDENT_FILTER_OPTIONS.map((o) => (
+              <option key={o.value || "cualquiera"} value={o.value}>
                 {o.label}
               </option>
             ))}

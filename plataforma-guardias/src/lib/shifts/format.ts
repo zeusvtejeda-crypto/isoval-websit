@@ -56,6 +56,16 @@ export function formatClockDuration(minutes: number): string {
   return formatDuration(minutes);
 }
 
+/**
+ * Sustitución visible: "Cubre a Ana López". null si la asignación no es una
+ * sustitución. Si RLS no deja ver a la persona sustituida, se dice así.
+ */
+export function coverLabel(substituteFor: { full_name: string } | null | undefined, substituteForWorkerId: string | null | undefined): string | null {
+  if (!substituteForWorkerId && !substituteFor) return null;
+  const name = substituteFor?.full_name?.trim();
+  return name ? `Cubre a ${name}` : "Cubre a una persona no visible para tu cuenta";
+}
+
 /** Identificador corto para referencia visual de un registro. */
 export function shortId(id: string): string {
   return id.slice(0, 8).toUpperCase();

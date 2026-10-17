@@ -36,13 +36,13 @@ vi.mock("next/dynamic", () => ({
 
 const LOOKUPS: DirectoryLookups = {
   categories: [
-    { id: 1, slug: "hospitales", name: "Hospitales", color: "#14532d", active: true },
-    { id: 2, slug: "umf", name: "Unidades de Medicina Familiar", color: "#166534", active: true },
+    { id: 1, slug: "hospitales", name: "Hospitales", color: "#14532d", icon: "hospital", active: true },
+    { id: 2, slug: "umf", name: "Unidades de Medicina Familiar", color: "#166534", icon: "stethoscope", active: true },
   ],
   states: [{ id: 18, name: "Nayarit", abbreviation: "NAY" }],
   municipalities: [
-    { id: 117, stateId: 18, name: "Tepic" },
-    { id: 120, stateId: 18, name: "Bahía de Banderas" },
+    { id: 117, stateId: 18, name: "Tepic", inegiCode: "017", label: "Tepic" },
+    { id: 120, stateId: 18, name: "Bahía de Banderas", inegiCode: "020", label: "Bahía de Banderas" },
   ],
 };
 
@@ -111,6 +111,9 @@ describe("FacilityList", () => {
     expect(first.getByText("DEMO-H01")).toBeInTheDocument();
     expect(first.getByText("Tepic, Nayarit")).toBeInTheDocument();
     expect(first.getByText("Hospitales")).toBeInTheDocument();
+    // La etiqueta de categoría lleva el ícono de la categoría.
+    expect(items[0].querySelector('svg[data-icon="hospital"]')).not.toBeNull();
+    expect(items[1].querySelector('svg[data-icon="stethoscope"]')).not.toBeNull();
     expect(first.getByText("Pendiente de verificación")).toBeInTheDocument();
     expect(first.getByText("Datos de demostración")).toBeInTheDocument();
     expect(first.getByRole("link", { name: "Ver ficha de [DEMO] Hospital de demostración A" })).toHaveAttribute(
@@ -146,7 +149,7 @@ describe("DirectoryExplorer", () => {
   it("muestra la lista sin cargar el mapa en la vista de lista", () => {
     render(<DirectoryExplorer facilities={FACILITIES} lookups={LOOKUPS} initialParams={parseDirectoryParams({})} />);
     expect(screen.getByText("3 instalaciones en el directorio")).toBeInTheDocument();
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(within(screen.getByRole("list", { name: "Instalaciones" })).getAllByRole("listitem")).toHaveLength(3);
     expect(screen.queryByTestId("mapa")).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Lista/ })).toHaveAttribute("aria-selected", "true");
     // Hay filas de demostración visibles: se muestra la franja.
@@ -187,6 +190,32 @@ describe("DirectoryExplorer", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("muestra la leyenda del mapa con ícono y nombre de las categorías ubicables", () => {
+    render(<DirectoryExplorer facilities={FACILITIES} lookups={LOOKUPS} initialParams={parseDirectoryParams({})} />);
+    const legend = screen.getByRole("list", { name: /Leyenda del mapa/ });
+    const items = within(legend).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual(["Hospitales", "Unidades de Medicina Familiar"]);
+    expect(items[0].querySelector('svg[data-icon="hospital"]')).not.toBeNull();
+    expect(items[1].querySelector('svg[data-icon="stethoscope"]')).not.toBeNull();
+  });
+
+  it("distingue con la clave INEGI los municipios de nombre repetido en el filtro", () => {
+    const lookups: DirectoryLookups = {
+      ...LOOKUPS,
+      states: [{ id: 20, name: "Oaxaca", abbreviation: "OAX" }],
+      municipalities: [
+        { id: 901, stateId: 20, name: "San Juan Mixtepec", inegiCode: "208", label: "San Juan Mixtepec (clave INEGI 208)" },
+        { id: 902, stateId: 20, name: "San Juan Mixtepec", inegiCode: "209", label: "San Juan Mixtepec (clave INEGI 209)" },
+      ],
+    };
+    const facilities = FACILITIES.slice(0, 2).map((f, i) => ({ ...f, stateId: 20, municipalityId: 901 + i }));
+    render(<DirectoryExplorer facilities={facilities} lookups={lookups} initialParams={parseDirectoryParams({})} />);
+    const select = screen.getByRole("combobox", { name: "Municipio" });
+    expect(within(select).getByRole("option", { name: "San Juan Mixtepec (clave INEGI 208)" })).toHaveValue("901");
+    expect(within(select).getByRole("option", { name: "San Juan Mixtepec (clave INEGI 209)" })).toHaveValue("902");
+    expect(screen.getByText("San Juan Mixtepec (clave INEGI 209), Oaxaca")).toBeInTheDocument();
+  });
+
   it("si el mapa falla muestra un aviso y la lista sigue funcionando", async () => {
     mapMock.mode = "throw";
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -195,7 +224,7 @@ describe("DirectoryExplorer", () => {
       <DirectoryExplorer facilities={FACILITIES} lookups={LOOKUPS} initialParams={parseDirectoryParams({ vista: "mapa" })} />,
     );
     expect(await screen.findByText("No se pudo cargar el mapa")).toBeInTheDocument();
-    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(within(screen.getByRole("list", { name: "Instalaciones" })).getAllByRole("listitem")).toHaveLength(3);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("tab", { name: /Lista/ }));

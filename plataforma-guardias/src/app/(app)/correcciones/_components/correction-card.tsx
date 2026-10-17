@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { CORRECTION_STATUS_LABELS, afterPreposition, type Tone } from "@/lib/attendance/labels";
 import { DEFAULT_TIMEZONE, formatDateTime, formatShiftRange } from "@/lib/time";
 import { actorLabel, type ActorContext } from "@/lib/reports/actors";
-import { describeCorrection } from "@/lib/reports/corrections";
+import { correctionContext, describeCorrection } from "@/lib/reports/corrections";
 import type { CorrectionListItem } from "@/lib/reports/corrections-load";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/states";
@@ -38,7 +38,7 @@ export function CorrectionCard({
   children?: ReactNode;
 }) {
   const tz = item.facility?.timezone ?? DEFAULT_TIMEZONE;
-  const view = describeCorrection(item, item.session, tz);
+  const view = describeCorrection(item, item.session, tz, correctionContext(item));
   const shift = item.assignment?.shift ?? null;
   const ctx: ActorContext = { ...actors, workerProfileId: workerProfileIds[item.worker_id] ?? null };
 

@@ -13,14 +13,19 @@ export type CorrectionSessionOption = {
   pending: boolean;
 };
 
+/** Horas permitidas (zona de la sede): la guardia ±12 h y nunca en el futuro. */
+export type CorrectionRange = { min: string; max: string; hint: string };
+
 export function CorrectionForm({
   assignmentId,
   timeZone,
   sessions,
+  range,
 }: {
   assignmentId: string;
   timeZone: string;
   sessions: CorrectionSessionOption[];
+  range?: CorrectionRange;
 }) {
   const [state, action, pending] = useActionState<CorrectionState, FormData>(requestCorrection, null);
   const online = useOnline();
@@ -52,6 +57,7 @@ export function CorrectionForm({
         </Select>
       </Field>
 
+      {range ? <p className="text-sm text-gray-700">Horas permitidas: {range.hint}</p> : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="Hora de entrada correcta"
@@ -63,6 +69,8 @@ export function CorrectionForm({
             id={id("checkIn")}
             name="checkIn"
             type="datetime-local"
+            min={range?.min}
+            max={range?.max}
             defaultValue={values.checkIn ?? ""}
             aria-invalid={errors.checkIn ? true : undefined}
           />
@@ -77,6 +85,8 @@ export function CorrectionForm({
             id={id("checkOut")}
             name="checkOut"
             type="datetime-local"
+            min={range?.min}
+            max={range?.max}
             defaultValue={values.checkOut ?? ""}
             aria-invalid={errors.checkOut ? true : undefined}
           />

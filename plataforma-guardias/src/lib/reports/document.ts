@@ -4,8 +4,8 @@
  */
 import type { TotalsSummary } from "@/lib/attendance/calc";
 import { formatDateTime, formatOffset, minutesToHours } from "@/lib/time";
-import { attendanceFilterLabel, type ExportFormat, type ReportFilters } from "./params";
-import { reportTotals, summarizeBy, type GroupSummary, type ReportRow } from "./rows";
+import { attendanceFilterLabel, incidentFilterLabel, type ExportFormat, type ReportFilters } from "./params";
+import { justificationText, reportTotals, summarizeBy, type GroupSummary, type ReportRow } from "./rows";
 import { EXTRA_TIME_NOTICE, NO_RANKING_NOTICE, NOT_OFFICIAL_NOTICE, ONLY_STARTED_NOTICE, PRESENCE_NOTICE, REPORT_TITLE } from "./texts";
 
 export type FilterLabels = {
@@ -49,6 +49,7 @@ export function describeFilters(filters: ReportFilters, labels: FilterLabels, fo
     `Estado (entidad): ${filters.stateId ? (labels.state ?? `Clave ${filters.stateId}`) : "Todos"}`,
     `Trabajador: ${worker}`,
     `Estado de asistencia: ${attendanceFilterLabel(filters.attendance)}`,
+    `Incidencia: ${incidentFilterLabel(filters.incident)}`,
   ];
 }
 
@@ -99,7 +100,12 @@ export type ColumnDef = {
   value: (r: ReportRow) => string | number | boolean | null;
   /** Texto alternativo (más corto) para PDF. */
   pdfValue?: (r: ReportRow) => string;
+  /** Texto largo: se ajusta en varias líneas (Excel). */
+  wrap?: boolean;
 };
+
+/** Texto que acompaña al tiempo fuera entre salidas: nunca suma al tiempo registrado. */
+export const GAP_LABEL = "Tiempo entre salida y regreso (no cuenta)";
 
 /** Columnas del detalle por asignación. */
 export const DETAIL_COLUMNS: ColumnDef[] = [
@@ -119,8 +125,18 @@ export const DETAIL_COLUMNS: ColumnDef[] = [
   { key: "sede", header: "Sede", short: "Sede", kind: "text", width: 34, pdf: true, value: (r) => r.facilityName },
   { key: "inicio", header: "Inicio programado", short: "Inicio", kind: "text", width: 17, pdf: false, value: (r) => r.startLocal },
   { key: "termino", header: "Término programado", short: "Término", kind: "text", width: 17, pdf: false, value: (r) => r.endLocal },
-  { key: "horario", header: "Horario", short: "Horario", kind: "text", width: 22, pdf: true, value: (r) => r.scheduleLabel },
-  { key: "zona", header: "Zona horaria de la sede", short: "Zona", kind: "text", width: 30, pdf: true, value: (r) => `${r.timeZone} (${r.zoneOffset})`, pdfValue: (r) => r.zoneOffset },
+  {
+    key: "horario",
+    header: "Horario",
+    short: "Horario (zona)",
+    kind: "text",
+    width: 22,
+    pdf: true,
+    value: (r) => r.scheduleLabel,
+    // El PDF no tiene columna de zona: el desfase va debajo del horario.
+    pdfValue: (r) => `${r.scheduleLabel}\n${r.zoneOffset}`,
+  },
+  { key: "zona", header: "Zona horaria de la sede", short: "Zona", kind: "text", width: 30, pdf: false, value: (r) => `${r.timeZone} (${r.zoneOffset})` },
   { key: "estado", header: "Estado", short: "Estado", kind: "text", width: 26, pdf: true, value: (r) => r.statusLabel },
   { key: "entrada", header: "Primera entrada registrada", short: "Entrada", kind: "text", width: 17, pdf: true, value: (r) => r.firstCheckInLocal },
   { key: "salida", header: "Última salida registrada", short: "Salida", kind: "text", width: 17, pdf: true, value: (r) => (r.openSession ? "Sin salida" : r.lastCheckOutLocal) },
@@ -128,6 +144,7 @@ export const DETAIL_COLUMNS: ColumnDef[] = [
   { key: "dentro", header: "Dentro del horario (h)", short: "Dentro", kind: "hours", width: 12, pdf: true, value: (r) => r.withinScheduleMinutes },
   { key: "fuera", header: "Fuera del horario (h)", short: "Fuera", kind: "hours", width: 12, pdf: true, value: (r) => r.outsideScheduleMinutes },
   { key: "total", header: "Total registrado (h)", short: "Total", kind: "hours", width: 12, pdf: true, value: (r) => r.totalMinutes },
+  { key: "entre_salidas", header: `${GAP_LABEL} (h)`, short: "Entre salida y regreso (no cuenta)", kind: "hours", width: 16, pdf: true, value: (r) => r.gapMinutes },
   { key: "diferencia", header: "Diferencia: registrado − programado (h)", short: "Dif.", kind: "hours", width: 14, pdf: true, value: (r) => r.differenceMinutes },
   { key: "retraso", header: "Retraso (min)", short: "Retraso", kind: "minutes", width: 10, pdf: true, value: (r) => r.lateMinutes },
   { key: "anticipada", header: "Salida anticipada (min)", short: "Sal. antic.", kind: "minutes", width: 12, pdf: true, value: (r) => r.earlyLeaveMinutes },
@@ -156,6 +173,26 @@ export const DETAIL_COLUMNS: ColumnDef[] = [
   { key: "incompleto", header: "Registro incompleto", short: "Incomp.", kind: "flag", width: 12, pdf: true, value: (r) => r.incomplete },
   { key: "revision", header: "Pendiente de revisión", short: "Revisión", kind: "flag", width: 12, pdf: true, value: (r) => r.needsReview },
   { key: "incidencias", header: "Incidencias (señales para revisión)", short: "Incidencias", kind: "text", width: 40, pdf: false, value: (r) => r.incidentLabels.join("; ") || null },
+  {
+    key: "observaciones",
+    header: "Observaciones (notas de los registros vigentes)",
+    short: "Observaciones",
+    kind: "text",
+    width: 40,
+    pdf: true,
+    wrap: true,
+    value: (r) => r.observations.join("\n") || null,
+  },
+  {
+    key: "justificacion",
+    header: "Justificación (incidencia: nota)",
+    short: "Justificación",
+    kind: "text",
+    width: 48,
+    pdf: true,
+    wrap: true,
+    value: (r) => r.justifications.map(justificationText).join("\n") || null,
+  },
 ];
 
 export function flagText(value: boolean): string {

@@ -8,8 +8,8 @@
  *   registro de trabajador, sin importar lo que llegue en la URL.
  */
 import type { AppRole } from "@/lib/auth";
-import type { AttendanceStatus } from "@/lib/attendance/calc";
-import { ATTENDANCE_STATUS_LABELS } from "@/lib/attendance/labels";
+import type { AttendanceStatus, IncidentType } from "@/lib/attendance/calc";
+import { ATTENDANCE_STATUS_LABELS, INCIDENT_LABELS } from "@/lib/attendance/labels";
 
 /** Rango máximo (días naturales, inclusivo) de una exportación o consulta. */
 export const MAX_RANGE_DAYS = 93;
@@ -47,6 +47,35 @@ export function attendanceFilterLabel(value: AttendanceFilter): string {
   return ATTENDANCE_FILTER_OPTIONS.find((o) => o.value === value)?.label ?? "Todos (sin cancelados)";
 }
 
+/** Tipos de incidencia en el orden del catálogo (no es un orden de «mejor» a «peor»). */
+export const INCIDENT_TYPES: IncidentType[] = [
+  "llegada_tardia",
+  "salida_anticipada",
+  "permanencia_adicional",
+  "sustitucion",
+  "correccion_administrativa",
+  "registro_incompleto",
+];
+
+/**
+ * Filtro por incidencia calculada: "" = sin filtrar (con o sin incidencias).
+ * Solo selecciona guardias con esa señal para revisión; nunca ordena ni clasifica.
+ */
+export type IncidentFilter = "" | IncidentType;
+
+const ANY_INCIDENT_LABEL = "Cualquiera (con o sin incidencias)";
+
+export const INCIDENT_FILTER_OPTIONS: { value: IncidentFilter; label: string }[] = [
+  { value: "", label: ANY_INCIDENT_LABEL },
+  ...INCIDENT_TYPES.map((t) => ({ value: t as IncidentFilter, label: INCIDENT_LABELS[t] })),
+];
+
+const INCIDENT_VALUES = new Set<string>(INCIDENT_TYPES);
+
+export function incidentFilterLabel(value: IncidentFilter | null | undefined): string {
+  return value ? (INCIDENT_LABELS[value] ?? ANY_INCIDENT_LABEL) : ANY_INCIDENT_LABEL;
+}
+
 export type ReportFilters = {
   /** Fecha local (yyyy-MM-dd) inicial, inclusive. */
   desde: string;
@@ -57,6 +86,8 @@ export type ReportFilters = {
   stateId: number | null;
   workerId: string | null;
   attendance: AttendanceFilter;
+  /** Solo guardias con esta incidencia calculada ("" = sin filtrar). */
+  incident: IncidentFilter;
 };
 
 export type RawParams = URLSearchParams | Record<string, string | string[] | undefined>;
@@ -113,6 +144,11 @@ function parseAttendance(value: string | undefined): AttendanceFilter | "invalid
   return ATTENDANCE_VALUES.has(value) ? (value as AttendanceFilter) : "invalid";
 }
 
+function parseIncident(value: string | undefined): IncidentFilter | "invalid" {
+  if (value === undefined) return "";
+  return INCIDENT_VALUES.has(value) ? (value as IncidentFilter) : "invalid";
+}
+
 export type ParsedPageFilters = { filters: ReportFilters; notices: string[]; page: number };
 
 /**
@@ -160,6 +196,9 @@ export function parseReportFilters(raw: RawParams, today: string, options: { def
   const attendance = parseAttendance(readParam(raw, "asistencia"));
   if (attendance === "invalid") notices.push("El estado de asistencia indicado no es válido; se muestran todos.");
 
+  const incident = parseIncident(readParam(raw, "incidencia"));
+  if (incident === "invalid") notices.push("La incidencia indicada no es válida; se muestran todas las guardias.");
+
   const rawPage = readParam(raw, "pagina");
   const pageNumber = rawPage && /^\d{1,5}$/.test(rawPage) ? Number(rawPage) : 1;
 
@@ -171,6 +210,7 @@ export function parseReportFilters(raw: RawParams, today: string, options: { def
       stateId: state === "invalid" ? null : state,
       workerId,
       attendance: attendance === "invalid" ? "" : attendance,
+      incident: incident === "invalid" ? "" : incident,
     },
     notices,
     page: Math.max(1, pageNumber),
@@ -196,7 +236,7 @@ const NOT_LINKED = "Tu cuenta no está vinculada a un registro de trabajador. Co
 /**
  * Valida los parámetros de GET /api/exportar.
  * Parámetros: formato=xlsx|pdf, desde, hasta (yyyy-MM-dd), sede (uuid),
- * estado (entidad, 1–99), asistencia, trabajador (uuid o "yo").
+ * estado (entidad, 1–99), asistencia, incidencia, trabajador (uuid o "yo").
  */
 export function parseExportParams(raw: RawParams, requester: ExportRequester, today: string): ExportParseResult {
   const bad = (message: string): ExportParseResult => ({ ok: false, status: 400, message });
@@ -239,6 +279,11 @@ export function parseExportParams(raw: RawParams, requester: ExportRequester, to
   const attendance = parseAttendance(readParam(raw, "asistencia"));
   if (attendance === "invalid") return bad("El estado de asistencia indicado no es válido.");
 
+  const incident = parseIncident(readParam(raw, "incidencia"));
+  if (incident === "invalid") {
+    return bad(`La incidencia indicada no es válida. Usa uno de estos valores: ${INCIDENT_TYPES.join(", ")}.`);
+  }
+
   let workerId: string | null = null;
   let forcedOwn = false;
   if (requester.role === "trabajador") {
@@ -270,6 +315,7 @@ export function parseExportParams(raw: RawParams, requester: ExportRequester, to
       stateId: state,
       workerId,
       attendance,
+      incident,
     },
     forcedOwn,
   };
@@ -287,6 +333,7 @@ export function filtersToSearchParams(filters: Partial<ReportFilters>, extra: Re
   if (filters.stateId) sp.set("estado", String(filters.stateId));
   if (filters.workerId) sp.set("trabajador", filters.workerId);
   if (filters.attendance) sp.set("asistencia", filters.attendance);
+  if (filters.incident) sp.set("incidencia", filters.incident);
   return sp;
 }
 

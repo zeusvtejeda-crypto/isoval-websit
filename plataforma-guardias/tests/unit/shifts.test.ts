@@ -9,6 +9,7 @@ import {
   isValidDay,
   isValidLocalDateTime,
   localDateTimeToUtc,
+  resolveEditedSchedule,
   splitShiftTimes,
   startOfWeek,
   weekDays,
@@ -24,7 +25,18 @@ import {
   shiftRangeByWeeks,
   type FilterableShift,
 } from "@/lib/shifts/filters";
-import { formatSignedDuration, formatTimeRangeCompact, shiftDisplayTitle, staffingSummary, timezoneLabel } from "@/lib/shifts/format";
+import { coverLabel, formatSignedDuration, formatTimeRangeCompact, shiftDisplayTitle, staffingSummary, timezoneLabel } from "@/lib/shifts/format";
+import {
+  FUTURE_TIME_MESSAGE,
+  OUTSIDE_WINDOW_MESSAGE,
+  captureInputBounds,
+  captureWindow,
+  describeCaptureWindow,
+  isOpenSessionStale,
+  isOwnRecordLocked,
+  isScheduleLocked,
+  validateCapturedTimes,
+} from "@/lib/shifts/rules";
 import {
   addAssignmentSchema,
   correctSessionSchema,
@@ -369,5 +381,88 @@ describe("quién registró", () => {
       { check_in_by: "a", check_out_by: null, status_changed_by: "c" },
     ]);
     expect(ids.sort()).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("reglas de la BD reflejadas en la interfaz", () => {
+  // Guardia 22:00 (17/10) – 06:00 (18/10) en Mazatlán.
+  const night = { starts_at: "2026-10-18T05:00:00Z", ends_at: "2026-10-18T13:00:00Z" };
+
+  it("propia asistencia: bloqueada salvo para administración", () => {
+    expect(isOwnRecordLocked({ isAdmin: false, workerId: "w1" }, "w1")).toBe(true);
+    expect(isOwnRecordLocked({ isAdmin: true, workerId: "w1" }, "w1")).toBe(false);
+    expect(isOwnRecordLocked({ isAdmin: false, workerId: "w1" }, "w2")).toBe(false);
+    expect(isOwnRecordLocked({ isAdmin: false, workerId: null }, "w1")).toBe(false);
+    expect(isOwnRecordLocked({ isAdmin: false, workerId: null }, null)).toBe(false);
+  });
+
+  it("entrada abierta vencida: después de término + margen", () => {
+    const base = { hasOpenSession: true, shiftEndsAt: night.ends_at, graceMinutes: 240 };
+    expect(isOpenSessionStale({ ...base, now: new Date("2026-10-18T17:00:00Z") })).toBe(false); // justo en el margen
+    expect(isOpenSessionStale({ ...base, now: new Date("2026-10-18T17:00:01Z") })).toBe(true);
+    expect(isOpenSessionStale({ ...base, hasOpenSession: false, now: new Date("2026-10-19T00:00:00Z") })).toBe(false);
+    expect(isOpenSessionStale({ ...base, graceMinutes: 0, now: new Date("2026-10-18T13:01:00Z") })).toBe(true);
+  });
+
+  it("horario bloqueado con asistencia vigente, salvo administración", () => {
+    expect(isScheduleLocked({ isAdmin: false }, 1)).toBe(true);
+    expect(isScheduleLocked({ isAdmin: false }, 0)).toBe(false);
+    expect(isScheduleLocked({ isAdmin: true }, 5)).toBe(false);
+  });
+
+  it("ventana de captura: la guardia ±12 h, y límites del input nunca en el futuro", () => {
+    const w = captureWindow(night);
+    expect(w.min.toISOString()).toBe("2026-10-17T17:00:00.000Z");
+    expect(w.max.toISOString()).toBe("2026-10-19T01:00:00.000Z");
+    expect(describeCaptureWindow(night, MAZ)).toBe("17/10/2026 10:00 y 18/10/2026 18:00");
+    expect(captureInputBounds(night, new Date("2026-10-18T16:00:00Z"), MAZ)).toEqual({ min: "2026-10-17T10:00", max: "2026-10-18T09:00" });
+    expect(captureInputBounds(night, new Date("2026-10-25T00:00:00Z"), MAZ)).toEqual({ min: "2026-10-17T10:00", max: "2026-10-18T18:00" });
+  });
+
+  it("valida horas capturadas: futuras y fuera de la ventana con mensaje claro", () => {
+    const now = new Date("2026-10-20T00:00:00Z");
+    const opts = { now, tz: MAZ };
+    expect(validateCapturedTimes(night, new Date("2026-10-18T05:10:00Z"), new Date("2026-10-18T13:00:00Z"), opts)).toBeNull();
+    expect(validateCapturedTimes(night, new Date("2026-10-17T17:00:00Z"), null, opts)).toBeNull(); // límite exacto
+
+    const early = validateCapturedTimes(night, new Date("2026-10-17T16:59:00Z"), new Date("2026-10-18T13:00:00Z"), opts);
+    expect(early?.message).toBe(`${OUTSIDE_WINDOW_MESSAGE}: entre 17/10/2026 10:00 y 18/10/2026 18:00.`);
+    expect(early?.fieldErrors).toEqual({ check_in: "Debe estar entre 17/10/2026 10:00 y 18/10/2026 18:00." });
+
+    const lateOut = validateCapturedTimes(night, new Date("2026-10-18T05:00:00Z"), new Date("2026-10-19T01:01:00Z"), opts);
+    expect(Object.keys(lateOut?.fieldErrors ?? {})).toEqual(["check_out"]);
+
+    const future = validateCapturedTimes(night, new Date("2026-10-18T05:00:00Z"), new Date("2026-10-18T13:00:00Z"), {
+      now: new Date("2026-10-18T10:00:00Z"),
+      tz: MAZ,
+    });
+    expect(future).toEqual({ message: FUTURE_TIME_MESSAGE, fieldErrors: { check_out: "No puede ser una hora futura." } });
+  });
+
+  it("edición: sin cambios en fecha y horas se conserva el horario guardado (también si dura más de 24 h)", () => {
+    const same = resolveEditedSchedule(night, { date: "2026-10-17", start_time: "22:00", end_time: "06:00" }, MAZ, MAZ);
+    expect(same.changed).toBe(false);
+    expect(same.startsAt.toISOString()).toBe("2026-10-18T05:00:00.000Z");
+
+    const long = { starts_at: "2026-10-18T05:00:00Z", ends_at: "2026-10-19T11:00:00Z" }; // 30 h
+    const split = splitShiftTimes(long.starts_at, long.ends_at, MAZ);
+    const kept = resolveEditedSchedule(long, { date: split.date, start_time: split.startTime, end_time: split.endTime }, MAZ, MAZ);
+    expect(kept.changed).toBe(false);
+    expect(kept.endsAt.toISOString()).toBe("2026-10-19T11:00:00.000Z");
+
+    const moved = resolveEditedSchedule(night, { date: "2026-10-17", start_time: "21:00", end_time: "06:00" }, MAZ, MAZ);
+    expect(moved.changed).toBe(true);
+    expect(moved.startsAt.toISOString()).toBe("2026-10-18T04:00:00.000Z");
+
+    // Otra sede con otra zona: se reinterpreta en la zona nueva.
+    const otherZone = resolveEditedSchedule(night, { date: "2026-10-17", start_time: "22:00", end_time: "06:00" }, MAZ, BAH);
+    expect(otherZone.changed).toBe(true);
+    expect(otherZone.startsAt.toISOString()).toBe("2026-10-18T04:00:00.000Z");
+  });
+
+  it("sustitución visible: «Cubre a <nombre>»", () => {
+    expect(coverLabel({ full_name: "Ana López" }, "w1")).toBe("Cubre a Ana López");
+    expect(coverLabel(null, "w1")).toBe("Cubre a una persona no visible para tu cuenta");
+    expect(coverLabel(null, null)).toBeNull();
   });
 });

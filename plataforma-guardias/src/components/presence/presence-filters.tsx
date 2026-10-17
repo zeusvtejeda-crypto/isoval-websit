@@ -2,6 +2,7 @@ import Form from "next/form";
 import Link from "next/link";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/form";
+import { allFacilitiesLabel } from "@/lib/presence/board";
 import { SHIFT_PERIOD_FILTERS, SHIFT_PERIOD_LABELS, type ShiftPeriodFilter } from "@/lib/presence/periods";
 
 /** Filtros GET del tablero «Quién está aquí» (funciona también sin JavaScript). */
@@ -11,18 +12,21 @@ export function PresenceFilters({
   day,
   period,
   facilityHint,
+  isAdmin,
 }: {
   facilities: { id: string; official_name: string }[];
   facilityId: string | null;
   day: string;
   period: ShiftPeriodFilter;
   facilityHint?: string;
+  /** Administración ve todas las sedes; coordinación y auditoría, solo las asignadas. */
+  isAdmin: boolean;
 }) {
   return (
     <Form action="/en-servicio" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1.4fr_auto] lg:items-end">
       <Field label="Sede" htmlFor="sede" hint={facilityHint}>
         <Select id="sede" name="sede" defaultValue={facilityId ?? ""}>
-          <option value="">Todas mis sedes</option>
+          <option value="">{allFacilitiesLabel(isAdmin)}</option>
           {facilities.map((f) => (
             <option key={f.id} value={f.id}>
               {f.official_name}

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ATTENDANCE_STATUS_TONE } from "@/lib/attendance/labels";
 import { formatDuration } from "@/lib/time";
-import type { ReportRow } from "@/lib/reports/rows";
+import { GAP_LABEL } from "@/lib/reports/document";
+import type { Justification, ReportRow } from "@/lib/reports/rows";
 import { Badge } from "@/components/ui/badge";
 import { Table, Td, Th } from "@/components/ui/table";
 
@@ -16,6 +17,24 @@ function YesNo({ value, tone = "neutral" }: { value: boolean; tone?: "neutral" |
     </Badge>
   ) : (
     <span className="text-gray-500">No</span>
+  );
+}
+
+/** Justificaciones registradas por coordinación (incident_notes) de una asignación. */
+function Justifications({ items }: { items: Justification[] }) {
+  return (
+    <ul className="space-y-1">
+      {items.map((j) => (
+        <li key={j.type}>
+          <span className="font-medium text-gray-900">
+            {j.label}
+            {j.stale ? " (ya no se calcula)" : ""}
+          </span>
+          {j.justified ? "" : <span className="text-gray-600"> · Nota sin justificar</span>}
+          <span className="block text-gray-800">{j.note}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -77,6 +96,10 @@ export function ReportTable({ rows, workerHref }: { rows: ReportRow[]; workerHre
                 <dt className="text-gray-600">Salida anticipada</dt>
                 <dd className="font-semibold">{minutesOrDash(r.earlyLeaveMinutes)}</dd>
               </div>
+              <div className="col-span-2">
+                <dt className="text-gray-600">{GAP_LABEL}</dt>
+                <dd className="font-semibold">{formatDuration(r.gapMinutes)}</dd>
+              </div>
             </dl>
             <ul className="mt-3 flex flex-wrap gap-2" aria-label="Señales">
               {r.substitution ? (
@@ -100,6 +123,12 @@ export function ReportTable({ rows, workerHref }: { rows: ReportRow[]; workerHre
                 </li>
               ) : null}
             </ul>
+            {r.justifications.length ? (
+              <div className="mt-3 text-sm">
+                <p className="font-medium text-gray-600">Justificación</p>
+                <Justifications items={r.justifications} />
+              </div>
+            ) : null}
             <Link href={`/guardias/${r.shiftId}`} className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-800 underline underline-offset-2">
               Ver guardia
             </Link>
@@ -120,6 +149,10 @@ export function ReportTable({ rows, workerHref }: { rows: ReportRow[]; workerHre
             <Th className="text-right">Dentro del horario</Th>
             <Th className="text-right">Fuera del horario</Th>
             <Th className="text-right">Total</Th>
+            <Th className="text-right">
+              Tiempo entre salida y regreso{" "}
+              <span className="block text-xs font-normal">(no cuenta)</span>
+            </Th>
             <Th className="text-right">Diferencia</Th>
             <Th className="text-right">Retraso</Th>
             <Th className="text-right">Salida anticipada</Th>
@@ -130,6 +163,7 @@ export function ReportTable({ rows, workerHref }: { rows: ReportRow[]; workerHre
             <Th>Sustitución</Th>
             <Th>Corrección</Th>
             <Th>Registro incompleto</Th>
+            <Th>Justificación</Th>
             <Th>
               <span className="sr-only">Acciones</span>
             </Th>
@@ -158,6 +192,7 @@ export function ReportTable({ rows, workerHref }: { rows: ReportRow[]; workerHre
               <Td className="whitespace-nowrap text-right">{formatDuration(r.withinScheduleMinutes)}</Td>
               <Td className="whitespace-nowrap text-right">{formatDuration(r.outsideScheduleMinutes)}</Td>
               <Td className="whitespace-nowrap text-right font-semibold">{formatDuration(r.totalMinutes)}</Td>
+              <Td className="whitespace-nowrap text-right">{formatDuration(r.gapMinutes)}</Td>
               <Td className="whitespace-nowrap text-right">{formatDuration(r.differenceMinutes)}</Td>
               <Td className="whitespace-nowrap text-right">{minutesOrDash(r.lateMinutes)}</Td>
               <Td className="whitespace-nowrap text-right">{minutesOrDash(r.earlyLeaveMinutes)}</Td>
@@ -171,6 +206,9 @@ export function ReportTable({ rows, workerHref }: { rows: ReportRow[]; workerHre
               </Td>
               <Td>
                 <YesNo value={r.incomplete} tone="warning" />
+              </Td>
+              <Td className="min-w-56 text-sm">
+                {r.justifications.length ? <Justifications items={r.justifications} /> : <span className="text-gray-500">—</span>}
               </Td>
               <Td className="whitespace-nowrap">
                 <Link href={`/guardias/${r.shiftId}`} className="inline-flex min-h-11 items-center font-semibold text-brand-800 underline underline-offset-2">

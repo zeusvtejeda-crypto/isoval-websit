@@ -37,6 +37,10 @@ src/
     import/parse.ts   lectura CSV/XLSX
     time.ts           zonas horarias y formatos
     actions.ts        ActionResult y friendlyDbError
+    reason.ts         clearStoredReason (motivos repetidos en la bitácora)
+    security/         safe-next (redirecciones), rate-limit (intentos de login)
+    directory/        búsqueda, íconos de categoría, municipios repetidos
+    admin/            etiquetas de bitácora, contraseñas temporales, catálogos
 supabase/
   migrations/         esquema, RLS, funciones (fuente de verdad)
   seeds/demo.sql      DATOS DE DEMOSTRACIÓN (solo local)
@@ -51,6 +55,17 @@ tests/unit tests/db tests/e2e
 4. **Directorio público**: solo `public_facilities`. Nunca trabajadores, teléfonos personales ni guardias.
 5. `worker_private` (número de trabajador, teléfono) solo donde sea necesario y permitido; auditoría no lo ve.
 6. Ninguna clave secreta con prefijo `NEXT_PUBLIC_`.
+7. **Separación de funciones**: nadie salvo administración corrige, agrega, anula o revisa su propia asistencia (la BD lo impide; la interfaz oculta esas acciones).
+8. Una entrada abierta más allá del término + margen no se cierra con la hora actual: se corrige con la hora real.
+9. El estado de una asignación solo cambia con `set_assignment_status`; `is_demo` y `created_by` solo los cambia administración.
+
+## Motivo de cambio y bitácora
+
+Las tablas principales tienen `change_reason`; los triggers copian el motivo a `audit_log`. Si el motivo nuevo es igual al guardado, `touch_row` lo anula para no arrastrar motivos viejos: llama `clearStoredReason()` antes de escribir un motivo.
+
+## Páginas generales
+
+`app/not-found.tsx`, `app/error.tsx` y `app/global-error.tsx` (en español). Cada sección privada tiene su `loading.tsx`/`error.tsx`; `(app)/error.tsx` es el respaldo.
 
 ## Tiempo
 

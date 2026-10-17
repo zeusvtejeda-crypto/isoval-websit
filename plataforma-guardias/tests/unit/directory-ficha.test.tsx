@@ -14,6 +14,7 @@ vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND");
   },
+  unstable_rethrow: () => {},
 }));
 vi.mock("next/dynamic", () => ({
   default: () =>
@@ -23,10 +24,21 @@ vi.mock("next/dynamic", () => ({
 }));
 const data = vi.hoisted(() => ({ current: null as FacilityDetailData | null }));
 vi.mock("@/lib/directory/queries", () => ({ loadFacilityDetail: async () => data.current }));
+// Sesión: null = visitante; "error" = la consulta de sesión falla.
+const session = vi.hoisted(() => ({ current: null as null | "error" | { role: string; isAdmin: boolean } }));
+vi.mock("@/lib/auth", () => ({
+  getSessionUser: async () => {
+    if (session.current === "error") throw new Error("Sin conexión con Auth");
+    return session.current;
+  },
+}));
 
 import FichaInstalacionPage from "@/app/directorio/[id]/page";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  session.current = null;
+});
 
 const ID = "d0000000-0000-4000-8000-000000000001";
 
@@ -58,9 +70,9 @@ function detail(overrides: Partial<FacilityDetailData["facility"]> = {}): Facili
       updatedAt: "2026-10-17T05:00:00Z",
       ...overrides,
     },
-    category: { id: 1, slug: "hospitales", name: "Hospitales", color: "#14532d", active: true },
+    category: { id: 1, slug: "hospitales", name: "Hospitales", color: "#14532d", icon: "hospital", active: true },
     state: { id: 18, name: "Nayarit", abbreviation: "NAY" },
-    municipality: { id: 17, stateId: 18, name: "Tepic" },
+    municipality: { id: 17, stateId: 18, name: "Tepic", inegiCode: "017", label: "Tepic" },
   };
 }
 
@@ -128,6 +140,44 @@ describe("Ficha pública de instalación", () => {
       encodeURIComponent("Domicilio de demostración 100, Tepic, Nayarit, México"),
     );
     expect(screen.queryByTestId("mapa")).not.toBeInTheDocument();
+  });
+
+  it("muestra el ícono de la categoría en la etiqueta", async () => {
+    data.current = detail();
+    await renderFicha();
+    const header = screen.getByRole("heading", { level: 1 }).closest("header")!;
+    expect(header.querySelector('svg[data-icon="hospital"]')).not.toBeNull();
+    expect(within(header).getByText("Hospitales")).toBeInTheDocument();
+  });
+
+  it("distingue con la clave INEGI un municipio de nombre repetido", async () => {
+    data.current = {
+      ...detail(),
+      state: { id: 20, name: "Oaxaca", abbreviation: "OAX" },
+      municipality: { id: 900, stateId: 20, name: "San Juan Mixtepec", inegiCode: "208", label: "San Juan Mixtepec (clave INEGI 208)" },
+    };
+    await renderFicha();
+    expect(screen.getByText("San Juan Mixtepec (clave INEGI 208)")).toBeInTheDocument();
+  });
+
+  it("muestra «Editar instalación» solo con sesión de administración", async () => {
+    data.current = detail();
+    session.current = { role: "admin", isAdmin: true };
+    await renderFicha();
+    expect(screen.getByRole("link", { name: "Editar instalación" })).toHaveAttribute(
+      "href",
+      `/administracion/instalaciones/${ID}/editar`,
+    );
+    cleanup();
+
+    for (const value of [null, { role: "coordinador", isAdmin: false }, { role: "auditor", isAdmin: false }, "error"] as const) {
+      session.current = value;
+      await renderFicha();
+      expect(screen.queryByRole("link", { name: "Editar instalación" })).not.toBeInTheDocument();
+      // La ficha pública se muestra igual aunque falle la consulta de sesión.
+      expect(screen.getByRole("heading", { level: 1, name: "[DEMO] Hospital de demostración A" })).toBeInTheDocument();
+      cleanup();
+    }
   });
 
   it("responde «no encontrado» si la instalación no es pública", async () => {

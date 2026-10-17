@@ -542,7 +542,7 @@ export const CATEGORY_ICONS = [
   { value: "building", label: "Edificio" },
   { value: "hospital", label: "Hospital" },
   { value: "stethoscope", label: "Consultorio (estetoscopio)" },
-  { value: "cross", label: "Cruz médica" },
+  { value: "cross", label: "Unidad médica (corazón con pulso)" },
   { value: "ambulance", label: "Ambulancia / urgencias" },
   { value: "pill", label: "Farmacia" },
   { value: "flask", label: "Laboratorio" },

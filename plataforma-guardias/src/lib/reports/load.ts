@@ -1,11 +1,14 @@
 import "server-only";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import { loadShiftsWithAttendance, type ShiftWithAttendance } from "@/lib/attendance/load";
-import { chunk } from "@/lib/data/fetch-all";
+import { chunk, fetchAll } from "@/lib/data/fetch-all";
+import type { Database } from "@/lib/types/database";
 import { DEFAULT_TIMEZONE, dayRangeUtc } from "@/lib/time";
 import type { FilterLabels } from "./document";
 import type { ReportFilters } from "./params";
-import { buildReportRows, type ReportRow } from "./rows";
+import { attachIncidentNotes, buildReportRows, type ReportRow } from "./rows";
+
+export type IncidentNoteRow = Database["public"]["Tables"]["incident_notes"]["Row"];
 
 const DAY_MS = 86_400_000;
 
@@ -21,7 +24,12 @@ export type LoadedReport = {
  * la fecha LOCAL de inicio de cada guardia (zona de su sede). Solo guardias ya
  * iniciadas.
  */
-export async function loadReport(supabase: ServerSupabase, filters: ReportFilters, now: Date = new Date()): Promise<LoadedReport> {
+export async function loadReport(
+  supabase: ServerSupabase,
+  filters: ReportFilters,
+  now: Date = new Date(),
+  options: { withIncidentNotes?: boolean } = {},
+): Promise<LoadedReport> {
   const from = new Date(dayRangeUtc(filters.desde, DEFAULT_TIMEZONE).start.getTime() - DAY_MS);
   const rangeEnd = dayRangeUtc(filters.hasta, DEFAULT_TIMEZONE).end.getTime() + DAY_MS;
   // Las guardias que aún no inician no forman parte del historial.
@@ -43,10 +51,29 @@ export async function loadReport(supabase: ServerSupabase, filters: ReportFilter
     hasta: filters.hasta,
     workerId: filters.workerId,
     attendance: filters.attendance,
+    incident: filters.incident,
     onlyStarted: true,
     now,
   });
-  return { rows, shifts };
+  if (!options.withIncidentNotes || rows.length === 0) return { rows, shifts };
+  const notes = await loadIncidentNotes(supabase, rows.map((r) => r.assignmentId));
+  return { rows: attachIncidentNotes(rows, notes), shifts };
+}
+
+/**
+ * Justificaciones de incidencias (incident_notes) de las asignaciones dadas,
+ * con el cliente del usuario: RLS deja ver las de las sedes del alcance y las
+ * de las guardias propias.
+ */
+export async function loadIncidentNotes(supabase: ServerSupabase, assignmentIds: string[]): Promise<IncidentNoteRow[]> {
+  const out: IncidentNoteRow[] = [];
+  for (const batch of chunk([...new Set(assignmentIds)])) {
+    const rows = await fetchAll<IncidentNoteRow>((from, to) =>
+      supabase.from("incident_notes").select("*").in("assignment_id", batch).order("created_at").order("id").range(from, to),
+    );
+    out.push(...rows);
+  }
+  return out;
 }
 
 /** Nombres de los filtros aplicados (lo que RLS permita leer). */

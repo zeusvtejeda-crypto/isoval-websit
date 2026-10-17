@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { canManageFacility, requireManager, type SessionUser } from "@/lib/auth";
 import { friendlyDbError, type ActionResult } from "@/lib/actions";
 import { createClient } from "@/lib/supabase/server";
+import { clearStoredReason } from "@/lib/reason";
+import { ASSIGNMENT_STATUS_LABELS } from "@/lib/attendance/labels";
 import { localDateTimeToUtc } from "@/lib/shifts/dates";
+import { OWN_RECORD_DB_MESSAGE, isOwnRecordLocked, validateCapturedTimes } from "@/lib/shifts/rules";
 import { getAssignmentContext, getSessionContext, getShiftContext, type ShiftContext } from "@/lib/shifts/queries";
 import {
   addAssignmentSchema,
@@ -29,6 +32,11 @@ function ensureManage(user: SessionUser, ctx: ShiftContext | null): ActionResult
   if (!ctx) return { ok: false, message: "La guardia o el registro no existe, o no tienes acceso." };
   if (!canManageFacility(user, ctx.shift.facility_id)) return NO_ACCESS;
   return null;
+}
+
+/** Separación de funciones (la BD también lo exige): nadie salvo administración toca su propia asistencia. */
+function ensureNotOwn(user: SessionUser, workerId: string): ActionResult | null {
+  return isOwnRecordLocked(user, workerId) ? { ok: false, message: OWN_RECORD_DB_MESSAGE } : null;
 }
 
 /** Agregar una persona a la guardia. */
@@ -105,7 +113,10 @@ export async function removeAssignment(_prev: ActionResult | null, formData: For
     };
   }
 
-  // El motivo se guarda antes de borrar para que la bitácora lo conserve.
+  // El motivo se guarda antes de borrar para que la bitácora lo conserve
+  // (limpiando antes el guardado, para que un motivo repetido no se pierda).
+  const cleared = await clearStoredReason(supabase, "shift_assignments", assignment_id);
+  if (cleared) return { ok: false, message: friendlyDbError(cleared, "No se pudo quitar la asignación.") };
   const { error: reasonError } = await supabase.from("shift_assignments").update({ change_reason: reason }).eq("id", assignment_id);
   if (reasonError) return { ok: false, message: friendlyDbError(reasonError, "No se pudo quitar la asignación.") };
   const { error } = await supabase.from("shift_assignments").delete().eq("id", assignment_id);
@@ -126,6 +137,8 @@ export async function changeAssignmentStatus(_prev: ActionResult | null, formDat
   const ctx = await getAssignmentContext(supabase, assignment_id);
   const denied = ensureManage(user, ctx);
   if (denied || !ctx) return denied ?? NO_ACCESS;
+  const own = ensureNotOwn(user, ctx.assignment.worker_id);
+  if (own) return own;
   if (ctx.assignment.status === status) return { ok: false, message: "La asignación ya tiene ese estado." };
 
   const { error } = await supabase.rpc("set_assignment_status", { p_assignment_id: assignment_id, p_status: status, p_reason: reason });
@@ -146,6 +159,8 @@ export async function correctSession(_prev: ActionResult | null, formData: FormD
   const ctx = await getSessionContext(supabase, v.session_id);
   const denied = ensureManage(user, ctx);
   if (denied || !ctx) return denied ?? NO_ACCESS;
+  const own = ensureNotOwn(user, ctx.session.worker_id);
+  if (own) return own;
   if (ctx.session.record_status !== "vigente") return { ok: false, message: "Solo se corrige la versión vigente del registro." };
 
   const checkIn = localDateTimeToUtc(v.check_in, ctx.timezone);
@@ -157,6 +172,8 @@ export async function correctSession(_prev: ActionResult | null, formData: FormD
   if (checkOut && checkOut <= checkIn) {
     return { ok: false, message: "La salida debe ser posterior a la entrada.", fieldErrors: { check_out: "Debe ser posterior a la entrada." } };
   }
+  const outOfRange = validateCapturedTimes(ctx.shift, checkIn, checkOut, { now: new Date(), tz: ctx.timezone });
+  if (outOfRange) return { ok: false, ...outOfRange };
 
   const { error } = await supabase.rpc("correct_attendance", {
     p_session_id: v.session_id,
@@ -183,6 +200,9 @@ export async function voidSession(_prev: ActionResult | null, formData: FormData
   const ctx = await getSessionContext(supabase, session_id);
   const denied = ensureManage(user, ctx);
   if (denied || !ctx) return denied ?? NO_ACCESS;
+  const own = ensureNotOwn(user, ctx.session.worker_id);
+  if (own) return own;
+  if (ctx.session.record_status !== "vigente") return { ok: false, message: "El registro ya no está vigente." };
 
   const { error } = await supabase.rpc("void_attendance", { p_session_id: session_id, p_reason: reason });
   if (error) return { ok: false, message: friendlyDbError(error, "No se pudo anular el registro.") };
@@ -204,6 +224,15 @@ export async function addManualSession(_prev: ActionResult | null, formData: For
   const ctx = await getAssignmentContext(supabase, v.assignment_id);
   const denied = ensureManage(user, ctx);
   if (denied || !ctx) return denied ?? NO_ACCESS;
+  const own = ensureNotOwn(user, ctx.assignment.worker_id);
+  if (own) return own;
+  if (ctx.shift.status === "cancelada") return { ok: false, message: "La guardia está cancelada: no se agregan registros." };
+  if (ctx.assignment.status !== "asignado") {
+    return {
+      ok: false,
+      message: `La asignación no está activa (${ASSIGNMENT_STATUS_LABELS[ctx.assignment.status]}). Para agregar registros, vuelve a ponerla como «Asignado».`,
+    };
+  }
 
   const checkIn = localDateTimeToUtc(v.check_in, ctx.timezone);
   const checkOut = localDateTimeToUtc(v.check_out, ctx.timezone);
@@ -217,6 +246,8 @@ export async function addManualSession(_prev: ActionResult | null, formData: For
   if (checkOut <= checkIn) {
     return { ok: false, message: "La salida debe ser posterior a la entrada.", fieldErrors: { check_out: "Debe ser posterior a la entrada." } };
   }
+  const outOfRange = validateCapturedTimes(ctx.shift, checkIn, checkOut, { now: new Date(), tz: ctx.timezone });
+  if (outOfRange) return { ok: false, ...outOfRange };
 
   const { data, error } = await supabase.rpc("add_manual_attendance", {
     p_assignment_id: v.assignment_id,
@@ -247,7 +278,10 @@ export async function saveIncidentNote(_prev: ActionResult | null, formData: For
   const ctx = await getAssignmentContext(supabase, v.assignment_id);
   const denied = ensureManage(user, ctx);
   if (denied || !ctx) return denied ?? NO_ACCESS;
+  const own = ensureNotOwn(user, ctx.assignment.worker_id);
+  if (own) return own;
 
+  // La sede y el autor los fija la BD (incident_note_fill); facility_id se envía porque la columna es obligatoria.
   const { error } = await supabase.from("incident_notes").upsert(
     {
       assignment_id: v.assignment_id,

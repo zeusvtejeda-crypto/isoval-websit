@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 import { canManageFacility, requireManager } from "@/lib/auth";
 import { friendlyDbError, type ActionResult } from "@/lib/actions";
 import { createClient } from "@/lib/supabase/server";
-import { buildShiftTimes } from "@/lib/shifts/dates";
-import { countAssignments, getShiftContext } from "@/lib/shifts/queries";
+import { clearStoredReason } from "@/lib/reason";
+import { buildShiftTimes, resolveEditedSchedule } from "@/lib/shifts/dates";
+import { countAssignments, countValidSessions, getShiftContext } from "@/lib/shifts/queries";
+import { FACILITY_LOCKED_NOTICE, SCHEDULE_LOCKED_NOTICE, isScheduleLocked } from "@/lib/shifts/rules";
 import { SHIFT_FORM_FIELDS, invalidResult, readForm, shiftFormSchema, shiftStatusSchema } from "@/lib/shifts/schemas";
 
 /** Alta o edición de una guardia. Al guardar redirige al detalle. */
@@ -29,18 +31,11 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
   if (facilityError) return { ok: false, message: friendlyDbError(facilityError) };
   if (!facility) return { ok: false, message: "La sede no existe o no está disponible.", fieldErrors: { facility_id: "Sede no disponible." } };
 
-  let times: ReturnType<typeof buildShiftTimes>;
-  try {
-    times = buildShiftTimes(v.date, v.start_time, v.end_time, facility.timezone);
-  } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Fecha u hora inválidas." };
-  }
-
   // Edición: la guardia debe existir, ser visible y gestionable.
+  const current = v.id ? await getShiftContext(supabase, v.id) : null;
   let existingResponsible: string | null = null;
   let facilityChanged = false;
   if (v.id) {
-    const current = await getShiftContext(supabase, v.id);
     if (!current) return { ok: false, message: "La guardia no existe o no tienes acceso." };
     if (!canManageFacility(user, current.shift.facility_id)) {
       return { ok: false, message: "No puedes editar guardias de esa sede." };
@@ -48,19 +43,34 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
     if (current.shift.facility_id !== v.facility_id) {
       facilityChanged = true;
       if (!facility.active) return { ok: false, message: "La sede elegida no está activa." };
+      // La BD también lo impide (guard_protected_columns).
       const assigned = await countAssignments(supabase, v.id);
       if (assigned > 0) {
-        return {
-          ok: false,
-          message: "No se puede cambiar la sede de una guardia que ya tiene asignaciones. Crea una guardia nueva en la otra sede.",
-          fieldErrors: { facility_id: "La guardia ya tiene asignaciones." },
-        };
+        return { ok: false, message: FACILITY_LOCKED_NOTICE, fieldErrors: { facility_id: "La guardia ya tiene asignaciones." } };
       }
     }
     const { data: row } = await supabase.from("shifts").select("responsible_worker_id").eq("id", v.id).maybeSingle();
     existingResponsible = row?.responsible_worker_id ?? null;
   } else if (!facility.active) {
     return { ok: false, message: "La sede no está activa." };
+  }
+
+  let startsAt: Date;
+  let endsAt: Date;
+  try {
+    if (current) {
+      // Sin cambios en fecha y horas se conserva el horario guardado.
+      const schedule = resolveEditedSchedule(current.shift, v, current.timezone, facility.timezone);
+      if (schedule.changed && !user.isAdmin && isScheduleLocked(user, await countValidSessions(supabase, current.shift.id))) {
+        // La BD también lo impide (guard_protected_columns).
+        return { ok: false, message: SCHEDULE_LOCKED_NOTICE, fieldErrors: { date: "Conserva la fecha y las horas guardadas." } };
+      }
+      ({ startsAt, endsAt } = schedule);
+    } else {
+      ({ startsAt, endsAt } = buildShiftTimes(v.date, v.start_time, v.end_time, facility.timezone));
+    }
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Fecha u hora inválidas." };
   }
 
   // Responsable: trabajador activo de la sede (se respeta el actual si no cambió
@@ -86,8 +96,8 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
     facility_id: v.facility_id,
     title: v.title ?? null,
     meeting_point: v.meeting_point,
-    starts_at: times.startsAt.toISOString(),
-    ends_at: times.endsAt.toISOString(),
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
     responsible_worker_id: responsible,
     min_staff: v.min_staff,
     max_staff: v.max_staff ?? null,
@@ -96,6 +106,9 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
 
   let shiftId: string;
   if (v.id) {
+    // Un motivo igual al guardado se perdería en la bitácora: se limpia antes.
+    const cleared = await clearStoredReason(supabase, "shifts", v.id);
+    if (cleared) return { ok: false, message: friendlyDbError(cleared, "No se pudo guardar la guardia.") };
     const { error } = await supabase
       .from("shifts")
       .update({ ...values, change_reason: v.change_reason ?? null })
@@ -144,6 +157,8 @@ export async function setShiftStatus(_prev: ActionResult | null, formData: FormD
     status === "cancelada"
       ? { status, cancel_reason: reason, change_reason: reason }
       : { status, cancel_reason: null, change_reason: reason };
+  const cleared = await clearStoredReason(supabase, "shifts", shift_id);
+  if (cleared) return { ok: false, message: friendlyDbError(cleared, "No se pudo cambiar el estado de la guardia.") };
   const { error } = await supabase.from("shifts").update(update).eq("id", shift_id);
   if (error) return { ok: false, message: friendlyDbError(error, "No se pudo cambiar el estado de la guardia.") };
 

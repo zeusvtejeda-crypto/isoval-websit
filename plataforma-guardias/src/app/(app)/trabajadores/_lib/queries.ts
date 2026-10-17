@@ -2,7 +2,7 @@ import "server-only";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
 import { canManageFacility, type AppRole, type SessionUser } from "@/lib/auth";
-import { getFacilityOptions, getMunicipalities, getStates, type FacilityOption, type Municipality, type State } from "@/lib/data/catalogs";
+import { getFacilityOptions, getMunicipalities, labelRepeatedMunicipalities, getStates, type FacilityOption, type Municipality, type State } from "@/lib/data/catalogs";
 import {
   NO_FACILITY,
   buildSearchPattern,
@@ -211,7 +211,7 @@ export async function getWorkerFormCatalogs(
 ): Promise<WorkerFormCatalogs> {
   const [states, municipalities, facilities] = await Promise.all([
     getStates(supabase),
-    getMunicipalities(supabase),
+    getMunicipalities(supabase).then(labelRepeatedMunicipalities),
     getManageableFacilityOptions(supabase, user),
   ]);
   if (currentFacility && !facilities.some((f) => f.id === currentFacility.id) && canManageFacility(user, currentFacility.id)) {

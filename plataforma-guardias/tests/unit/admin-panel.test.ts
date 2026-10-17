@@ -8,6 +8,7 @@ describe("adminPanelCards", () => {
     expect(titles("admin")).toEqual([
       "Instalaciones",
       "Categorías",
+      "Catálogos geográficos",
       "Importar instalaciones",
       "Importar trabajadores",
       "Usuarios y permisos",
@@ -19,6 +20,7 @@ describe("adminPanelCards", () => {
     expect(hrefs).toContain("/administracion/instalaciones/importar");
     expect(hrefs).toContain("/trabajadores/importar");
     expect(hrefs).toContain("/correcciones");
+    expect(hrefs).toContain("/administracion/catalogos");
   });
 
   it("coordinación ve correcciones, importación de trabajadores y bitácora de sus sedes", () => {
@@ -26,6 +28,7 @@ describe("adminPanelCards", () => {
     const bitacora = adminPanelCards("coordinador").find((c) => c.key === "bitacora");
     expect(bitacora?.description).toMatch(/tus sedes/);
     expect(adminPanelCards("coordinador").some((c) => c.href.startsWith("/administracion/usuarios"))).toBe(false);
+    expect(adminPanelCards("coordinador").some((c) => c.href.startsWith("/administracion/catalogos"))).toBe(false);
   });
 
   it("auditoría solo ve la bitácora", () => {

@@ -4,7 +4,7 @@ import { requireStaff, ROLE_LABELS } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { loadShiftsWithAttendance } from "@/lib/attendance/load";
 import { friendlyDbError } from "@/lib/actions";
-import { summarizeHome } from "@/lib/presence/home";
+import { guardiasQuickLinkDescription, summarizeHome } from "@/lib/presence/home";
 import { PRESENCE_DISCLAIMER } from "@/lib/presence/texts";
 import { addDays } from "@/lib/presence/periods";
 import { DEFAULT_TIMEZONE, formatLongDate, todayInTz } from "@/lib/time";
@@ -133,7 +133,7 @@ export default async function InicioPage() {
       <Card>
         <CardHeader title="Accesos rápidos" />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <QuickLink href="/guardias" title="Guardias" description="Programar, asignar y revisar guardias" />
+          <QuickLink href="/guardias" title="Guardias" description={guardiasQuickLinkDescription(user.canManage)} />
           <QuickLink href="/en-servicio" title="En servicio" description="Quién está aquí ahora" />
           <QuickLink href="/historial" title="Historial" description="Reportes y exportaciones" />
           {user.canManage ? <QuickLink href="/correcciones" title="Correcciones" description="Solicitudes de corrección de registros" /> : null}

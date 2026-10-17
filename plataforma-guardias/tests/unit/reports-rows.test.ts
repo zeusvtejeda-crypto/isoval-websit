@@ -3,10 +3,20 @@ import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { inflateSync } from "node:zlib";
 import { summarizeAttendance, type AssignmentStatus, type SessionInput, type ShiftStatus } from "@/lib/attendance/calc";
-import type { AssignmentRow, ShiftRow, ShiftWithAttendance } from "@/lib/attendance/load";
-import { buildReportRows, reportTotals, summarizeBy, timeRangeLabel } from "@/lib/reports/rows";
+import type { AssignmentRow, SessionRow, ShiftRow, ShiftWithAttendance } from "@/lib/attendance/load";
+import {
+  attachIncidentNotes,
+  buildReportRows,
+  justificationText,
+  reportTotals,
+  sessionObservations,
+  summarizeBy,
+  timeRangeLabel,
+  type IncidentNoteLite,
+} from "@/lib/reports/rows";
 import {
   DETAIL_COLUMNS,
+  GAP_LABEL,
   buildReportDocument,
   contentDisposition,
   describeFilters,
@@ -20,7 +30,7 @@ import {
 } from "@/lib/reports/document";
 import { renderXlsx } from "@/lib/reports/xlsx";
 import { renderPdf } from "@/lib/reports/pdf";
-import type { ReportFilters } from "@/lib/reports/params";
+import type { IncidentFilter, ReportFilters } from "@/lib/reports/params";
 
 // ---------------------------------------------------------------------------
 // Datos de prueba: mismo cálculo que la aplicación (summarizeAttendance).
@@ -39,6 +49,8 @@ type AssignmentFixture = {
   status?: AssignmentStatus;
   substituteFor?: { id: string; full_name: string } | null;
   sessions?: Array<Omit<SessionInput, "id">>;
+  /** Notas de cada sesión (mismo índice que `sessions`). */
+  sessionNotes?: Array<string | null>;
 };
 
 let seq = 0;
@@ -91,6 +103,30 @@ function makeShift(options: {
       updated_at: options.startsAt,
     };
     const sessions: SessionInput[] = (a.sessions ?? []).map((s, i) => ({ ...s, id: `${a.id}-${i}` }));
+    const sessionRows: SessionRow[] = sessions.map((s, i) => ({
+      id: s.id,
+      assignment_id: a.id,
+      shift_id: shiftId,
+      worker_id: a.workerId,
+      facility_id: options.facility.id,
+      check_in_at: new Date(s.checkInAt).toISOString(),
+      check_in_by: "u-demo",
+      check_in_method: s.checkInMethod ?? "propio",
+      check_in_reason: null,
+      check_in_request_id: `${s.id}-in`,
+      check_out_at: s.checkOutAt ? new Date(s.checkOutAt).toISOString() : null,
+      check_out_by: s.checkOutAt ? "u-demo" : null,
+      check_out_method: s.checkOutAt ? (s.checkOutMethod ?? "propio") : null,
+      check_out_reason: null,
+      check_out_request_id: s.checkOutAt ? `${s.id}-out` : null,
+      created_at: new Date(s.checkInAt).toISOString(),
+      notes: a.sessionNotes?.[i] ?? null,
+      record_status: s.recordStatus ?? "vigente",
+      status_changed_at: null,
+      status_changed_by: null,
+      status_reason: null,
+      supersedes_id: s.supersedesId ?? null,
+    }));
     const summary = summarizeAttendance(
       { startsAt: options.startsAt, endsAt: options.endsAt, status: shift.status },
       { status: assignment.status, substituteForWorkerId: assignment.substitute_for_worker_id },
@@ -101,7 +137,7 @@ function makeShift(options: {
       assignment,
       worker: { id: a.workerId, full_name: a.workerName, internal_code: `TRA-${a.id}`, area: null, position: null, facility_id: options.facility.id },
       substituteFor: a.substituteFor ?? null,
-      sessions: [],
+      sessions: sessionRows,
       summary,
     };
   });
@@ -305,6 +341,166 @@ describe("buildReportRows: totales y estados", () => {
   });
 });
 
+describe("buildReportRows: filtro por incidencia", () => {
+  const shift = makeShift({
+    facility: FAC_A,
+    startsAt: "2026-10-16T15:00:00Z", // 08:00–16:00 Mazatlán
+    endsAt: "2026-10-16T23:00:00Z",
+    now: NOW,
+    assignments: [
+      // Llegada tardía (20 min) y permanencia adicional (30 min).
+      { id: "t1", workerId: W1, workerName: "Ana", sessions: [{ checkInAt: "2026-10-16T15:20:00Z", checkOutAt: "2026-10-16T23:30:00Z" }] },
+      // Salida anticipada (1 h) y sustitución.
+      {
+        id: "t2",
+        workerId: W2,
+        workerName: "Beto",
+        substituteFor: { id: W3, full_name: "Carla" },
+        sessions: [{ checkInAt: "2026-10-16T14:55:00Z", checkOutAt: "2026-10-16T22:00:00Z" }],
+      },
+      // Sin incidencias.
+      { id: "t3", workerId: W3, workerName: "Carla", sessions: [{ checkInAt: "2026-10-16T14:58:00Z", checkOutAt: "2026-10-16T23:00:00Z" }] },
+    ],
+  });
+  const earlier = makeShift({
+    facility: FAC_B,
+    startsAt: "2026-10-15T14:00:00Z",
+    endsAt: "2026-10-15T22:00:00Z",
+    now: NOW,
+    assignments: [{ id: "t0", workerId: W3, workerName: "Carla", sessions: [{ checkInAt: "2026-10-15T14:40:00Z", checkOutAt: "2026-10-15T22:00:00Z" }] }],
+  });
+
+  it("deja solo las asignaciones con esa incidencia calculada", () => {
+    const ids = (incident: IncidentFilter | null) => buildReportRows([shift, earlier], { incident, now: NOW }).map((r) => r.assignmentId);
+    expect(ids("llegada_tardia")).toEqual(["t0", "t1"]);
+    expect(ids("permanencia_adicional")).toEqual(["t1"]);
+    expect(ids("salida_anticipada")).toEqual(["t2"]);
+    expect(ids("sustitucion")).toEqual(["t2"]);
+    expect(ids("correccion_administrativa")).toEqual([]);
+    expect(ids("registro_incompleto")).toEqual([]);
+    // Sin filtro: todas, con o sin incidencias.
+    expect(ids("")).toEqual(["t0", "t1", "t2", "t3"]);
+    expect(ids(null)).toEqual(["t0", "t1", "t2", "t3"]);
+  });
+
+  it("conserva el orden por fecha (nunca de «mejor» a «peor») y se combina con los demás filtros", () => {
+    const late = buildReportRows([shift, earlier], { incident: "llegada_tardia", now: NOW });
+    // t0 (15/oct) antes que t1 (16/oct) aunque t1 tenga menos retraso.
+    expect(late.map((r) => [r.assignmentId, r.lateMinutes])).toEqual([
+      ["t0", 40],
+      ["t1", 20],
+    ]);
+    expect(buildReportRows([shift, earlier], { incident: "llegada_tardia", workerId: W1, now: NOW }).map((r) => r.assignmentId)).toEqual(["t1"]);
+    expect(buildReportRows([shift, earlier], { incident: "llegada_tardia", desde: "2026-10-16", now: NOW }).map((r) => r.assignmentId)).toEqual(["t1"]);
+    expect(buildReportRows([shift, earlier], { incident: "llegada_tardia", attendance: "cancelada", now: NOW })).toEqual([]);
+  });
+
+  it("filtra registros incompletos y correcciones administrativas", () => {
+    const mixed = makeShift({
+      facility: FAC_A,
+      startsAt: "2026-10-17T15:00:00Z",
+      endsAt: "2026-10-17T23:00:00Z",
+      now: NOW,
+      assignments: [
+        { id: "m1", workerId: W1, workerName: "Ana", sessions: [{ checkInAt: "2026-10-17T15:00:00Z", checkOutAt: null }] },
+        {
+          id: "m2",
+          workerId: W2,
+          workerName: "Beto",
+          sessions: [{ checkInAt: "2026-10-17T15:00:00Z", checkOutAt: "2026-10-17T23:00:00Z", checkInMethod: "correccion", checkOutMethod: "correccion" }],
+        },
+      ],
+    });
+    expect(buildReportRows([mixed], { incident: "registro_incompleto", now: NOW }).map((r) => r.assignmentId)).toEqual(["m1"]);
+    expect(buildReportRows([mixed], { incident: "correccion_administrativa", now: NOW }).map((r) => r.assignmentId)).toEqual(["m2"]);
+  });
+});
+
+describe("buildReportRows: tiempo entre salida y regreso, observaciones y justificaciones", () => {
+  const shift = makeShift({
+    facility: FAC_A,
+    startsAt: "2026-10-16T15:00:00Z", // 08:00–16:00 Mazatlán
+    endsAt: "2026-10-16T23:00:00Z",
+    now: NOW,
+    assignments: [
+      {
+        id: "g1",
+        workerId: W1,
+        workerName: "Ana",
+        // 08:00–12:00 y 13:00–16:00: sale 1 h y regresa (no cuenta).
+        sessions: [
+          { checkInAt: "2026-10-16T15:00:00Z", checkOutAt: "2026-10-16T19:00:00Z" },
+          { checkInAt: "2026-10-16T20:00:00Z", checkOutAt: "2026-10-16T23:00:00Z" },
+          // Versión corregida (no vigente): ni suma ni aporta observaciones.
+          { checkInAt: "2026-10-16T19:30:00Z", checkOutAt: "2026-10-16T19:45:00Z", recordStatus: "corregido" },
+        ],
+        sessionNotes: ["Salida a comer", "  Regreso por acceso norte  ", "Nota de una versión corregida"],
+      },
+      { id: "g2", workerId: W2, workerName: "Beto", sessions: [{ checkInAt: "2026-10-16T15:20:00Z", checkOutAt: "2026-10-16T23:00:00Z" }] },
+    ],
+  });
+  const rows = buildReportRows([shift], { now: NOW });
+  const g1 = rows.find((r) => r.assignmentId === "g1")!;
+  const g2 = rows.find((r) => r.assignmentId === "g2")!;
+
+  it("copia gapMinutes del cálculo: el hueco no suma al total", () => {
+    expect(g1.gapMinutes).toBe(60);
+    expect(g1.totalMinutes).toBe(420);
+    expect(g1.withinScheduleMinutes).toBe(420);
+    expect(g2.gapMinutes).toBe(0);
+    const gap = DETAIL_COLUMNS.find((c) => c.key === "entre_salidas")!;
+    expect(gap.header).toBe(`${GAP_LABEL} (h)`);
+    expect(GAP_LABEL).toBe("Tiempo entre salida y regreso (no cuenta)");
+    expect(gap.pdf).toBe(true);
+    expect(xlsxCell(gap, g1)).toBe(1);
+    expect(pdfCell(gap, g1)).toBe("1:00");
+    expect(pdfCell(gap, g2)).toBe("0:00");
+  });
+
+  it("las observaciones son las notas de las sesiones vigentes, en orden", () => {
+    expect(g1.observations).toEqual(["Salida a comer", "Regreso por acceso norte"]);
+    expect(g2.observations).toEqual([]);
+    const obs = DETAIL_COLUMNS.find((c) => c.key === "observaciones")!;
+    expect(xlsxCell(obs, g1)).toBe("Salida a comer\nRegreso por acceso norte");
+    expect(xlsxCell(obs, g2)).toBeNull();
+    expect(pdfCell(obs, g2)).toBe("—");
+    // Sin repetir notas iguales; ignora vacías.
+    expect(
+      sessionObservations([
+        { notes: "Igual", record_status: "vigente", check_in_at: "2026-10-16T15:00:00Z" },
+        { notes: "Igual", record_status: "vigente", check_in_at: "2026-10-16T16:00:00Z" },
+        { notes: "   ", record_status: "vigente", check_in_at: "2026-10-16T17:00:00Z" },
+        { notes: "Anulada", record_status: "anulado", check_in_at: "2026-10-16T14:00:00Z" },
+      ]),
+    ).toEqual(["Igual"]);
+  });
+
+  it("agrega las justificaciones (incident_notes) por asignación, en el orden del catálogo", () => {
+    expect(g2.justifications).toEqual([]);
+    const notes: IncidentNoteLite[] = [
+      { assignment_id: "g2", incident_type: "salida_anticipada", note: "Ya no aplica", justified: false },
+      { assignment_id: "g2", incident_type: "llegada_tardia", note: " Tráfico en la carretera ", justified: true },
+      { assignment_id: "otra", incident_type: "llegada_tardia", note: "De otra asignación", justified: true },
+    ];
+    const withNotes = attachIncidentNotes(rows, notes);
+    expect(withNotes.find((r) => r.assignmentId === "g1")!.justifications).toEqual([]);
+    const j = withNotes.find((r) => r.assignmentId === "g2")!.justifications;
+    expect(j.map((x) => [x.type, x.note, x.justified, x.stale])).toEqual([
+      ["llegada_tardia", "Tráfico en la carretera", true, false],
+      // g2 no tiene salida anticipada calculada: se marca como «ya no se calcula».
+      ["salida_anticipada", "Ya no aplica", false, true],
+    ]);
+    expect(justificationText(j[0])).toBe("Llegada tardía: Tráfico en la carretera");
+    expect(justificationText(j[1])).toBe("Salida anticipada (ya no se calcula; nota sin justificar): Ya no aplica");
+    const col = DETAIL_COLUMNS.find((c) => c.key === "justificacion")!;
+    const row = withNotes.find((r) => r.assignmentId === "g2")!;
+    expect(xlsxCell(col, row)).toBe("Llegada tardía: Tráfico en la carretera\nSalida anticipada (ya no se calcula; nota sin justificar): Ya no aplica");
+    expect(pdfCell(col, withNotes.find((r) => r.assignmentId === "g1")!)).toBe("—");
+    // Sin notas no se copian las filas.
+    expect(attachIncidentNotes(rows, [])).toBe(rows);
+  });
+});
+
 // ---------------------------------------------------------------------------
 const FILTERS: ReportFilters = {
   desde: "2026-10-11",
@@ -313,6 +509,7 @@ const FILTERS: ReportFilters = {
   stateId: 18,
   workerId: W1,
   attendance: "",
+  incident: "",
 };
 
 describe("contenido de la exportación", () => {
@@ -335,6 +532,8 @@ describe("contenido de la exportación", () => {
     expect(lines).toContain("Estado (entidad): Nayarit");
     expect(lines).toContain("Trabajador: Ana (solo tus propios registros)");
     expect(lines).toContain("Estado de asistencia: Todos (sin cancelados)");
+    expect(lines).toContain("Incidencia: Cualquiera (con o sin incidencias)");
+    expect(describeFilters({ ...FILTERS, incident: "llegada_tardia" }, {})).toContain("Incidencia: Llegada tardía");
   });
 
   it("pdfSafe sustituye caracteres que la fuente del PDF no puede dibujar", () => {
@@ -349,7 +548,19 @@ describe("render de Excel y PDF", () => {
     startsAt: "2026-10-16T15:00:00Z",
     endsAt: "2026-10-16T23:00:00Z",
     now: NOW,
-    assignments: [{ id: "x1", workerId: W1, workerName: "Ana Peña", sessions: [{ checkInAt: "2026-10-16T15:20:00Z", checkOutAt: "2026-10-16T23:30:00Z" }] }],
+    assignments: [
+      {
+        id: "x1",
+        workerId: W1,
+        workerName: "Ana Peña",
+        // 08:20–12:00 y 12:45–16:30: 45 min entre salida y regreso (no cuentan).
+        sessions: [
+          { checkInAt: "2026-10-16T15:20:00Z", checkOutAt: "2026-10-16T19:00:00Z" },
+          { checkInAt: "2026-10-16T19:45:00Z", checkOutAt: "2026-10-16T23:30:00Z" },
+        ],
+        sessionNotes: ["Salió a farmacia", null],
+      },
+    ],
   });
   const meta: ReportMeta = {
     title: "Reporte de guardias: asistencia registrada",
@@ -359,7 +570,12 @@ describe("render de Excel y PDF", () => {
     requesterRole: "Coordinación",
     filterLines: describeFilters(FILTERS, { facility: FAC_A.name, state: "Nayarit", worker: "Ana Peña" }),
   };
-  const doc = buildReportDocument(meta, buildReportRows([shift], { now: NOW }));
+  const doc = buildReportDocument(
+    meta,
+    attachIncidentNotes(buildReportRows([shift], { now: NOW }), [
+      { assignment_id: "x1", incident_type: "llegada_tardia", note: "Retraso del transporte", justified: true },
+    ]),
+  );
 
   it("genera un libro con hojas Detalle y Resumen y los avisos obligatorios", async () => {
     const bytes = await renderXlsx(doc);
@@ -377,8 +593,15 @@ describe("render de Excel y PDF", () => {
     expect(all).toContain("Generado: 18/10/2026 13:00");
     expect(all).toContain("Ana Peña");
     expect(all).toContain("08:00 – 16:00");
-    // Total registrado 490 min = 8.17 h
-    expect(texts).toContain("8.17");
+    // Total registrado 445 min = 7.42 h; 45 min entre salida y regreso = 0.75 h.
+    expect(texts).toContain("7.42");
+    expect(texts).toContain("0.75");
+    expect(all).toContain("Tiempo entre salida y regreso (no cuenta) (h)");
+    expect(all).toContain("Observaciones (notas de los registros vigentes)");
+    expect(all).toContain("Justificación (incidencia: nota)");
+    expect(all).toContain("Salió a farmacia");
+    expect(all).toContain("Llegada tardía: Retraso del transporte");
+    expect(all).toContain("Incidencia: Cualquiera (con o sin incidencias)");
     const summary = wb.getWorksheet("Resumen")!;
     const summaryTexts: string[] = [];
     summary.eachRow((row) => row.eachCell((cell) => summaryTexts.push(String(cell.value ?? ""))));
@@ -409,5 +632,11 @@ describe("render de Excel y PDF", () => {
     expect(raw).toContain("Permanencia adicional = tiempo registrado adicional, no horas extra pagadas.");
     expect(raw).toContain("Ana Pe\xf1a");
     expect(raw).toContain("Resumen por trabajador");
+    expect(raw).toContain("Observaciones");
+    expect(raw).toContain("Justificaci\xf3n");
+    expect(raw).toContain("Sali\xf3 a farmacia");
+    // La celda puede partirse en varias líneas.
+    expect(raw).toContain("Llegada tard\xeda: Retraso");
+    expect(raw).toContain("0:45");
   });
 });

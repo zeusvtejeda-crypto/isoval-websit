@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { getMunicipalities, getStates } from "@/lib/data/catalogs";
+import { getMunicipalities, labelRepeatedMunicipalities, getStates } from "@/lib/data/catalogs";
 import {
   NO_FACILITY,
   WORKERS_PAGE_SIZE,
@@ -41,7 +41,7 @@ export default async function TrabajadoresPage({ searchParams }: { searchParams:
     filters.stateId = null;
     filters.municipalityId = null;
   }
-  const municipalities = filters.stateId ? await getMunicipalities(supabase, filters.stateId) : [];
+  const municipalities = filters.stateId ? labelRepeatedMunicipalities(await getMunicipalities(supabase, filters.stateId)) : [];
   if (filters.municipalityId && !municipalities.some((m) => m.id === filters.municipalityId)) {
     notices.push("El municipio indicado no corresponde al estado elegido; se muestran todos los municipios.");
     filters.municipalityId = null;

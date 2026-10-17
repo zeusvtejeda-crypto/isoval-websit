@@ -32,7 +32,12 @@ function ImpactSummary({ impact }: { impact: RetentionImpact }) {
         <li>{plural(impact.sessions, "registro de entrada y salida", "registros de entrada y salida")} de esas guardias;</li>
         <li>
           {plural(impact.auditRows, "evento de bitácora", "eventos de bitácora")} anteriores al{" "}
-          {impact.auditCutoff ? formatDate(impact.auditCutoff, DEFAULT_TIMEZONE) : "corte"}.
+          {impact.auditCutoff ? formatDate(impact.auditCutoff, DEFAULT_TIMEZONE) : "corte"};
+        </li>
+        <li>
+          número de trabajador y teléfono de {plural(impact.workerPrivateRows, "trabajador inactivo", "trabajadores inactivos")} sin cambios en su
+          registro ni guardias desde el {impact.inactiveWorkerCutoff ? formatDate(impact.inactiveWorkerCutoff, DEFAULT_TIMEZONE) : "corte"} (se
+          conserva su registro de trabajador).
         </li>
       </ul>
     </div>
@@ -84,6 +89,28 @@ export function RetentionSettingsForm({ retention }: { retention: RetentionSetti
             {...invalidProps(fieldError("audit_months"), "ret-audit")}
           />
         </Field>
+        <Field
+          label="Meses para conservar datos privados de trabajadores inactivos"
+          htmlFor="ret-inactive"
+          required
+          error={fieldError("inactive_worker_months")}
+          hint="Número de trabajador y teléfono de trabajadores inactivos cuyo registro no cambió y que no tuvieron guardias en este tiempo."
+          className="sm:col-span-2"
+        >
+          <Input
+            id="ret-inactive"
+            name="inactive_worker_months"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={RETENTION_MAX_MONTHS}
+            step={1}
+            required
+            defaultValue={retention.inactive_worker_months}
+            className="sm:max-w-xs"
+            {...invalidProps(fieldError("inactive_worker_months"), "ret-inactive")}
+          />
+        </Field>
       </div>
       <FormMessage state={state} />
       <Button type="submit" disabled={pending} aria-disabled={pending}>
@@ -98,7 +125,7 @@ export function RetentionActions() {
   const preview = useActionForm(previewRetention);
   const apply = useActionForm(applyRetention, {
     confirm: () =>
-      "Se eliminarán DEFINITIVAMENTE las guardias, registros y eventos de bitácora anteriores a las fechas de corte. Esta acción no se puede deshacer. ¿Aplicar ahora?",
+      "Se eliminarán DEFINITIVAMENTE las guardias, registros y eventos de bitácora anteriores a las fechas de corte, y el número de trabajador y teléfono de los trabajadores inactivos. Esta acción no se puede deshacer. ¿Aplicar ahora?",
   });
   const confirmError = apply.fieldError("confirm");
   const previewImpact = preview.state?.ok ? preview.state.data : undefined;

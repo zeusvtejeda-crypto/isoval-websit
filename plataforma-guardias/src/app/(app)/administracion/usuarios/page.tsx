@@ -26,6 +26,9 @@ export const metadata: Metadata = { title: "Usuarios y permisos" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
+/** Sedes que se nombran en la lista antes de agruparlas en «y N más». */
+const FACILITIES_INLINE_MAX = 3;
+
 function WorkerCell({ row }: { row: AccountRow }) {
   if (row.worker) {
     return (
@@ -43,7 +46,21 @@ function FacilitiesCell({ row }: { row: AccountRow }) {
   if (row.role === "admin") return <span className="text-gray-700">Todas (administración)</span>;
   if (!roleUsesFacilityScopes(row.role)) return <span className="text-gray-500">—</span>;
   if (row.facilities.length === 0) return <Badge tone="warning">Sin sedes asignadas</Badge>;
-  return <span title={row.facilities.map((f) => f.name).join(", ")}>{facilitiesSummary(row.facilities.map((f) => f.name))}</span>;
+  const names = row.facilities.map((f) => f.name);
+  if (names.length <= FACILITIES_INLINE_MAX) return <span>{facilitiesSummary(names, FACILITIES_INLINE_MAX)}</span>;
+  // Con más sedes, el resumen se despliega para ver el nombre de cada una.
+  return (
+    <details>
+      <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-brand-800 underline underline-offset-2">
+        {facilitiesSummary(names, FACILITIES_INLINE_MAX)}
+      </summary>
+      <ul className="mt-1 list-disc space-y-0.5 pl-5" aria-label="Sedes asignadas">
+        {row.facilities.map((f) => (
+          <li key={f.id}>{f.name}</li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
 function lastSignIn(row: AccountRow): string {

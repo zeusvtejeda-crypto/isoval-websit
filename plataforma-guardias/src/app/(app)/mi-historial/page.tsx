@@ -10,12 +10,16 @@ import {
   ATTENDANCE_STATUS_TONE,
   ASSIGNMENT_STATUS_LABELS,
   CORRECTION_STATUS_LABELS,
+  INCIDENT_LABELS,
   type Tone,
 } from "@/lib/attendance/labels";
 import { friendlyDbError } from "@/lib/actions";
-import { DEFAULT_TIMEZONE, dayRangeUtc, formatDate, formatDateTime, formatShiftRange, todayInTz } from "@/lib/time";
+import { DEFAULT_TIMEZONE, dayRangeUtc, formatDate, formatDateTime, formatDuration, formatShiftRange, todayInTz, utcToLocalInput } from "@/lib/time";
 import { addDays, isIsoDay } from "@/lib/presence/periods";
-import { daysInclusive, MAX_RANGE_DAYS as EXPORT_MAX_DAYS } from "@/lib/reports/params";
+import { daysInclusive, INCIDENT_TYPES, MAX_RANGE_DAYS as EXPORT_MAX_DAYS } from "@/lib/reports/params";
+import { loadIncidentNotes, type IncidentNoteRow } from "@/lib/reports/load";
+import { GAP_LABEL } from "@/lib/reports/document";
+import { SHIFT_WINDOW_HOURS, correctionRequestBlock, shiftWindow } from "@/lib/reports/corrections";
 import { NOT_LINKED_MESSAGE, PRESENCE_DISCLAIMER } from "@/lib/presence/texts";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -127,6 +131,12 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
     .sort((a, b) => Date.parse(b.shift.shift.starts_at) - Date.parse(a.shift.shift.starts_at));
   const totals = totalize(items.map((i) => i.mine.summary));
 
+  // Justificaciones de coordinación sobre tus guardias (RLS: solo las propias).
+  const notes = await loadIncidentNotes(supabase, items.map((i) => i.mine.assignment.id));
+  const notesByAssignment = new Map<string, IncidentNoteRow[]>();
+  for (const n of notes) notesByAssignment.set(n.assignment_id, [...(notesByAssignment.get(n.assignment_id) ?? []), n]);
+  for (const list of notesByAssignment.values()) list.sort((a, b) => INCIDENT_TYPES.indexOf(a.incident_type) - INCIDENT_TYPES.indexOf(b.incident_type));
+
   const exportQuery = (formato: "xlsx" | "pdf") =>
     `/api/exportar?${new URLSearchParams({ formato, trabajador: "yo", desde, hasta }).toString()}`;
   // La exportación tiene un rango máximo menor que la consulta en pantalla.
@@ -206,7 +216,11 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
                 label: `Entrada ${formatDateTime(s.check_in_at, tz)} · ${s.check_out_at ? `Salida ${formatDateTime(s.check_out_at, tz)}` : "sin salida"}`,
                 pending: pendingSessions.has(s.id),
               }));
-            const canRequest = !cancelled && mine.assignment.status !== "cancelado";
+            // La base de datos solo aprueba correcciones de guardias no canceladas con asignación activa.
+            const requestBlock = correctionRequestBlock(item.shift.status, mine.assignment.status);
+            const allowed = shiftWindow(item.shift);
+            const allowedMax = allowed.end.getTime() < now.getTime() ? allowed.end : now;
+            const justifications = notesByAssignment.get(mine.assignment.id) ?? [];
             return (
               <Card key={mine.assignment.id}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -239,22 +253,62 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
                     <div>
                       <h4 className="mb-2 font-semibold text-gray-900">Tiempo registrado</h4>
                       <SummaryMetrics summary={mine.summary} />
+                      <dl className="mt-2">
+                        <div>
+                          <dt className="text-xs text-gray-600">{GAP_LABEL}</dt>
+                          <dd className="font-semibold text-gray-900">{formatDuration(mine.summary.gapMinutes)}</dd>
+                        </div>
+                      </dl>
                     </div>
                     <div>
                       <h4 className="mb-2 font-semibold text-gray-900">Incidencias</h4>
                       <IncidentBadges summary={mine.summary} />
                     </div>
+                    {mine.summary.incidents.length || justifications.length ? (
+                      <div>
+                        <h4 className="mb-2 font-semibold text-gray-900">Justificaciones</h4>
+                        {justifications.length === 0 ? (
+                          <p className="text-sm text-gray-600">Coordinación no ha registrado justificaciones para esta guardia.</p>
+                        ) : (
+                          <ul className="space-y-2" aria-label="Justificaciones">
+                            {justifications.map((n) => (
+                              <li key={n.id} className="rounded-xl border border-gray-200 p-3 text-sm">
+                                <p className="font-medium text-gray-900">
+                                  {INCIDENT_LABELS[n.incident_type]}
+                                  {mine.summary.incidents.some((i) => i.type === n.incident_type) ? "" : " (ya no se calcula)"}
+                                  {" · "}
+                                  {n.justified ? "Justificada" : "Nota sin justificar"}
+                                </p>
+                                <p className="text-gray-800">{n.note}</p>
+                                <p className="text-xs text-gray-600">Actualizada: {formatDateTime(n.updated_at, tz)}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
-                {canRequest ? (
+                {requestBlock ? (
+                  <p className="mt-4 text-sm text-gray-700">{requestBlock}</p>
+                ) : (
                   <details className="mt-4 rounded-xl border border-gray-200 px-3">
                     <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-brand-900">Solicitar corrección</summary>
                     <div className="pb-4 pt-1">
-                      <CorrectionForm assignmentId={mine.assignment.id} timeZone={tz} sessions={options} />
+                      <CorrectionForm
+                        assignmentId={mine.assignment.id}
+                        timeZone={tz}
+                        sessions={options}
+                        range={{
+                          min: utcToLocalInput(allowed.start, tz),
+                          max: utcToLocalInput(allowedMax, tz),
+                          hint: `Entre ${formatDateTime(allowed.start, tz)} y ${formatDateTime(allowedMax, tz)} (hasta ${SHIFT_WINDOW_HOURS} h antes del inicio o después del término de la guardia).`,
+                        }}
+                      />
                     </div>
                   </details>
-                ) : null}
+                )}
               </Card>
             );
           })

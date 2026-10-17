@@ -63,13 +63,13 @@ export async function getAssignmentContext(supabase: ServerSupabase, assignmentI
 }
 
 export type SessionContext = ShiftContext & {
-  session: { id: string; assignment_id: string; shift_id: string; record_status: Database["public"]["Enums"]["record_status"] };
+  session: { id: string; assignment_id: string; shift_id: string; worker_id: string; record_status: Database["public"]["Enums"]["record_status"] };
 };
 
 export async function getSessionContext(supabase: ServerSupabase, sessionId: string): Promise<SessionContext | null> {
   const { data, error } = await supabase
     .from("attendance_sessions")
-    .select("id, assignment_id, shift_id, record_status")
+    .select("id, assignment_id, shift_id, worker_id, record_status")
     .eq("id", sessionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -102,6 +102,17 @@ export async function countOpenSessions(supabase: ServerSupabase, shiftId: strin
     .eq("shift_id", shiftId)
     .eq("record_status", "vigente")
     .is("check_out_at", null);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/** Registros de asistencia vigentes (con o sin salida) de la guardia. */
+export async function countValidSessions(supabase: ServerSupabase, shiftId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("attendance_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("shift_id", shiftId)
+    .eq("record_status", "vigente");
   if (error) throw new Error(error.message);
   return count ?? 0;
 }

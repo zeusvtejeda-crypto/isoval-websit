@@ -67,5 +67,9 @@ export function temporaryPasswordIssue(password: string | null | undefined): str
   if (new TextEncoder().encode(value).length > TEMP_PASSWORD_MAX) return `La contraseña temporal no puede superar ${TEMP_PASSWORD_MAX} caracteres.`;
   if (value.trim() !== value) return "La contraseña no debe empezar ni terminar con espacios.";
   if (new Set(value).size < 4) return "La contraseña es demasiado repetitiva; usa más caracteres distintos.";
+  // Política de Supabase Auth del proyecto (config.toml / panel): minúsculas, mayúsculas y dígitos.
+  if (!/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/\d/.test(value)) {
+    return "La contraseña temporal debe incluir minúsculas, mayúsculas y al menos un número.";
+  }
   return null;
 }

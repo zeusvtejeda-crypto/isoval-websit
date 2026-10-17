@@ -15,7 +15,16 @@ import {
 } from "@/lib/attendance/labels";
 import { formatDateTime, formatDuration, utcToLocalInput } from "@/lib/time";
 import { describeActor } from "@/lib/shifts/actors";
-import { formatSignedDuration, shortId } from "@/lib/shifts/format";
+import { coverLabel, formatSignedDuration, shortId } from "@/lib/shifts/format";
+import {
+  OWN_RECORD_NOTICE,
+  STALE_OPEN_NOTICE,
+  captureInputBounds,
+  describeCaptureWindow,
+  isOpenSessionStale,
+  isOwnRecordLocked,
+  type Viewer,
+} from "@/lib/shifts/rules";
 import type { FormAction } from "@/lib/shifts/types";
 import type { CorrectionRequestRow, IncidentNoteRow } from "@/lib/shifts/queries";
 import { AssignmentStatusForm, CorrectSessionForm, IncidentNoteForm, ManualSessionForm, RemoveAssignmentForm, VoidSessionForm } from "./assignment-forms";
@@ -24,6 +33,7 @@ import { Disclosure } from "./disclosure";
 
 export const PRESENCE_NOTICE = "Entrada registrada no equivale a presencia física verificada.";
 export const EXTRA_STAY_NOTICE = "Permanencia adicional = tiempo registrado adicional, no horas extra pagadas.";
+export const GAP_LABEL = "Tiempo entre salida y regreso (no cuenta)";
 
 export type AssignmentActions = {
   changeStatus: FormAction;
@@ -63,8 +73,9 @@ function SessionItem({
   workerProfileId,
   canManage,
   actions,
-  maxLocal,
+  capture,
   zoneLabel,
+  staleOpen,
 }: {
   session: SessionRow;
   all: SessionRow[];
@@ -72,10 +83,13 @@ function SessionItem({
   names: ActorNames;
   currentUserId: string;
   workerProfileId: string | null;
+  /** Puede corregir/anular este registro (gestión de la sede y no es su propia asistencia). */
   canManage: boolean;
   actions: AssignmentActions;
-  maxLocal: string;
+  capture: { minLocal: string; maxLocal: string; rangeLabel: string };
   zoneLabel: string;
+  /** Esta es la entrada abierta que ya pasó término + margen: la corrección es la acción a seguir. */
+  staleOpen: boolean;
 }) {
   const actor = (id: string | null, method: SessionRow["check_in_method"] | null) =>
     describeActor(id, names, { currentUserId, workerProfileId, method });
@@ -133,14 +147,30 @@ function SessionItem({
 
       {canManage && session.record_status === "vigente" ? (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Disclosure summary="Corregir registro">
+          <Disclosure
+            id={`corregir-${session.id}`}
+            tone={staleOpen ? "attention" : "default"}
+            summary={
+              staleOpen ? (
+                <span className="flex flex-wrap items-center gap-2">
+                  <span>Corregir registro</span>
+                  <Badge tone="warning">Falta la hora real de salida</Badge>
+                </span>
+              ) : (
+                "Corregir registro"
+              )
+            }
+          >
             <CorrectSessionForm
               action={actions.correct}
               sessionId={session.id}
               defaultCheckIn={utcToLocalInput(session.check_in_at, tz)}
               defaultCheckOut={session.check_out_at ? utcToLocalInput(session.check_out_at, tz) : ""}
               hasCheckOut={Boolean(session.check_out_at)}
-              maxLocal={maxLocal}
+              requireCheckOut={staleOpen}
+              minLocal={capture.minLocal}
+              maxLocal={capture.maxLocal}
+              rangeLabel={capture.rangeLabel}
               zoneLabel={zoneLabel}
             />
           </Disclosure>
@@ -170,6 +200,8 @@ export function AssignmentCard({
   now,
   checkInOpensAt,
   correctionsHref,
+  viewer,
+  openSessionGraceMinutes,
 }: {
   item: AssignmentWithAttendance;
   tz: string;
@@ -189,6 +221,10 @@ export function AssignmentCard({
   checkInOpensAt: Date;
   /** Enlace a la revisión de solicitudes de corrección (solo gestión). */
   correctionsHref?: string | null;
+  /** Cuenta en sesión: separación de funciones sobre su propia asistencia. */
+  viewer: Viewer;
+  /** Margen tras el término (attendance.open_session_grace_minutes) para cerrar una entrada con la hora actual. */
+  openSessionGraceMinutes: number;
 }) {
   const { assignment, worker, substituteFor, summary } = item;
   const sessions = [...item.sessions].sort((a, b) => a.check_in_at.localeCompare(b.check_in_at) || a.created_at.localeCompare(b.created_at));
@@ -200,8 +236,19 @@ export function AssignmentCard({
   const shiftStarted = now.getTime() >= Date.parse(shift.starts_at);
   const checkInNotOpen = now.getTime() < checkInOpensAt.getTime();
   const canCheckIn = !shiftCancelled && !shiftEnded && !checkInNotOpen && assignment.status === "asignado";
-  const maxLocal = utcToLocalInput(now, tz);
+  // Salvo administración, nadie corrige, agrega, anula, cambia el estado ni justifica su propia asistencia.
+  const ownLocked = isOwnRecordLocked(viewer, assignment.worker_id);
+  const canEditAttendance = canManage && !ownLocked;
+  // Entrada abierta más allá de término + margen: la BD no deja cerrarla con la hora actual.
+  const staleOpen =
+    summary.status === "registro_incompleto" ||
+    isOpenSessionStale({ hasOpenSession, shiftEndsAt: shift.ends_at, now, graceMinutes: openSessionGraceMinutes });
+  const staleSessionId = staleOpen ? (summary.openSession?.id ?? null) : null;
+  const canAddManual = shiftStarted && !shiftCancelled && assignment.status === "asignado";
+  const bounds = captureInputBounds(shift, now, tz);
+  const capture = { minLocal: bounds.min, maxLocal: bounds.max, rangeLabel: describeCaptureWindow(shift, tz) };
   const manualOut = utcToLocalInput(Math.min(now.getTime(), Date.parse(shift.ends_at)), tz);
+  const cover = coverLabel(substituteFor, assignment.substitute_for_worker_id);
 
   const statusMeta = [
     assignment.status_changed_at ? formatDateTime(assignment.status_changed_at, tz) : null,
@@ -228,6 +275,11 @@ export function AssignmentCard({
               {worker.area ? ` · ${worker.area}` : ""}
             </p>
           ) : null}
+          {cover ? (
+            <p className="mt-1">
+              <Badge tone="info">{cover}</Badge>
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Badge tone={ASSIGNMENT_TONE[assignment.status]}>{ASSIGNMENT_STATUS_LABELS[assignment.status]}</Badge>
@@ -240,10 +292,6 @@ export function AssignmentCard({
         <div>
           <dt className="inline font-medium text-gray-900">Punto asignado: </dt>
           <dd className="inline">{assignment.assigned_point ?? "El de la guardia"}</dd>
-        </div>
-        <div>
-          <dt className="inline font-medium text-gray-900">Sustituye a: </dt>
-          <dd className="inline">{substituteFor?.full_name ?? (assignment.substitute_for_worker_id ? "Persona no visible" : "No es sustitución")}</dd>
         </div>
         {assignment.status_reason ? (
           <div className="sm:col-span-2">
@@ -263,10 +311,18 @@ export function AssignmentCard({
       </dl>
 
       {summary.openSession && summary.openElapsedMinutes != null ? (
-        <p className="mt-3 rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-950">
-          Entrada abierta desde {formatDateTime(summary.openSession.checkInAt, tz)} ({formatDuration(summary.openElapsedMinutes)} transcurridos). No suma tiempo
-          registrado hasta que se registre la salida.
-        </p>
+        staleOpen ? (
+          <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Entrada abierta desde {formatDateTime(summary.openSession.checkInAt, tz)} ({formatDuration(summary.openElapsedMinutes)} transcurridos) y sin salida
+            después del término y el margen: requiere revisión. No suma tiempo registrado; la salida no se registra con la hora actual, sino con la hora real
+            mediante una corrección.
+          </p>
+        ) : (
+          <p className="mt-3 rounded-xl bg-brand-50 px-3 py-2 text-sm text-brand-950">
+            Entrada abierta desde {formatDateTime(summary.openSession.checkInAt, tz)} ({formatDuration(summary.openElapsedMinutes)} transcurridos). No suma
+            tiempo registrado hasta que se registre la salida.
+          </p>
+        )
       ) : null}
 
       <section className="mt-4" aria-label={`Métricas de ${workerName}`}>
@@ -281,7 +337,10 @@ export function AssignmentCard({
           <Metric label="Salida anticipada" value={summary.earlyLeaveMinutes != null ? formatDuration(summary.earlyLeaveMinutes) : "—"} />
           <Metric label="Permanencia adicional" value={formatDuration(summary.afterEndMinutes)} hint="Tiempo registrado adicional" />
         </dl>
-        <p className="mt-2 text-xs text-gray-600">{EXTRA_STAY_NOTICE}</p>
+        <p className="mt-2 text-sm text-gray-700">
+          {GAP_LABEL}: <span className="font-semibold text-gray-900">{formatDuration(summary.gapMinutes)}</span>
+        </p>
+        <p className="mt-1 text-xs text-gray-600">{EXTRA_STAY_NOTICE}</p>
       </section>
 
       <section className="mt-4" aria-label={`Incidencias de ${workerName}`}>
@@ -307,7 +366,7 @@ export function AssignmentCard({
                       Justificación: {note.note} <span className="text-xs text-gray-500">({formatDateTime(note.updated_at, tz)})</span>
                     </p>
                   ) : null}
-                  {canManage ? (
+                  {canEditAttendance ? (
                     <Disclosure summary={note ? "Editar justificación" : "Justificar"} className="mt-2">
                       <IncidentNoteForm action={actions.incidentNote} assignmentId={assignment.id} incidentType={type} currentNote={note?.note ?? null} />
                     </Disclosure>
@@ -338,10 +397,11 @@ export function AssignmentCard({
                 names={names}
                 currentUserId={currentUserId}
                 workerProfileId={workerProfileId}
-                canManage={canManage}
+                canManage={canEditAttendance}
                 actions={actions}
-                maxLocal={maxLocal}
+                capture={capture}
                 zoneLabel={zoneLabel}
+                staleOpen={s.id === staleSessionId}
               />
             ))}
           </ul>
@@ -359,7 +419,7 @@ export function AssignmentCard({
                 </li>
               ))}
             </ul>
-            {canManage && correctionsHref ? (
+            {canEditAttendance && correctionsHref ? (
               <Link href={correctionsHref} className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
                 Revisar solicitudes en Correcciones
               </Link>
@@ -371,45 +431,79 @@ export function AssignmentCard({
       {canManage ? (
         <section className="mt-4 space-y-2" aria-label={`Acciones para ${workerName}`}>
           <h4 className="font-semibold text-gray-900">Acciones de coordinación</h4>
-          {hasOpenSession || canCheckIn ? (
-            <Disclosure summary={hasOpenSession ? "Registrar salida por otra persona" : "Registrar entrada por otra persona"}>
-              <AttendanceOnBehalf assignmentId={assignment.id} workerName={workerName} hasOpenSession={hasOpenSession} timezone={tz} />
-            </Disclosure>
+          {ownLocked ? (
+            <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              <p className="font-semibold">{OWN_RECORD_NOTICE}</p>
+              {!staleOpen && (hasOpenSession || canCheckIn) ? (
+                <p className="mt-1">
+                  Para registrar tu propia entrada o salida usa{" "}
+                  <Link href="/mi-guardia" className="font-semibold underline underline-offset-2">
+                    Mi guardia
+                  </Link>
+                  .
+                </p>
+              ) : null}
+            </div>
           ) : (
-            <p className="text-sm text-gray-600">
-              {shiftCancelled
-                ? "La guardia está cancelada: no se registran entradas nuevas."
-                : assignment.status !== "asignado"
-                  ? "La asignación no está activa: no se registran entradas nuevas."
-                  : checkInNotOpen
-                    ? `El registro de entrada abre el ${formatDateTime(checkInOpensAt, tz)}.`
-                    : "La guardia ya terminó: para una entrada y salida no registradas usa «Agregar registro manual»."}
-            </p>
+            <>
+              {staleOpen ? (
+                <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  <p className="font-semibold">{STALE_OPEN_NOTICE}</p>
+                  {staleSessionId ? (
+                    <a href={`#corregir-${staleSessionId}`} className="mt-1 inline-flex min-h-11 items-center font-semibold underline underline-offset-2">
+                      Ir a «Corregir registro»
+                    </a>
+                  ) : null}
+                </div>
+              ) : hasOpenSession || canCheckIn ? (
+                <Disclosure summary={hasOpenSession ? "Registrar salida por otra persona" : "Registrar entrada por otra persona"}>
+                  <AttendanceOnBehalf assignmentId={assignment.id} workerName={workerName} hasOpenSession={hasOpenSession} timezone={tz} />
+                </Disclosure>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  {shiftCancelled
+                    ? "La guardia está cancelada: no se registran entradas nuevas."
+                    : assignment.status !== "asignado"
+                      ? "La asignación no está activa: no se registran entradas nuevas."
+                      : checkInNotOpen
+                        ? `El registro de entrada abre el ${formatDateTime(checkInOpensAt, tz)}.`
+                        : "La guardia ya terminó: para una entrada y salida no registradas usa «Agregar registro manual»."}
+                </p>
+              )}
+              {canAddManual ? (
+                <Disclosure summary="Agregar registro manual">
+                  <ManualSessionForm
+                    action={actions.manual}
+                    assignmentId={assignment.id}
+                    requestId={requestId}
+                    defaultCheckIn={utcToLocalInput(shift.starts_at, tz)}
+                    defaultCheckOut={manualOut}
+                    minLocal={capture.minLocal}
+                    maxLocal={capture.maxLocal}
+                    rangeLabel={capture.rangeLabel}
+                    zoneLabel={zoneLabel}
+                  />
+                </Disclosure>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  {shiftCancelled
+                    ? "La guardia está cancelada: no se agregan registros manuales."
+                    : assignment.status !== "asignado"
+                      ? "La asignación no está activa: para agregar registros, vuelve a ponerla como «Asignado»."
+                      : "El registro manual posterior estará disponible cuando inicie la guardia."}
+                </p>
+              )}
+              <Disclosure summary="Cambiar estado de la asignación">
+                <AssignmentStatusForm
+                  action={actions.changeStatus}
+                  assignmentId={assignment.id}
+                  currentStatus={assignment.status}
+                  shiftEnded={shiftEnded}
+                  hasValidSessions={hasValidSessions}
+                />
+              </Disclosure>
+            </>
           )}
-          {shiftStarted ? (
-            <Disclosure summary="Agregar registro manual">
-              <ManualSessionForm
-                action={actions.manual}
-                assignmentId={assignment.id}
-                requestId={requestId}
-                defaultCheckIn={utcToLocalInput(shift.starts_at, tz)}
-                defaultCheckOut={manualOut}
-                maxLocal={maxLocal}
-                zoneLabel={zoneLabel}
-              />
-            </Disclosure>
-          ) : (
-            <p className="text-sm text-gray-600">El registro manual posterior estará disponible cuando inicie la guardia.</p>
-          )}
-          <Disclosure summary="Cambiar estado de la asignación">
-            <AssignmentStatusForm
-              action={actions.changeStatus}
-              assignmentId={assignment.id}
-              currentStatus={assignment.status}
-              shiftEnded={shiftEnded}
-              hasValidSessions={hasValidSessions}
-            />
-          </Disclosure>
           {sessions.length === 0 ? (
             <Disclosure summary="Quitar asignación" tone="danger">
               <RemoveAssignmentForm action={actions.remove} assignmentId={assignment.id} workerName={workerName} />

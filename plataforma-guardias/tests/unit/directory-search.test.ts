@@ -21,20 +21,20 @@ import type { DirectoryFacility, DirectoryFilters, DirectoryLookups } from "@/li
 // Datos ficticios para las pruebas del directorio.
 const LOOKUPS: DirectoryLookups = {
   categories: [
-    { id: 1, slug: "hospitales", name: "Hospitales", color: "#14532d", active: true },
-    { id: 2, slug: "umf", name: "Unidades de Medicina Familiar", color: "#166534", active: true },
-    { id: 6, slug: "otras-instalaciones", name: "Otras instalaciones", color: "#4b5563", active: true },
-    { id: 9, slug: "archivada", name: "Categoría archivada", color: "#000000", active: false },
+    { id: 1, slug: "hospitales", name: "Hospitales", color: "#14532d", icon: "hospital", active: true },
+    { id: 2, slug: "umf", name: "Unidades de Medicina Familiar", color: "#166534", icon: "stethoscope", active: true },
+    { id: 6, slug: "otras-instalaciones", name: "Otras instalaciones", color: "#4b5563", icon: "building", active: true },
+    { id: 9, slug: "archivada", name: "Categoría archivada", color: "#000000", icon: "warehouse", active: false },
   ],
   states: [
     { id: 14, name: "Jalisco", abbreviation: "JAL" },
     { id: 18, name: "Nayarit", abbreviation: "NAY" },
   ],
   municipalities: [
-    { id: 117, stateId: 18, name: "Tepic" },
-    { id: 120, stateId: 18, name: "Bahía de Banderas" },
-    { id: 112, stateId: 18, name: "San Blas" },
-    { id: 139, stateId: 14, name: "Guadalajara" },
+    { id: 117, stateId: 18, name: "Tepic", inegiCode: "017", label: "Tepic" },
+    { id: 120, stateId: 18, name: "Bahía de Banderas", inegiCode: "020", label: "Bahía de Banderas" },
+    { id: 112, stateId: 18, name: "San Blas", inegiCode: "012", label: "San Blas" },
+    { id: 139, stateId: 14, name: "Guadalajara", inegiCode: "039", label: "Guadalajara" },
   ],
 };
 

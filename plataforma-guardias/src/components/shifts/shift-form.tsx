@@ -36,6 +36,9 @@ export function ShiftForm({
   cancelHref,
   changeFacilityHref,
   extraResponsible,
+  scheduleLocked = false,
+  scheduleLockedReason,
+  facilityLockedReason,
 }: {
   action: FormAction<{ id: string }>;
   shiftId?: string;
@@ -46,12 +49,20 @@ export function ShiftForm({
   changeFacilityHref?: string | null;
   /** Responsable actual que ya no está en la lista (inactivo u otra sede). */
   extraResponsible?: { id: string; full_name: string } | null;
+  /** Fecha y horas bloqueadas (hay asistencia vigente y la cuenta no es de administración). */
+  scheduleLocked?: boolean;
+  scheduleLockedReason?: string;
+  /** Por qué no se puede cambiar la sede (p. ej. ya tiene asignaciones). */
+  facilityLockedReason?: string | null;
 }) {
   const isEdit = Boolean(shiftId);
   const [date, setDate] = useState(defaults.date);
   const [startTime, setStartTime] = useState(defaults.start_time);
   const [endTime, setEndTime] = useState(defaults.end_time);
   const clock = describeShiftClock(startTime, endTime);
+  // Un campo deshabilitado no se envía: con el horario bloqueado se envían los valores guardados ocultos.
+  const scheduleProps = (name: "date" | "start_time" | "end_time") =>
+    scheduleLocked ? { disabled: true, "aria-describedby": "schedule-locked" } : { name };
 
   return (
     <ActionForm<{ id: string }>
@@ -70,6 +81,13 @@ export function ShiftForm({
           <>
             {shiftId ? <input type="hidden" name="id" value={shiftId} /> : null}
             <input type="hidden" name="facility_id" value={facility.id} />
+            {scheduleLocked ? (
+              <>
+                <input type="hidden" name="date" value={defaults.date} />
+                <input type="hidden" name="start_time" value={defaults.start_time} />
+                <input type="hidden" name="end_time" value={defaults.end_time} />
+              </>
+            ) : null}
 
             <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
               <p className="text-sm text-gray-600">Sede</p>
@@ -80,6 +98,7 @@ export function ShiftForm({
                   Cambiar sede
                 </Link>
               ) : null}
+              {facilityLockedReason ? <p className="mt-1 text-sm text-gray-700">{facilityLockedReason}</p> : null}
               {err("facility_id") ? <p className="text-sm font-medium text-red-700">{err("facility_id")}</p> : null}
             </div>
 
@@ -99,15 +118,21 @@ export function ShiftForm({
               />
             </Field>
 
+            {scheduleLocked ? (
+              <p id="schedule-locked" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                {scheduleLockedReason ?? "El horario no se puede cambiar."}
+              </p>
+            ) : null}
+
             <Field label="Fecha" htmlFor="date" required error={err("date")}>
               <Input
                 id="date"
-                name="date"
                 type="date"
                 required
                 defaultValue={defaults.date}
                 onChange={(e) => setDate(e.currentTarget.value)}
                 {...invalidProps(err("date"), "date")}
+                {...scheduleProps("date")}
               />
             </Field>
 
@@ -115,23 +140,23 @@ export function ShiftForm({
               <Field label="Hora de inicio" htmlFor="start_time" required error={err("start_time")}>
                 <Input
                   id="start_time"
-                  name="start_time"
                   type="time"
                   required
                   defaultValue={defaults.start_time}
                   onChange={(e) => setStartTime(e.currentTarget.value)}
                   {...invalidProps(err("start_time"), "start_time")}
+                  {...scheduleProps("start_time")}
                 />
               </Field>
               <Field label="Hora de término" htmlFor="end_time" required error={err("end_time")}>
                 <Input
                   id="end_time"
-                  name="end_time"
                   type="time"
                   required
                   defaultValue={defaults.end_time}
                   onChange={(e) => setEndTime(e.currentTarget.value)}
                   {...invalidProps(err("end_time"), "end_time")}
+                  {...scheduleProps("end_time")}
                 />
               </Field>
             </div>

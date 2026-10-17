@@ -54,9 +54,28 @@ export type DirectoryFacility = {
   isDemo: boolean;
 };
 
-export type CategoryOption = { id: number; slug: string; name: string; color: string; active: boolean };
+export type CategoryOption = {
+  id: number;
+  slug: string;
+  name: string;
+  color: string;
+  /** Valor de facility_categories.icon (ver resolveCategoryIcon en ./icons). */
+  icon: string;
+  active: boolean;
+};
 export type StateOption = { id: number; name: string; abbreviation: string };
-export type MunicipalityOption = { id: number; stateId: number; name: string };
+export type MunicipalityOption = {
+  id: number;
+  stateId: number;
+  name: string;
+  /** Clave INEGI del municipio (3 dígitos). */
+  inegiCode: string;
+  /**
+   * Nombre para mostrar: igual a `name`, o con la clave INEGI cuando el nombre
+   * se repite dentro del estado (p. ej. en Oaxaca).
+   */
+  label: string;
+};
 
 /** Catálogos para mostrar nombres de categoría, estado y municipio. */
 export type DirectoryLookups = {

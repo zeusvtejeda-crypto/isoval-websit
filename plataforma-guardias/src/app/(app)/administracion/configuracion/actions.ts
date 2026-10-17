@@ -9,6 +9,7 @@ import {
   SETTINGS_PATH,
   SETTING_KEYS,
   attendanceSettingsSchema,
+  describeAppliedRetention,
   describeDemoCounts,
   isConfirmed,
   parseDemoPurgeResult,
@@ -79,7 +80,7 @@ export async function applyRetention(_prev: ActionResult<RetentionImpact> | null
   revalidatePath("/", "layout");
   return {
     ok: true,
-    message: `Política aplicada. Se eliminaron ${impact.shifts} guardias, ${impact.sessions} registros de entrada y salida y ${impact.auditRows} eventos de bitácora. Quedó constancia en la bitácora.`,
+    message: describeAppliedRetention(impact),
     data: impact,
   };
 }

@@ -80,7 +80,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
   const workerIds = item.assignments.map((a) => a.assignment.worker_id);
   const allSessions = item.assignments.flatMap((a) => a.sessions);
 
-  const [names, workerProfiles, notes, corrections, facilityWorkers, others, checkInWindow] = await Promise.all([
+  const [names, workerProfiles, notes, corrections, facilityWorkers, others, checkInWindow, openSessionGrace] = await Promise.all([
     getProfileNames(
       supabase,
       collectActorIds(
@@ -94,6 +94,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
     canManage ? getActiveWorkersOfFacility(supabase, shift.facility_id) : Promise.resolve([] as WorkerOption[]),
     canManage ? getOtherActiveWorkers(supabase, shift.facility_id) : Promise.resolve({ workers: [] as WorkerOption[], truncated: false }),
     getSettingNumber(supabase, "attendance", "checkin_window_before_minutes", 120),
+    getSettingNumber(supabase, "attendance", "open_session_grace_minutes", 240),
   ]);
   const checkInOpensAt = new Date(Date.parse(shift.starts_at) - checkInWindow * 60_000);
 
@@ -242,6 +243,8 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
                   now={now}
                   checkInOpensAt={checkInOpensAt}
                   correctionsHref={canManage ? `/correcciones?sede=${shift.facility_id}` : null}
+                  viewer={{ isAdmin: user.isAdmin, workerId: user.workerId }}
+                  openSessionGraceMinutes={openSessionGrace}
                 />
               ))}
             </div>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { getFacilityOptions } from "@/lib/data/catalogs";
+import { getFacilityOptions, getSettingNumber } from "@/lib/data/catalogs";
 import { loadShiftsWithAttendance } from "@/lib/attendance/load";
 import { buildPresenceBoard } from "@/lib/presence/board";
 import { facilitiesWithShifts, findFacility, mergeFacilityOptions } from "@/lib/presence/board-data";
@@ -15,6 +15,8 @@ import { AutoRefresh } from "@/components/layout/auto-refresh";
 import { LastUpdated } from "@/components/layout/connection-status";
 import { PresenceFilters } from "@/components/presence/presence-filters";
 import {
+  AbsenceSection,
+  BoardNav,
   BoardStats,
   CoverageSection,
   ExpectedSection,
@@ -58,13 +60,15 @@ export default async function EnServicioPage({ searchParams }: { searchParams: S
   const dayFrom = new Date(range.start.getTime() - DAY);
   const loadTo = new Date(range.end.getTime() + DAY);
   const loadFrom = incompleteSince && incompleteSince < dayFrom ? incompleteSince : dayFrom;
-  const [shifts, shiftFacilities] = await Promise.all([
+  const [shifts, shiftFacilities, graceMinutes] = await Promise.all([
     loadShiftsWithAttendance(supabase, { from: loadFrom, to: loadTo, facilityIds: facilityId ? [facilityId] : scope, now }),
     // Administración: solo sedes con guardias en la fecha (el directorio puede tener miles de instalaciones).
     scopedOptions ? Promise.resolve([]) : facilitiesWithShifts(supabase, dayFrom, loadTo),
+    // Mismo margen que usan check_out y el cálculo de «registro incompleto».
+    getSettingNumber(supabase, "attendance", "open_session_grace_minutes", 240),
   ]);
   const facilities = scopedOptions ?? mergeFacilityOptions(shiftFacilities, selected);
-  const board = buildPresenceBoard(shifts, now, { day, period, facilityId, incompleteSince });
+  const board = buildPresenceBoard(shifts, now, { day, period, facilityId, incompleteSince }, { graceMinutes });
 
   return (
     <div className="space-y-5">
@@ -73,9 +77,9 @@ export default async function EnServicioPage({ searchParams }: { searchParams: S
         title="Quién está aquí"
         description={
           <>
-            Personas con entrada registrada, pendientes de llegar y salidas del{" "}
+            Quién tiene guardia, quién está en servicio, quién falta por llegar, quién ya salió y las ausencias del{" "}
             <span className="font-medium text-gray-800">{formatLongDate(range.start, timeZone)}</span>
-            {period !== "todos" ? ` · ${SHIFT_PERIOD_LABELS[period]}` : ""}.
+            {period !== "todos" ? ` · ${SHIFT_PERIOD_LABELS[period]}` : ""}. Toca un nombre para ver su historial.
           </>
         }
       />
@@ -101,15 +105,18 @@ export default async function EnServicioPage({ searchParams }: { searchParams: S
           day={day}
           period={period}
           facilityHint={scopedOptions ? "Solo tus sedes asignadas." : "Sedes con guardias alrededor de la fecha elegida."}
+          isAdmin={user.isAdmin}
         />
       </Card>
 
       <BoardStats board={board} />
+      <BoardNav board={board} />
 
       <InServiceSection items={board.inService} day={day} />
       <ResponsiblesSection items={board.responsibles} day={day} />
       <ExpectedSection items={board.expected} />
       <LeftSection items={board.left} day={day} />
+      <AbsenceSection items={board.absences} />
       <CoverageSection items={board.uncovered} />
       <IncompleteSection items={board.incomplete} day={day} lookbackDays={isToday ? LOOKBACK_DAYS : null} />
     </div>

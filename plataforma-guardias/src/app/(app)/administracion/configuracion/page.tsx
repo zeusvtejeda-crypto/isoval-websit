@@ -66,7 +66,7 @@ export default async function ConfiguracionPage() {
           <Card>
             <CardHeader
               title={<span id="conservacion-titulo">Conservación de datos</span>}
-              description="Cuánto tiempo se conservan las guardias, sus registros y la bitácora. Guardar los periodos no elimina nada por sí solo."
+              description="Cuánto tiempo se conservan las guardias, sus registros, la bitácora y los datos privados de trabajadores inactivos. Guardar los periodos no elimina nada por sí solo."
             />
             <div className="space-y-6">
               <RetentionSettingsForm retention={settings.retention} />

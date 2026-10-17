@@ -42,7 +42,7 @@ function FacilityListItem({
   const state = f.stateId != null ? maps.states.get(f.stateId) : undefined;
   const municipality = f.municipalityId != null ? maps.municipalities.get(f.municipalityId) : undefined;
   const located = hasCoordinates(f);
-  const place = [municipality?.name, state?.name].filter(Boolean).join(", ");
+  const place = [municipality?.label, state?.name].filter(Boolean).join(", ");
   const directions = buildDirectionsLinks({
     latitude: f.latitude,
     longitude: f.longitude,
@@ -61,7 +61,7 @@ function FacilityListItem({
         </Link>
       </h3>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        <CategoryTag name={category?.name ?? null} color={category?.color} />
+        <CategoryTag name={category?.name ?? null} color={category?.color} icon={category?.icon} />
         <VerificationBadge verified={f.verified} />
         {f.isDemo ? <DemoBadge /> : null}
       </div>

@@ -122,5 +122,27 @@ export function hasCoordinates<T extends { latitude: number | null; longitude: n
 /** Municipios de un estado (o todos si no hay estado), en orden alfabético. */
 export function municipalitiesForState(municipalities: MunicipalityOption[], stateId: number | null): MunicipalityOption[] {
   const list = stateId == null ? municipalities : municipalities.filter((m) => m.stateId === stateId);
-  return [...list].sort((a, b) => a.name.localeCompare(b.name, "es-MX"));
+  return [...list].sort((a, b) => a.name.localeCompare(b.name, "es-MX") || a.inegiCode.localeCompare(b.inegiCode));
+}
+
+export type MapLegend = {
+  /** Categorías con al menos una instalación ubicable, en el orden del catálogo. */
+  categories: CategoryOption[];
+  /** Hay instalaciones ubicables sin categoría conocida (ícono y color por omisión). */
+  uncategorized: boolean;
+};
+
+/** Leyenda del mapa: solo las categorías de los resultados que tienen coordenadas. */
+export function mapLegend(
+  facilities: ReadonlyArray<Pick<DirectoryFacility, "categoryId" | "latitude" | "longitude">>,
+  categories: ReadonlyMap<number, CategoryOption>,
+): MapLegend {
+  const used = new Set<number>();
+  let uncategorized = false;
+  for (const f of facilities) {
+    if (!hasCoordinates(f)) continue;
+    if (f.categoryId != null && categories.has(f.categoryId)) used.add(f.categoryId);
+    else uncategorized = true;
+  }
+  return { categories: [...categories.values()].filter((c) => used.has(c.id)), uncategorized };
 }

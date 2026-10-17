@@ -18,7 +18,10 @@ export type SettingKey = (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
 /** Descripción y visibilidad, por si hubiera que crear la fila. */
 export const SETTING_META: Record<SettingKey, { description: string; isPublic: boolean }> = {
   privacy_notice: { description: "Aviso de privacidad (requiere revisión jurídica antes de producción).", isPublic: true },
-  retention: { description: "Periodos de conservación de registros de guardias y bitácora (meses).", isPublic: false },
+  retention: {
+    description: "Periodos de conservación (meses): guardias y asistencia, bitácora y datos privados de trabajadores inactivos.",
+    isPublic: false,
+  },
   attendance: {
     description: "Ventana para registrar entrada antes del inicio y margen para cerrar una entrada abierta sin revisión.",
     isPublic: false,
@@ -105,15 +108,16 @@ export function readPrivacyNoticeForm(formData: FormData) {
 // Conservación de datos
 // ---------------------------------------------------------------------------
 
-export const RETENTION_DEFAULTS = { attendance_months: 24, audit_months: 60 } as const;
+export const RETENTION_DEFAULTS = { attendance_months: 24, audit_months: 60, inactive_worker_months: 24 } as const;
 export const RETENTION_MAX_MONTHS = 600;
-export type RetentionSettings = { attendance_months: number; audit_months: number };
+export type RetentionSettings = { attendance_months: number; audit_months: number; inactive_worker_months: number };
 
 export function readRetention(value: unknown): RetentionSettings {
   const v = asObject(value);
   return {
     attendance_months: int(v.attendance_months, RETENTION_DEFAULTS.attendance_months),
     audit_months: int(v.audit_months, RETENTION_DEFAULTS.audit_months),
+    inactive_worker_months: int(v.inactive_worker_months, RETENTION_DEFAULTS.inactive_worker_months),
   };
 }
 
@@ -127,19 +131,27 @@ const months = (label: string) =>
 export const retentionSchema = z.object({
   attendance_months: months("conservación de guardias y asistencia"),
   audit_months: months("conservación de bitácora"),
+  inactive_worker_months: months("conservación de datos privados de trabajadores inactivos"),
 });
 
 export function readRetentionForm(formData: FormData) {
-  return { attendance_months: readText(formData, "attendance_months"), audit_months: readText(formData, "audit_months") };
+  return {
+    attendance_months: readText(formData, "attendance_months"),
+    audit_months: readText(formData, "audit_months"),
+    inactive_worker_months: readText(formData, "inactive_worker_months"),
+  };
 }
 
 export type RetentionImpact = {
   executed: boolean;
   attendanceCutoff: string | null;
   auditCutoff: string | null;
+  inactiveWorkerCutoff: string | null;
   shifts: number;
   sessions: number;
   auditRows: number;
+  /** Filas de worker_private (número de trabajador y teléfono) de trabajadores inactivos. */
+  workerPrivateRows: number;
 };
 
 /** Lee la respuesta de apply_retention_policy. */
@@ -150,14 +162,27 @@ export function parseRetentionImpact(value: unknown): RetentionImpact | null {
     executed: v.executed === true,
     attendanceCutoff: str(v.attendance_cutoff),
     auditCutoff: str(v.audit_cutoff),
+    inactiveWorkerCutoff: str(v.inactive_worker_cutoff),
     shifts: Math.max(0, int(v.shifts, 0)),
     sessions: Math.max(0, int(v.sessions, 0)),
     auditRows: Math.max(0, int(v.audit_rows, 0)),
+    workerPrivateRows: Math.max(0, int(v.worker_private_rows, 0)),
   };
 }
 
 export function retentionImpactIsEmpty(impact: RetentionImpact): boolean {
-  return impact.shifts === 0 && impact.sessions === 0 && impact.auditRows === 0;
+  return impact.shifts === 0 && impact.sessions === 0 && impact.auditRows === 0 && impact.workerPrivateRows === 0;
+}
+
+/** Resumen del resultado de «Aplicar ahora». */
+export function describeAppliedRetention(impact: RetentionImpact): string {
+  const p = (n: number, one: string, many: string) => `${n.toLocaleString("es-MX")} ${n === 1 ? one : many}`;
+  return (
+    `Política aplicada. Se eliminaron ${p(impact.shifts, "guardia", "guardias")}, ` +
+    `${p(impact.sessions, "registro de entrada y salida", "registros de entrada y salida")}, ` +
+    `${p(impact.auditRows, "evento de bitácora", "eventos de bitácora")} y ` +
+    `los datos privados de ${p(impact.workerPrivateRows, "trabajador inactivo", "trabajadores inactivos")}. Quedó constancia en la bitácora.`
+  );
 }
 
 // ---------------------------------------------------------------------------

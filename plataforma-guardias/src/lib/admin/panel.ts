@@ -20,6 +20,12 @@ const CARDS = {
     title: "Categorías",
     description: "Clasificación de instalaciones en el directorio y el mapa.",
   },
+  catalogos: {
+    key: "catalogos",
+    href: "/administracion/catalogos",
+    title: "Catálogos geográficos",
+    description: "Entidades con cobertura activa, zonas horarias y municipios del INEGI.",
+  },
   importarInstalaciones: {
     key: "importar-instalaciones",
     href: "/administracion/instalaciones/importar",
@@ -64,6 +70,7 @@ export function adminPanelCards(role: AppRole): PanelCard[] {
       return [
         CARDS.instalaciones,
         CARDS.categorias,
+        CARDS.catalogos,
         CARDS.importarInstalaciones,
         CARDS.importarTrabajadores,
         CARDS.usuarios,

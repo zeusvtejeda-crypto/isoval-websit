@@ -72,6 +72,24 @@ describe("FacilityPicker", () => {
     expect(screen.getByText("Sede 7 (inactiva)", { exact: false })).toBeInTheDocument();
   });
 
+  it("muestra el nombre de cada sede seleccionada y permite quitarla", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      createElement(FacilityPicker, { idPrefix: "t", choices: facilities, defaultSelected: [facilities[2].id, facilities[7].id] }),
+    );
+    const list = screen.getByRole("list", { name: "Sedes seleccionadas" });
+    expect(Array.from(list.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["Sede 2×", "Sede 7 (inactiva)×"]);
+    // La búsqueda oculta casillas, pero los nombres seleccionados siguen a la vista.
+    await user.type(screen.getByRole("searchbox", { name: "Buscar sede" }), "hospital");
+    expect(screen.getByRole("list", { name: "Sedes seleccionadas" })).toHaveTextContent("Sede 2");
+    await user.click(screen.getByRole("button", { name: "Quitar Sede 2" }));
+    expect(screen.getByText("1 sede seleccionada")).toBeInTheDocument();
+    const checked = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="facility_ids"]:checked')).map((i) => i.value);
+    expect(checked).toEqual([facilities[7].id]);
+    await user.click(screen.getByRole("button", { name: "Quitar Sede 7" }));
+    expect(screen.queryByRole("list", { name: "Sedes seleccionadas" })).not.toBeInTheDocument();
+  });
+
   it("indica cuando no hay instalaciones", () => {
     render(createElement(FacilityPicker, { idPrefix: "t", choices: [], defaultSelected: [], error: "Asigna al menos una sede." }));
     expect(screen.getByText(/No hay instalaciones activas/)).toBeInTheDocument();

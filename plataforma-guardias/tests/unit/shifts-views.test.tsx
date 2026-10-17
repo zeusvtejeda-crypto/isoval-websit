@@ -7,6 +7,7 @@ import type { ActionResult } from "@/lib/actions";
 import { ShiftCalendar } from "@/components/shifts/shift-calendar";
 import { ShiftList } from "@/components/shifts/shift-list";
 import { AssignmentCard, type AssignmentActions } from "@/components/shifts/assignment-card";
+import { OWN_RECORD_NOTICE, STALE_OPEN_NOTICE } from "@/lib/shifts/rules";
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
@@ -161,7 +162,64 @@ function buildShift(overrides: Partial<ShiftWithAttendance> = {}): ShiftWithAtte
   };
 }
 
+function buildCustom(opts: {
+  sessions?: SessionRow[];
+  now?: Date;
+  assignmentStatus?: AssignmentWithAttendance["assignment"]["status"];
+  shiftStatus?: ShiftRow["status"];
+  substitute?: { id: string; full_name: string } | null;
+  substituteId?: string | null;
+}): AssignmentWithAttendance {
+  const base = buildAssignment();
+  const list = opts.sessions ?? [];
+  const assignmentStatus = opts.assignmentStatus ?? "asignado";
+  const summary = summarizeAttendance(
+    { startsAt: shiftRow.starts_at, endsAt: shiftRow.ends_at, status: opts.shiftStatus ?? shiftRow.status },
+    { status: assignmentStatus, substituteForWorkerId: opts.substituteId ?? null },
+    list.map((s) => ({
+      id: s.id,
+      checkInAt: s.check_in_at,
+      checkOutAt: s.check_out_at,
+      recordStatus: s.record_status,
+      checkInMethod: s.check_in_method,
+      checkOutMethod: s.check_out_method,
+      supersedesId: s.supersedes_id,
+    })),
+    { toleranceMinutes: 10, openSessionGraceMinutes: 240, now: opts.now ?? now },
+  );
+  return {
+    ...base,
+    assignment: { ...base.assignment, status: assignmentStatus, substitute_for_worker_id: opts.substituteId ?? null },
+    substituteFor: opts.substitute ?? null,
+    sessions: list,
+    summary,
+  };
+}
+
+function cardProps(item: AssignmentWithAttendance, opts: { now?: Date; shiftStatus?: ShiftRow["status"] } = {}) {
+  return {
+    item,
+    tz: TZ,
+    zoneLabel: "Tiempo del Pacífico (Mazatlán), GMT-7",
+    shift: { starts_at: shiftRow.starts_at, ends_at: shiftRow.ends_at, status: opts.shiftStatus ?? shiftRow.status },
+    canManage: true,
+    actions,
+    names: {},
+    currentUserId: "p-coord",
+    workerProfileId: "p-worker",
+    notes: [],
+    corrections: [],
+    requestId: "11111111-1111-4111-8111-111111111111",
+    now: opts.now ?? now,
+    checkInOpensAt: new Date("2026-10-18T03:00:00Z"),
+    viewer: coordinator,
+    openSessionGraceMinutes: 240,
+  };
+}
+
 const noop = async (): Promise<ActionResult> => ({ ok: true });
+/** Coordinación sin trabajador vinculado (no es su propia asistencia). */
+const coordinator = { isAdmin: false, workerId: null };
 const actions: AssignmentActions = { changeStatus: noop, remove: noop, correct: noop, voidSession: noop, manual: noop, incidentNote: noop };
 
 describe("vistas de guardias", () => {
@@ -213,6 +271,8 @@ describe("vistas de guardias", () => {
         requestId="11111111-1111-4111-8111-111111111111"
         now={now}
         checkInOpensAt={new Date("2026-10-18T03:00:00Z")}
+        viewer={coordinator}
+        openSessionGraceMinutes={240}
       />,
     );
     expect(screen.getByText(/Entrada registrada no equivale a presencia física verificada\./)).toBeInTheDocument();
@@ -268,6 +328,8 @@ describe("vistas de guardias", () => {
       now,
       checkInOpensAt: new Date("2026-10-18T03:00:00Z"),
       correctionsHref: `/correcciones?sede=${FACILITY}`,
+      viewer: coordinator,
+      openSessionGraceMinutes: 240,
     };
     const { unmount } = render(<AssignmentCard {...props} canManage />);
     // 05:05 UTC = 22:05 del sábado 17 en Mazatlán.
@@ -296,10 +358,146 @@ describe("vistas de guardias", () => {
         requestId="11111111-1111-4111-8111-111111111111"
         now={now}
         checkInOpensAt={new Date("2026-10-18T03:00:00Z")}
+        viewer={coordinator}
+        openSessionGraceMinutes={240}
       />,
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(screen.queryByText("Acciones de coordinación")).not.toBeInTheDocument();
     expect(screen.getByText(/Entrada registrada no equivale a presencia física verificada\./)).toBeInTheDocument();
+  });
+  it("asignación: muestra el tiempo entre salida y regreso (no cuenta) junto a las métricas", () => {
+    const gapSessions = [
+      session({ id: "g1", check_in_at: "2026-10-18T05:00:00Z", check_out_at: "2026-10-18T07:00:00Z", check_out_method: "propio", check_out_by: "p-worker" }),
+      session({ id: "g2", check_in_at: "2026-10-18T07:30:00Z", check_out_at: "2026-10-18T13:00:00Z", check_out_method: "propio", check_out_by: "p-worker" }),
+    ];
+    render(<AssignmentCard {...cardProps(buildCustom({ sessions: gapSessions }))} />);
+    const metrics = screen.getByRole("region", { name: /Métricas de/ });
+    expect(within(metrics).getByText(/Tiempo entre salida y regreso \(no cuenta\):/)).toHaveTextContent(
+      "Tiempo entre salida y regreso (no cuenta): 30 min",
+    );
+    // Total sin contar el hueco: 2 h + 5 h 30 min.
+    const total = within(metrics).getByText("Total registrado").closest("div") as HTMLElement;
+    expect(total).toHaveTextContent("Total registrado7 h 30 min");
+  });
+
+  it("sustitución: se ve «Cubre a <nombre>»", () => {
+    const { unmount } = render(
+      <AssignmentCard {...cardProps(buildCustom({ substitute: { id: "w9", full_name: "[DEMO] Pedro Ruiz" }, substituteId: "w9" }))} />,
+    );
+    expect(screen.getByText("Cubre a [DEMO] Pedro Ruiz")).toBeInTheDocument();
+    expect(screen.queryByText(/Sustituye a/)).not.toBeInTheDocument();
+    unmount();
+    render(<AssignmentCard {...cardProps(buildCustom({ substitute: null, substituteId: "w9" }))} />);
+    expect(screen.getByText("Cubre a una persona no visible para tu cuenta")).toBeInTheDocument();
+    cleanup();
+    render(<AssignmentCard {...cardProps(buildCustom({}))} />);
+    expect(screen.queryByText(/Cubre a/)).not.toBeInTheDocument();
+  });
+
+  it("entrada sin salida fuera del margen: no ofrece «Registrar salida» y destaca «Corregir registro»", () => {
+    const open = [session({ id: "s-open", check_in_at: "2026-10-18T05:10:00Z" })];
+    // Término 13:00 UTC + margen de 4 h = 17:00; ahora 18:00.
+    const late = new Date("2026-10-18T18:00:00Z");
+    const item = buildCustom({ sessions: open, now: late });
+    expect(item.summary.status).toBe("registro_incompleto");
+    render(<AssignmentCard {...cardProps(item, { now: late })} />);
+
+    expect(screen.queryByText("Registrar salida por otra persona")).not.toBeInTheDocument();
+    expect(screen.getByText(STALE_OPEN_NOTICE)).toBeInTheDocument();
+    expect(screen.getByText(/requiere revisión/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ir a «Corregir registro»" })).toHaveAttribute("href", "#corregir-s-open");
+    const details = document.getElementById("corregir-s-open") as HTMLElement;
+    expect(details.tagName).toBe("DETAILS");
+    expect(within(details).getByText("Falta la hora real de salida")).toBeInTheDocument();
+    // La salida es obligatoria y no se precarga con la hora actual.
+    const out = within(details).getByLabelText(/Salida correcta/);
+    expect(out).toBeRequired();
+    expect(out).toHaveValue("");
+    expect(within(details).getByText("Indica la hora real en que terminó (no la hora actual).")).toBeInTheDocument();
+  });
+
+  it("entrada abierta dentro del margen: sí ofrece registrar la salida por otra persona", () => {
+    const open = [session({ id: "s-open", check_in_at: "2026-10-18T05:10:00Z" })];
+    const inGrace = new Date("2026-10-18T14:00:00Z");
+    render(<AssignmentCard {...cardProps(buildCustom({ sessions: open, now: inGrace }), { now: inGrace })} />);
+    expect(screen.getByText("Registrar salida por otra persona")).toBeInTheDocument();
+    expect(screen.queryByText(STALE_OPEN_NOTICE)).not.toBeInTheDocument();
+  });
+
+  it("guardia cancelada con entrada abierta vencida: tampoco ofrece la salida ni el registro manual", () => {
+    const open = [session({ id: "s-open", check_in_at: "2026-10-18T05:10:00Z" })];
+    const late = new Date("2026-10-18T18:00:00Z");
+    const item = buildCustom({ sessions: open, now: late, shiftStatus: "cancelada" });
+    expect(item.summary.status).toBe("cancelada");
+    render(<AssignmentCard {...cardProps(item, { now: late, shiftStatus: "cancelada" })} />);
+    expect(screen.queryByText("Registrar salida por otra persona")).not.toBeInTheDocument();
+    expect(screen.getByText(STALE_OPEN_NOTICE)).toBeInTheDocument();
+    expect(screen.queryByText("Agregar registro manual")).not.toBeInTheDocument();
+    expect(screen.getByText("La guardia está cancelada: no se agregan registros manuales.")).toBeInTheDocument();
+  });
+
+  it("asignación no activa: no ofrece el registro manual y explica por qué", () => {
+    render(<AssignmentCard {...cardProps(buildCustom({ assignmentStatus: "cancelado" }))} />);
+    expect(screen.queryByText("Agregar registro manual")).not.toBeInTheDocument();
+    expect(screen.getByText("La asignación no está activa: para agregar registros, vuelve a ponerla como «Asignado».")).toBeInTheDocument();
+  });
+
+  it("propia asistencia: coordinación no ve corregir, anular, registro manual, cambiar estado ni justificar", () => {
+    const pending = {
+      id: "c1",
+      assignment_id: "a1",
+      session_id: "s-fixed",
+      worker_id: "w1",
+      facility_id: FACILITY,
+      requested_by: "p-worker",
+      requested_check_in_at: "2026-10-18T05:05:00Z",
+      requested_check_out_at: null,
+      reason: "Llegué antes",
+      status: "pendiente" as const,
+      reviewed_by: null,
+      reviewed_at: null,
+      review_notes: null,
+      resulting_session_id: null,
+      created_at: "2026-10-18T15:00:00Z",
+    };
+    const base = { ...cardProps(buildAssignment()), corrections: [pending], correctionsHref: `/correcciones?sede=${FACILITY}` };
+    const { unmount } = render(<AssignmentCard {...base} viewer={{ isAdmin: false, workerId: "w1" }} />);
+    expect(screen.getByText(OWN_RECORD_NOTICE)).toBeInTheDocument();
+    expect(screen.getByText("No puedes corregir tu propia asistencia; pide a otra persona de coordinación o a administración.")).toBeInTheDocument();
+    for (const label of ["Corregir registro", "Anular registro", "Agregar registro manual", "Cambiar estado de la asignación", "Justificar"]) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole("link", { name: "Revisar solicitudes en Correcciones" })).not.toBeInTheDocument();
+    // Los registros y las incidencias se siguen viendo.
+    expect(screen.getByText("Llegada tardía")).toBeInTheDocument();
+    unmount();
+
+    // Administración sí puede, aunque sea su propia asignación.
+    render(<AssignmentCard {...base} viewer={{ isAdmin: true, workerId: "w1" }} />);
+    expect(screen.queryByText(OWN_RECORD_NOTICE)).not.toBeInTheDocument();
+    expect(screen.getByText("Corregir registro")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agregar registro manual" })).toBeInTheDocument();
+    expect(screen.getByText("Cambiar estado de la asignación")).toBeInTheDocument();
+    expect(screen.getAllByText("Justificar").length).toBeGreaterThan(0);
+  });
+
+  it("propia asistencia con entrada abierta: remite a «Mi guardia» en lugar de registrar por otra persona", () => {
+    const open = [session({ id: "s-open", check_in_at: "2026-10-18T05:10:00Z" })];
+    const during = new Date("2026-10-18T08:00:00Z");
+    render(<AssignmentCard {...cardProps(buildCustom({ sessions: open, now: during }), { now: during })} viewer={{ isAdmin: false, workerId: "w1" }} />);
+    expect(screen.queryByText("Registrar salida por otra persona")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Mi guardia" })).toHaveAttribute("href", "/mi-guardia");
+  });
+
+  it("registro manual y corrección: límites de captura de la guardia ±12 h y nunca en el futuro", () => {
+    render(<AssignmentCard {...cardProps(buildAssignment())} />);
+    // Guardia 22:00 (17/10) – 06:00 (18/10) en Mazatlán; ahora 09:00 del 18/10.
+    const manualIn = document.querySelector('input[name="check_in"][id^="m-in-"]') as HTMLInputElement;
+    expect(manualIn).toHaveAttribute("min", "2026-10-17T10:00");
+    expect(manualIn).toHaveAttribute("max", "2026-10-18T09:00");
+    const correctIn = document.querySelector('input[name="check_in"][id^="c-in-"]') as HTMLInputElement;
+    expect(correctIn).toHaveAttribute("min", "2026-10-17T10:00");
+    expect(screen.getAllByText(/Las horas deben estar entre 17\/10\/2026 10:00 y 18\/10\/2026 18:00/).length).toBeGreaterThan(0);
   });
 });

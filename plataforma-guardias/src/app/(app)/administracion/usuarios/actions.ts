@@ -23,6 +23,7 @@ import {
 import { getAuthAdmin } from "@/lib/admin/accounts-server";
 import { failure, fieldFailure, friendlyAdminError, friendlyAuthError, invalidResult } from "@/lib/admin/form";
 import { generateTemporaryPassword } from "@/lib/admin/password";
+import { clearStoredReason } from "@/lib/reason";
 
 /** Duración del bloqueo en Auth al desactivar (≈ 100 años). */
 const BAN_DURATION = "876000h";
@@ -70,6 +71,15 @@ async function syncScopes(supabase: ServerSupabase, userId: string, next: readon
     if (insError) return friendlyDbError(insError, "No se pudieron asignar las sedes.");
   }
   return null;
+}
+
+/**
+ * Limpia el motivo guardado en el perfil antes de escribir uno nuevo, para que
+ * un motivo igual al anterior sí quede en la bitácora (ver src/lib/reason.ts).
+ */
+async function prepareProfileReason(supabase: ServerSupabase, userId: string, fallback: string): Promise<string | null> {
+  const error = await clearStoredReason(supabase, "profiles", userId);
+  return error ? friendlyAdminError(error, fallback) : null;
 }
 
 async function currentProfile(supabase: ServerSupabase, userId: string) {
@@ -121,6 +131,8 @@ export async function createAccount(_prev: ActionResult<CreatedAccount> | null, 
     );
   };
 
+  const reasonIssue = await prepareProfileReason(supabase, userId, "No se pudo registrar el perfil de la cuenta.");
+  if (reasonIssue) return rollback(reasonIssue);
   const { data: updated, error: profileError } = await supabase
     .from("profiles")
     .update({ role: v.role, display_name: v.display_name, worker_id: v.worker_id ?? null, change_reason: "Alta de cuenta de acceso" })
@@ -179,6 +191,8 @@ export async function updateAccount(_prev: ActionResult | null, formData: FormDa
 
   const profileChanged = changes.some((c) => c !== "sedes asignadas");
   if (profileChanged) {
+    const reasonIssue = await prepareProfileReason(supabase, v.user_id, "No se pudo guardar la cuenta.");
+    if (reasonIssue) return failure(reasonIssue);
     const { data: updated, error } = await supabase
       .from("profiles")
       .update({ display_name: v.display_name, role: v.role, worker_id: nextWorker, change_reason: v.reason ?? null })
@@ -231,6 +245,8 @@ export async function setAccountActive(_prev: ActionResult | null, formData: For
   if (!current) return failure("La cuenta no existe o fue eliminada.");
 
   if (current.active !== active) {
+    const reasonIssue = await prepareProfileReason(supabase, user_id, "No se pudo cambiar el estado de la cuenta.");
+    if (reasonIssue) return failure(reasonIssue);
     const { data: updated, error } = await supabase.from("profiles").update({ active, change_reason: reason }).eq("id", user_id).select("id");
     if (error) return failure(friendlyAdminError(error, "No se pudo cambiar el estado de la cuenta."));
     if (!updated || updated.length === 0) return failure("No tienes permiso para modificar esta cuenta.");

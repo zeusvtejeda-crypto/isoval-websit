@@ -21,6 +21,11 @@ export type HomeSummary = {
 
 const DAY = 86_400_000;
 
+/** Descripción del acceso rápido a Guardias: auditoría solo consulta. */
+export function guardiasQuickLinkDescription(canManage: boolean): string {
+  return canManage ? "Programar, asignar y revisar guardias" : "Consultar guardias";
+}
+
 export function summarizeHome(shifts: ShiftWithAttendance[], now: Date, recentDays = 7): HomeSummary {
   const nowMs = now.getTime();
   const recentFrom = nowMs - recentDays * DAY;

@@ -3,17 +3,15 @@ import Form from "next/form";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
-import { createClient, type ServerSupabase } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import type { AssignmentWithAttendance } from "@/lib/attendance/load";
 import { ASSIGNMENT_STATUS_LABELS, ATTENDANCE_STATUS_TONE, INCIDENT_LABELS, afterPreposition } from "@/lib/attendance/labels";
-import type { Database } from "@/lib/types/database";
-import { chunk, fetchAll } from "@/lib/data/fetch-all";
 import { DEFAULT_TIMEZONE, formatDateTime, formatDuration, todayInTz } from "@/lib/time";
 import { isGuid, parseReportFilters, readParam, type RawParams, type ReportFilters } from "@/lib/reports/params";
-import { getProfileNames, getWorkerProfileIds, loadReport } from "@/lib/reports/load";
+import { getProfileNames, getWorkerProfileIds, loadIncidentNotes, loadReport, type IncidentNoteRow } from "@/lib/reports/load";
 import { loadCorrections } from "@/lib/reports/corrections-load";
 import { reportTotals } from "@/lib/reports/rows";
-import { dayLabel } from "@/lib/reports/document";
+import { dayLabel, GAP_LABEL } from "@/lib/reports/document";
 import { actorLabel, type ActorContext } from "@/lib/reports/actors";
 import { ONLY_STARTED_NOTICE, PRESENCE_NOTICE } from "@/lib/reports/texts";
 import { PageHeader } from "@/components/ui/page-header";
@@ -29,8 +27,6 @@ import { CorrectionCard } from "../../../correcciones/_components/correction-car
 
 export const metadata: Metadata = { title: "Historial del trabajador" };
 
-type IncidentNoteRow = Database["public"]["Tables"]["incident_notes"]["Row"];
-
 type WorkerHeader = {
   id: string;
   full_name: string;
@@ -42,17 +38,6 @@ type WorkerHeader = {
 
 /** Días por omisión del historial individual. */
 const WORKER_DEFAULT_DAYS = 30;
-
-async function getIncidentNotes(supabase: ServerSupabase, assignmentIds: string[]): Promise<IncidentNoteRow[]> {
-  const out: IncidentNoteRow[] = [];
-  for (const batch of chunk(assignmentIds)) {
-    const rows = await fetchAll<IncidentNoteRow>((from, to) =>
-      supabase.from("incident_notes").select("*").in("assignment_id", batch).order("created_at").range(from, to),
-    );
-    out.push(...rows);
-  }
-  return out;
-}
 
 function AssignmentStatusNote({ item, actors, tz }: { item: AssignmentWithAttendance; actors: ActorContext; tz: string }) {
   const a = item.assignment;
@@ -100,6 +85,7 @@ export default async function HistorialTrabajadorPage({ params, searchParams }: 
     stateId: null,
     workerId: id,
     attendance: "todas",
+    incident: "",
   };
 
   const [report, corrections, workerProfiles] = await Promise.all([
@@ -114,7 +100,7 @@ export default async function HistorialTrabajadorPage({ params, searchParams }: 
   // Más recientes primero en la vista individual (orden por fecha, no por desempeño).
   const rows = report.rows.slice().reverse();
   const assignmentIds = rows.map((r) => r.assignmentId);
-  const notes = await getIncidentNotes(supabase, assignmentIds);
+  const notes = await loadIncidentNotes(supabase, assignmentIds);
   const notesByAssignment = new Map<string, IncidentNoteRow[]>();
   for (const n of notes) notesByAssignment.set(n.assignment_id, [...(notesByAssignment.get(n.assignment_id) ?? []), n]);
 
@@ -235,6 +221,7 @@ export default async function HistorialTrabajadorPage({ params, searchParams }: 
                       ["Retraso", r.lateMinutes == null ? "—" : formatDuration(r.lateMinutes)],
                       ["Salida anticipada", r.earlyLeaveMinutes == null ? "—" : formatDuration(r.earlyLeaveMinutes)],
                       ["Permanencia adicional", formatDuration(r.extraStayMinutes)],
+                      [GAP_LABEL, formatDuration(r.gapMinutes)],
                     ] as const
                   ).map(([k, v]) => (
                     <div key={k}>
@@ -308,7 +295,8 @@ export default async function HistorialTrabajadorPage({ params, searchParams }: 
           title={<span id="solicitudes">Solicitudes de corrección</span>}
           description="Todas las solicitudes de esta persona (cualquier fecha). El registro original siempre se conserva."
           actions={
-            user.canManage && corrections.items.some((c) => c.status === "pendiente") ? (
+            // Salvo administración, nadie revisa solicitudes sobre su propia asistencia.
+            user.canManage && (user.isAdmin || user.workerId !== id) && corrections.items.some((c) => c.status === "pendiente") ? (
               <Link href="/correcciones" className={buttonClasses("outline")}>
                 Revisar pendientes
               </Link>

@@ -236,7 +236,7 @@ export default function FacilityMap({
       const title = category ? `${f.name} (${category.name})` : f.name;
       const marker = L.marker([f.latitude, f.longitude], {
         icon: L.divIcon({
-          html: markerSvg(category?.color, title),
+          html: markerSvg(category?.color, title, category?.icon),
           className: "dir-marker",
           iconSize: [32, 42],
           iconAnchor: [16, 41],

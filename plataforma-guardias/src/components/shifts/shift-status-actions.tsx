@@ -60,7 +60,7 @@ export function ShiftStatusActions({
                 {openSessions > 0 ? (
                   <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950">
                     Hay {openSessions} {openSessions === 1 ? "persona" : "personas"} con entrada abierta. Las entradas no se cierran automáticamente:
-                    registra su salida si corresponde.
+                    registra su salida si corresponde o, si ya pasó el término y el margen, usa «Corregir registro» con la hora real.
                   </p>
                 ) : null}
                 <ReasonField id={`cancel-${shiftId}`} label="Motivo de la cancelación" error={fieldError(state, "reason")} />

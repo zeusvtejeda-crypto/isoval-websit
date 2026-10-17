@@ -58,3 +58,14 @@ export async function getSettingNumber(supabase: ServerSupabase, key: string, fi
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
+
+/**
+ * Para mostrar en selectores: agrega la clave INEGI a los municipios cuyo nombre
+ * se repite dentro de la misma entidad (p. ej. dos «San Juan Mixtepec» en Oaxaca).
+ * No usar para comparar nombres (los importadores usan el nombre oficial).
+ */
+export function labelRepeatedMunicipalities<T extends { state_id: number; name: string; inegi_code: string }>(rows: T[]): T[] {
+  const count = new Map<string, number>();
+  for (const r of rows) count.set(`${r.state_id}|${r.name}`, (count.get(`${r.state_id}|${r.name}`) ?? 0) + 1);
+  return rows.map((r) => ((count.get(`${r.state_id}|${r.name}`) ?? 0) > 1 ? { ...r, name: `${r.name} (clave INEGI ${r.inegi_code})` } : r));
+}

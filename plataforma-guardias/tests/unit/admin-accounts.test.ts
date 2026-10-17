@@ -14,6 +14,7 @@ import {
   joinSpanish,
   linkableWorkers,
   normalizeSearch,
+  ownAttendanceRestricted,
   parseAccountFilters,
   readCreateAccountForm,
   readUpdateAccountForm,
@@ -277,5 +278,15 @@ describe("errores amigables", () => {
     expect(friendlyAuthError({ message: "Database error creating new user" })).toMatch(/perfil/);
     expect(friendlyAuthError({ message: "weird" }, "Falló")).toBe("Falló");
     expect(friendlyAuthError(null)).toMatch(/sistema de acceso/);
+  });
+});
+
+describe("separación de funciones", () => {
+  it("avisa solo a coordinación vinculada a un trabajador (administración queda exenta)", () => {
+    expect(ownAttendanceRestricted("coordinador", W1)).toBe(true);
+    expect(ownAttendanceRestricted("coordinador", null)).toBe(false);
+    expect(ownAttendanceRestricted("admin", W1)).toBe(false);
+    expect(ownAttendanceRestricted("trabajador", W1)).toBe(false);
+    expect(ownAttendanceRestricted("auditor", W1)).toBe(false);
   });
 });

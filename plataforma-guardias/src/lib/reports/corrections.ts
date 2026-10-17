@@ -4,6 +4,7 @@
  * de la base de datos; aquí se valida la entrada y se prepara la vista.
  */
 import { z } from "zod";
+import { ASSIGNMENT_STATUS_LABELS } from "@/lib/attendance/labels";
 import { formatDateTime } from "@/lib/time";
 
 export type CorrectionTab = "pendientes" | "revisadas";
@@ -58,6 +59,71 @@ export function parseReview(raw: { requestId: unknown; decision: unknown; notes:
 
 type DateLike = string | Date;
 
+// ---------------------------------------------------------------------------
+// Reglas de la base de datos que se anticipan en la interfaz
+// ---------------------------------------------------------------------------
+
+/** Horas máximas antes del inicio o después del término para horas capturadas a mano. */
+export const SHIFT_WINDOW_HOURS = 12;
+/** Mismo texto que la función app.assert_within_shift de la base de datos. */
+export const SHIFT_WINDOW_MESSAGE =
+  "Las horas deben estar dentro del horario de la guardia (máximo 12 h antes del inicio o después del término)";
+
+export type ShiftTimes = { starts_at: DateLike; ends_at: DateLike };
+
+/** Ventana permitida para horas capturadas a mano: la guardia ±12 h. */
+export function shiftWindow(shift: ShiftTimes): { start: Date; end: Date } {
+  const hours = SHIFT_WINDOW_HOURS * 3_600_000;
+  return { start: new Date(new Date(shift.starts_at).getTime() - hours), end: new Date(new Date(shift.ends_at).getTime() + hours) };
+}
+
+/** Todas las horas indicadas (se ignoran las vacías) caen en la ventana de la guardia. */
+export function isWithinShiftWindow(shift: ShiftTimes, ...times: Array<DateLike | null | undefined>): boolean {
+  const { start, end } = shiftWindow(shift);
+  return times.every((t) => {
+    if (t == null) return true;
+    const ms = new Date(t).getTime();
+    return ms >= start.getTime() && ms <= end.getTime();
+  });
+}
+
+/**
+ * Una solicitud de corrección solo puede aprobarse si la guardia no está
+ * cancelada y la asignación sigue activa: no se ofrece en otros casos.
+ */
+export function correctionRequestBlock(shiftStatus: string | null | undefined, assignmentStatus: string | null | undefined): string | null {
+  if (shiftStatus === "cancelada") return "La guardia está cancelada: no se pueden solicitar correcciones de esta guardia.";
+  if (assignmentStatus && assignmentStatus !== "asignado") {
+    const label = ASSIGNMENT_STATUS_LABELS[assignmentStatus as keyof typeof ASSIGNMENT_STATUS_LABELS] ?? assignmentStatus;
+    return `La asignación no está activa (${label}): no se pueden solicitar correcciones de esta guardia.`;
+  }
+  return null;
+}
+
+/**
+ * Separación de funciones: salvo administración, nadie revisa una solicitud
+ * que hizo ni una sobre su propia asistencia (la base de datos lo rechaza).
+ */
+export const OWN_REVIEW_MESSAGE = "Otra persona de coordinación o administración debe revisar esta solicitud";
+
+export type Reviewer = { id: string; workerId: string | null; isAdmin: boolean };
+
+export type OwnReviewBlock = "own_request" | "own_attendance" | null;
+
+export function ownReviewBlock(request: { requested_by: string; worker_id: string }, reviewer: Reviewer): OwnReviewBlock {
+  if (reviewer.isAdmin) return null;
+  // Mismo orden de verificación que review_correction.
+  if (request.requested_by === reviewer.id) return "own_request";
+  if (reviewer.workerId && request.worker_id === reviewer.workerId) return "own_attendance";
+  return null;
+}
+
+/** Mensajes de la base de datos para cada caso (se muestran tal cual). */
+export const OWN_REVIEW_DB_MESSAGES: Record<Exclude<OwnReviewBlock, null>, string> = {
+  own_request: "No puedes revisar una solicitud que tú hiciste",
+  own_attendance: "No puedes corregir, anular ni revisar tu propia asistencia. Pide a otra persona de coordinación o a administración.",
+};
+
 export type CorrectionRequestTimes = {
   session_id: string | null;
   requested_check_in_at: string | null;
@@ -65,6 +131,19 @@ export type CorrectionRequestTimes = {
 };
 
 export type CurrentSession = { check_in_at: string; check_out_at: string | null; record_status: "vigente" | "corregido" | "anulado" } | null;
+
+/** Guardia y asignación de la solicitud (para anticipar rechazos de la base de datos). */
+export type CorrectionContext = {
+  shift?: (ShiftTimes & { status?: string | null }) | null;
+  assignmentStatus?: string | null;
+};
+
+/** Contexto a partir de una solicitud cargada con su asignación y guardia. */
+export function correctionContext(item: {
+  assignment: { status?: string | null; shift: (ShiftTimes & { status?: string | null }) | null } | null;
+}): CorrectionContext {
+  return { shift: item.assignment?.shift ?? null, assignmentStatus: item.assignment?.status ?? null };
+}
 
 export type CorrectionView = {
   /** "ajuste" = corrige un registro existente; "nuevo" = agrega un registro que faltó. */
@@ -86,7 +165,7 @@ function fmt(value: DateLike | null | undefined, tz: string): string | null {
  * Compara horas actuales y solicitadas en la zona de la sede y anticipa los
  * casos que la base de datos rechazaría (para avisar antes de aprobar).
  */
-export function describeCorrection(request: CorrectionRequestTimes, session: CurrentSession, tz: string): CorrectionView {
+export function describeCorrection(request: CorrectionRequestTimes, session: CurrentSession, tz: string, context: CorrectionContext = {}): CorrectionView {
   const warnings: string[] = [];
   let canApprove = true;
   const kind = request.session_id ? "ajuste" : "nuevo";
@@ -109,6 +188,23 @@ export function describeCorrection(request: CorrectionRequestTimes, session: Cur
 
   if (resultIn && resultOut && Date.parse(resultOut) <= Date.parse(resultIn)) {
     warnings.push("Con estos cambios la salida quedaría antes o igual que la entrada; la aprobación será rechazada.");
+    canApprove = false;
+  }
+
+  const { shift, assignmentStatus } = context;
+  if (kind === "nuevo") {
+    // add_manual_attendance: guardia no cancelada y asignación activa.
+    if (shift?.status === "cancelada") {
+      warnings.push("La guardia está cancelada: no se puede agregar un registro. Recházala con una nota.");
+      canApprove = false;
+    }
+    if (assignmentStatus && assignmentStatus !== "asignado") {
+      warnings.push("La asignación ya no está activa: no se puede agregar un registro. Recházala con una nota.");
+      canApprove = false;
+    }
+  }
+  if (shift && !isWithinShiftWindow(shift, resultIn, resultOut)) {
+    warnings.push(`${SHIFT_WINDOW_MESSAGE}: la aprobación será rechazada. Recházala y pide que envíe las horas reales.`);
     canApprove = false;
   }
 

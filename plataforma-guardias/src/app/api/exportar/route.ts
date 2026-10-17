@@ -10,12 +10,14 @@ import { renderPdf } from "@/lib/reports/pdf";
 
 /**
  * Exportación del historial a Excel (.xlsx) o PDF.
- * GET /api/exportar?formato=xlsx|pdf&desde=AAAA-MM-DD&hasta=AAAA-MM-DD&sede=&estado=&asistencia=&trabajador=uuid|yo
+ * GET /api/exportar?formato=xlsx|pdf&desde=AAAA-MM-DD&hasta=AAAA-MM-DD&sede=&estado=&asistencia=&incidencia=&trabajador=uuid|yo
  *
  * - Requiere sesión (401 si no hay). Los datos se leen con el cliente del
  *   usuario: RLS limita lo que cada rol puede exportar.
  * - Rol trabajador: SIEMPRE se exportan solo sus propios registros.
  * - Rango máximo de 93 días (400 si se excede).
+ * - Incluye observaciones (notas de los registros vigentes) y justificaciones
+ *   (incident_notes, leídas también con RLS).
  */
 const MIME = {
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -50,7 +52,10 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
   try {
-    const [{ rows }, labels] = await Promise.all([loadReport(supabase, parsed.filters, now), resolveFilterLabels(supabase, parsed.filters)]);
+    const [{ rows }, labels] = await Promise.all([
+      loadReport(supabase, parsed.filters, now, { withIncidentNotes: true }),
+      resolveFilterLabels(supabase, parsed.filters),
+    ]);
     const doc = buildReportDocument(
       {
         title: DEFAULT_REPORT_TITLE,
