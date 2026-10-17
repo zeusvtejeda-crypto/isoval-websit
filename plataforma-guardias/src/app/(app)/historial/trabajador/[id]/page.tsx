@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
 import { createClient, type ServerSupabase } from "@/lib/supabase/server";
 import type { AssignmentWithAttendance } from "@/lib/attendance/load";
-import { ASSIGNMENT_STATUS_LABELS, ATTENDANCE_STATUS_TONE, INCIDENT_LABELS } from "@/lib/attendance/labels";
+import { ASSIGNMENT_STATUS_LABELS, ATTENDANCE_STATUS_TONE, INCIDENT_LABELS, afterPreposition } from "@/lib/attendance/labels";
 import type { Database } from "@/lib/types/database";
 import { chunk, fetchAll } from "@/lib/data/fetch-all";
 import { DEFAULT_TIMEZONE, formatDateTime, formatDuration, todayInTz } from "@/lib/time";
@@ -61,7 +61,7 @@ function AssignmentStatusNote({ item, actors, tz }: { item: AssignmentWithAttend
     <p className="text-sm text-gray-700">
       {ASSIGNMENT_STATUS_LABELS[a.status]}
       {a.status_reason ? `: ${a.status_reason}` : ""}
-      {a.status_changed_by ? ` · Registrado por ${actorLabel(a.status_changed_by, actors)}` : ""}
+      {a.status_changed_by ? ` · Registrado por ${afterPreposition(actorLabel(a.status_changed_by, actors))}` : ""}
       {a.status_changed_at ? ` el ${formatDateTime(a.status_changed_at, tz)}` : ""}
     </p>
   );

@@ -1,5 +1,5 @@
 import type { SessionRow } from "@/lib/attendance/load";
-import { METHOD_LABELS, RECORD_STATUS_LABELS, type Tone } from "@/lib/attendance/labels";
+import { METHOD_LABELS, RECORD_STATUS_LABELS, afterPreposition, type Tone } from "@/lib/attendance/labels";
 import { formatDateTime } from "@/lib/time";
 import { actorLabel, type ActorContext } from "@/lib/reports/actors";
 import { Badge } from "@/components/ui/badge";
@@ -60,7 +60,7 @@ export function SessionHistory({ sessions, timeZone, actors }: { sessions: Sessi
             </dl>
             {!vigente ? (
               <p className="mt-2 text-sm text-gray-800">
-                {s.record_status === "corregido" ? "Corregido" : "Anulado"} por {actorLabel(s.status_changed_by, actors)}
+                {s.record_status === "corregido" ? "Corregido" : "Anulado"} por {afterPreposition(actorLabel(s.status_changed_by, actors))}
                 {s.status_changed_at ? ` el ${formatDateTime(s.status_changed_at, timeZone)}` : ""}
                 {s.status_reason ? `. Motivo: ${s.status_reason}` : ""}
               </p>

@@ -10,6 +10,7 @@ import {
   INCIDENT_LABELS,
   METHOD_LABELS,
   RECORD_STATUS_LABELS,
+  afterPreposition,
   type Tone,
 } from "@/lib/attendance/labels";
 import { formatDateTime, formatDuration, utcToLocalInput } from "@/lib/time";
@@ -124,7 +125,7 @@ function SessionItem({
         <p className="mt-2 text-sm text-gray-700">
           {session.record_status === "corregido" ? "Corregido" : "Anulado"}
           {session.status_changed_at ? ` el ${formatDateTime(session.status_changed_at, tz)}` : ""}
-          {session.status_changed_by ? ` por ${actor(session.status_changed_by, "correccion")}` : ""}
+          {session.status_changed_by ? ` por ${afterPreposition(actor(session.status_changed_by, "correccion"))}` : ""}
           {session.status_reason ? `. Motivo: ${session.status_reason}` : ""}
           {replacement ? `. Versión vigente: registro ${shortId(replacement.id)}.` : ""}
         </p>
@@ -204,7 +205,7 @@ export function AssignmentCard({
 
   const statusMeta = [
     assignment.status_changed_at ? formatDateTime(assignment.status_changed_at, tz) : null,
-    assignment.status_changed_by ? `por ${describeActor(assignment.status_changed_by, names, { currentUserId, method: "coordinador" })}` : null,
+    assignment.status_changed_by ? `por ${afterPreposition(describeActor(assignment.status_changed_by, names, { currentUserId, method: "coordinador" }))}` : null,
   ]
     .filter(Boolean)
     .join(", ");

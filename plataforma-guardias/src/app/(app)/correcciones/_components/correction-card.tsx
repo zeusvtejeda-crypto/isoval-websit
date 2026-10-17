@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CORRECTION_STATUS_LABELS, type Tone } from "@/lib/attendance/labels";
+import { CORRECTION_STATUS_LABELS, afterPreposition, type Tone } from "@/lib/attendance/labels";
 import { DEFAULT_TIMEZONE, formatDateTime, formatShiftRange } from "@/lib/time";
 import { actorLabel, type ActorContext } from "@/lib/reports/actors";
 import { describeCorrection } from "@/lib/reports/corrections";
@@ -145,11 +145,11 @@ export function CorrectionCard({
           <span className="font-medium">Motivo:</span> {item.reason}
         </p>
         <p className="text-gray-600">
-          Solicitada por {actorLabel(item.requested_by, ctx)} el {formatDateTime(item.created_at, tz)}
+          Solicitada por {afterPreposition(actorLabel(item.requested_by, ctx))} el {formatDateTime(item.created_at, tz)}
         </p>
         {item.status !== "pendiente" ? (
           <p className="text-gray-600">
-            {item.status === "aprobada" ? "Aprobada" : "Rechazada"} por {actorLabel(item.reviewed_by, ctx)}
+            {item.status === "aprobada" ? "Aprobada" : "Rechazada"} por {afterPreposition(actorLabel(item.reviewed_by, ctx))}
             {item.reviewed_at ? ` el ${formatDateTime(item.reviewed_at, tz)}` : ""}
           </p>
         ) : null}

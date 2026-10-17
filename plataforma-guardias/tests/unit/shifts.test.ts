@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { afterPreposition } from "@/lib/attendance/labels";
 import {
   addDays,
   buildShiftTimes,
@@ -355,6 +356,11 @@ describe("quién registró", () => {
     expect(describeActor("x", names, { currentUserId: "me", method: "coordinador" })).toBe("Coordinación o administración");
     expect(describeActor("x", names, { currentUserId: "me", method: "propio" })).toBe("La propia persona");
     expect(describeActor(null, names, { currentUserId: "me" })).toBe("—");
+  });
+
+  it("después de «por» la cuenta propia se escribe «ti»", () => {
+    expect(`Corregido por ${afterPreposition(describeActor("me", names, { currentUserId: "me" }))}`).toBe("Corregido por ti");
+    expect(`Corregido por ${afterPreposition(describeActor("u1", names, { currentUserId: "me" }))}`).toBe("Corregido por Coordinación (demo)");
   });
 
   it("reúne ids sin repetir", () => {

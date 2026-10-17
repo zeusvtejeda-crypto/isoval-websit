@@ -53,6 +53,14 @@ export const CORRECTION_STATUS_LABELS = {
   rechazada: "Rechazada",
 } as const;
 
+/**
+ * Quién hizo algo, para usar después de una preposición («por …»):
+ * «Tú» se escribe «ti» («Corregido por ti», no «por Tú»).
+ */
+export function afterPreposition(actor: string): string {
+  return actor === "Tú" ? "ti" : actor;
+}
+
 /** Tono visual de apoyo (el texto siempre acompaña al color). */
 export type Tone = "neutral" | "success" | "info" | "warning" | "danger" | "muted";
 
