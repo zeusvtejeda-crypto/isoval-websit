@@ -3,8 +3,15 @@
  *
  * Recibe guardias ya calculadas con loadShiftsWithAttendance() y las agrupa en
  * secciones. No recalcula horas: solo usa el resumen de summarizeAttendance().
- * Las señales (retraso, registro incompleto) son para revisión humana; nunca
- * sancionan ni ordenan a las personas por desempeño.
+ * Las señales (retraso, salida anticipada, permanencia adicional, registro
+ * incompleto) son para revisión humana; nunca sancionan ni ordenan a las
+ * personas por desempeño.
+ *
+ * Responde las preguntas del tablero: quién tiene guardia, quién registró
+ * llegada, quién continúa en servicio, quién se retiró, quién llegó tarde,
+ * quién salió antes, quién se quedó después de su horario, quién cubrió a otra
+ * persona, qué guardias están incompletas y (con enlaces) el historial de cada
+ * trabajador.
  */
 import type { AttendanceMethod } from "@/lib/attendance/calc";
 import type { AssignmentWithAttendance, ShiftStatus, ShiftWithAttendance } from "@/lib/attendance/load";
@@ -35,21 +42,45 @@ type ShiftRef = {
   endsAt: string;
 };
 
+export type BoardOptions = {
+  /**
+   * Margen (minutos) tras el término en que todavía se puede registrar la
+   * salida con la hora actual (app_settings.attendance.open_session_grace_minutes).
+   * Después, check_out la rechaza y se corrige con la hora real.
+   */
+  graceMinutes?: number | null;
+};
+
 type PersonRef = ShiftRef & {
   assignmentId: string;
   workerId: string | null;
   workerName: string;
   assignedPoint: string | null;
+  /** Nombre de la persona a quien cubre (sustitución), o null. */
+  substituteFor: string | null;
 };
 
-export type InServiceEntry = PersonRef & {
-  checkInAt: string;
-  elapsedMinutes: number;
-  method: AttendanceMethod;
-  /** La entrada la registró coordinación (o es una corrección), no la persona. */
-  registeredByStaff: boolean;
-  isResponsible: boolean;
+/** Incidencias de horario tomadas del resumen (señales para revisión, no sanciones). */
+export type ScheduleIncidents = {
+  lateMinutes: number | null;
+  earlyLeaveMinutes: number | null;
+  /** Tiempo registrado después del término (permanencia adicional, no horas extra pagadas). */
+  afterEndMinutes: number;
 };
+
+export type InServiceEntry = PersonRef &
+  ScheduleIncidents & {
+    checkInAt: string;
+    elapsedMinutes: number;
+    method: AttendanceMethod;
+    /** La entrada la registró coordinación (o es una corrección), no la persona. */
+    registeredByStaff: boolean;
+    isResponsible: boolean;
+    /** La guardia ya terminó y la entrada sigue abierta (dentro del margen). */
+    shiftEnded: boolean;
+    /** Hasta cuándo se puede registrar la salida con la hora actual (término + margen), si se conoce el margen. */
+    checkOutDeadline: string | null;
+  };
 
 export type ExpectedEntry = PersonRef & {
   shiftInProgress: boolean;
@@ -59,10 +90,20 @@ export type ExpectedEntry = PersonRef & {
   toleranceMinutes: number;
 };
 
-export type LeftEntry = PersonRef & {
-  checkOutAt: string;
-  totalMinutes: number;
-  method: AttendanceMethod | null;
+export type LeftEntry = PersonRef &
+  ScheduleIncidents & {
+    checkOutAt: string;
+    totalMinutes: number;
+    method: AttendanceMethod | null;
+  };
+
+export type AbsenceStatus = "ausencia_justificada" | "inasistencia_confirmada";
+
+export type AbsenceEntry = PersonRef & {
+  status: AbsenceStatus;
+  /** Motivo capturado por coordinación (shift_assignments.status_reason). */
+  reason: string | null;
+  changedAt: string | null;
 };
 
 export type IncompleteReason = "entrada_sin_salida" | "sin_registros";
@@ -72,7 +113,7 @@ export type IncompleteEntry = PersonRef & {
   checkInAt: string | null;
 };
 
-export type ResponsiblePresence = "en_servicio" | "sin_entrada" | "ya_salio" | "sin_asignacion";
+export type ResponsiblePresence = "en_servicio" | "sin_entrada" | "ya_salio" | "ausente" | "sin_asignacion";
 
 export type ResponsibleEntry = ShiftRef & {
   responsibleId: string;
@@ -91,14 +132,27 @@ export type CoverageEntry = ShiftRef & {
   missing: number;
 };
 
+export type IncidentCounts = {
+  /** Personas (en servicio o que ya salieron) con llegada tardía. */
+  late: number;
+  earlyLeave: number;
+  afterEnd: number;
+  /** Asignaciones (no canceladas) de las guardias del filtro que cubren a otra persona. */
+  substitutions: number;
+};
+
 export type PresenceBoard = {
   shiftCount: number;
+  /** Asignaciones no canceladas en las guardias del filtro (quién tiene guardia). */
+  rosterCount: number;
   inService: InServiceEntry[];
   responsibles: ResponsibleEntry[];
   expected: ExpectedEntry[];
   left: LeftEntry[];
+  absences: AbsenceEntry[];
   uncovered: CoverageEntry[];
   incomplete: IncompleteEntry[];
+  incidentCounts: IncidentCounts;
 };
 
 export const INCOMPLETE_REASON_LABELS: Record<IncompleteReason, string> = {
@@ -110,8 +164,39 @@ export const RESPONSIBLE_PRESENCE_LABELS: Record<ResponsiblePresence, string> = 
   en_servicio: "En servicio",
   sin_entrada: "Sin entrada registrada",
   ya_salio: "Ya registró salida",
+  ausente: "Ausencia o inasistencia registrada",
   sin_asignacion: "Sin asignación en guardias de este filtro",
 };
+
+export const ABSENCE_STATUS_LABELS: Record<AbsenceStatus, string> = {
+  ausencia_justificada: "Ausencia justificada",
+  inasistencia_confirmada: "Inasistencia confirmada tras revisión",
+};
+
+/** Opción «todas» del filtro de sedes: administración ve todas; los demás, solo las suyas. */
+export function allFacilitiesLabel(isAdmin: boolean): string {
+  return isAdmin ? "Todas las sedes" : "Todas mis sedes";
+}
+
+/** Historial individual del trabajador. */
+export function workerHistoryHref(workerId: string): string {
+  return `/historial/trabajador/${encodeURIComponent(workerId)}`;
+}
+
+/**
+ * Etiquetas de texto de las incidencias de una persona (en el orden en que se
+ * muestran). Son señales para revisión; no sanciones.
+ */
+export function incidentLabels(entry: Partial<ScheduleIncidents> & { substituteFor?: string | null }): string[] {
+  const out: string[] = [];
+  if (entry.lateMinutes != null && entry.lateMinutes > 0) out.push(`Llegada tardía ${entry.lateMinutes} min`);
+  if (entry.earlyLeaveMinutes != null && entry.earlyLeaveMinutes > 0) out.push(`Salida anticipada ${entry.earlyLeaveMinutes} min`);
+  if (entry.afterEndMinutes != null && entry.afterEndMinutes > 0) {
+    out.push(`Permanencia adicional ${entry.afterEndMinutes} min (tiempo registrado adicional)`);
+  }
+  if (entry.substituteFor) out.push(`Cubre a ${entry.substituteFor}`);
+  return out;
+}
 
 const MINUTE = 60_000;
 
@@ -167,7 +252,22 @@ function personRef(item: ShiftWithAttendance, a: AssignmentWithAttendance): Pers
     workerId: a.worker?.id ?? a.assignment.worker_id ?? null,
     workerName: a.worker?.full_name ?? "Persona no disponible",
     assignedPoint: a.assignment.assigned_point,
+    // RLS puede ocultar el nombre de la persona cubierta (p. ej. de otra sede).
+    substituteFor: a.substituteFor?.full_name ?? (a.assignment.substitute_for_worker_id ? "otra persona" : null),
   };
+}
+
+function scheduleIncidents(a: AssignmentWithAttendance): ScheduleIncidents {
+  const s = a.summary;
+  return {
+    lateMinutes: s.lateMinutes != null && s.lateMinutes > 0 ? s.lateMinutes : null,
+    earlyLeaveMinutes: s.earlyLeaveMinutes != null && s.earlyLeaveMinutes > 0 ? s.earlyLeaveMinutes : null,
+    afterEndMinutes: Math.max(0, s.afterEndMinutes),
+  };
+}
+
+function isAbsence(status: string): status is AbsenceStatus {
+  return status === "ausencia_justificada" || status === "inasistencia_confirmada";
 }
 
 function toIso(value: Date | string): string {
@@ -177,12 +277,14 @@ function toIso(value: Date | string): string {
 function presenceOf(a: AssignmentWithAttendance): { presence: ResponsiblePresence; checkInAt: string | null } {
   const s = a.summary;
   if (s.status === "en_servicio" && s.openSession) return { presence: "en_servicio", checkInAt: toIso(s.openSession.checkInAt) };
+  if (isAbsence(a.assignment.status)) return { presence: "ausente", checkInAt: null };
   if (s.hasLeft) return { presence: "ya_salio", checkInAt: null };
   return { presence: "sin_entrada", checkInAt: null };
 }
 
-export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, filters: PresenceFilters): PresenceBoard {
+export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, filters: PresenceFilters, options: BoardOptions = {}): PresenceBoard {
   const nowMs = now.getTime();
+  const graceMs = options.graceMinutes != null && Number.isFinite(options.graceMinutes) ? Math.max(0, options.graceMinutes) * MINUTE : null;
   const selected = shifts.filter((s) => !isCancelled(s) && shiftMatchesFilters(s, filters));
   const selectedIds = new Set(selected.map((s) => s.shift.id));
   const sinceMs = filters.incompleteSince ? filters.incompleteSince.getTime() : null;
@@ -199,7 +301,10 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
   const inService: InServiceEntry[] = [];
   const expected: ExpectedEntry[] = [];
   const left: LeftEntry[] = [];
+  const absences: AbsenceEntry[] = [];
   const incomplete: IncompleteEntry[] = [];
+  let rosterCount = 0;
+  let substitutions = 0;
   const responsibles: ResponsibleEntry[] = [];
   const uncovered: CoverageEntry[] = [];
 
@@ -225,17 +330,30 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
       if (a.assignment.status === "cancelado") continue;
       const s = a.summary;
       const base = personRef(item, a);
+      rosterCount += 1;
+      if (base.substituteFor) substitutions += 1;
 
-      if (s.status === "en_servicio" && s.openSession) {
+      if (isAbsence(a.assignment.status)) {
+        absences.push({
+          ...base,
+          status: a.assignment.status,
+          reason: a.assignment.status_reason?.trim() || null,
+          changedAt: a.assignment.status_changed_at ? toIso(a.assignment.status_changed_at) : null,
+        });
+      } else if (s.status === "en_servicio" && s.openSession) {
         const checkInAt = toIso(s.openSession.checkInAt);
         const method = s.openSession.checkInMethod ?? "propio";
+        const shiftEnded = nowMs >= endMs;
         inService.push({
           ...base,
+          ...scheduleIncidents(a),
           checkInAt,
           elapsedMinutes: Math.max(0, Math.floor((nowMs - Date.parse(checkInAt)) / MINUTE)),
           method,
           registeredByStaff: method !== "propio",
           isResponsible: responsibleId != null && base.workerId === responsibleId,
+          shiftEnded,
+          checkOutDeadline: shiftEnded && graceMs != null ? new Date(endMs + graceMs).toISOString() : null,
         });
       } else if (s.status === "registro_incompleto") {
         const entry = incompleteEntry(item, a, nowMs);
@@ -246,6 +364,7 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
           .sort((x, y) => Date.parse(y.check_out_at as string) - Date.parse(x.check_out_at as string))[0];
         left.push({
           ...base,
+          ...scheduleIncidents(a),
           checkOutAt: toIso(s.lastCheckOut),
           totalMinutes: s.totalMinutes,
           method: lastSession?.check_out_method ?? null,
@@ -318,7 +437,16 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
   left.sort((a, b) => Date.parse(b.checkOutAt) - Date.parse(a.checkOutAt) || byName(a, b));
   incomplete.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || byName(a, b));
   responsibles.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || a.responsibleName.localeCompare(b.responsibleName, "es"));
+  absences.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || byName(a, b));
   uncovered.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
 
-  return { shiftCount: selected.length, inService, responsibles, expected, left, uncovered, incomplete };
+  const present = [...inService, ...left];
+  const incidentCounts: IncidentCounts = {
+    late: present.filter((e) => e.lateMinutes != null).length,
+    earlyLeave: present.filter((e) => e.earlyLeaveMinutes != null).length,
+    afterEnd: present.filter((e) => e.afterEndMinutes > 0).length,
+    substitutions,
+  };
+
+  return { shiftCount: selected.length, rosterCount, inService, responsibles, expected, left, absences, uncovered, incomplete, incidentCounts };
 }
