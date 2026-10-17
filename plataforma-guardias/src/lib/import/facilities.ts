@@ -382,8 +382,13 @@ export function resolveMunicipality(value: string, state: ImportStateRef, munici
     if (byCode) return { value: byCode };
   }
   const n = normalizeText(v);
-  const byName = inState.find((m) => normalizeText(m.name) === n);
-  if (byName) return { value: byName };
+  const byName = inState.filter((m) => normalizeText(m.name) === n);
+  if (byName.length === 1) return { value: byName[0] };
+  if (byName.length > 1) {
+    return {
+      error: `Hay ${byName.length} municipios llamados «${v}» en ${state.name}; usa la clave INEGI (${byName.map((m) => m.inegi_code).join(" o ")}).`,
+    };
+  }
   if (inState.length === 0) return { error: `No hay municipios cargados para ${state.name}; deja vacía la columna «municipio».` };
   return { error: `El municipio «${v}» no corresponde a ${state.name}.` };
 }

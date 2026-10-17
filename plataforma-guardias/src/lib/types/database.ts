@@ -316,6 +316,7 @@ export type Database = {
           notes: string | null;
           official_name: string;
           phone: string | null;
+          public_services: string[] | null;
           schedule: string | null;
           services: string[];
           services_verified: boolean;
@@ -350,6 +351,7 @@ export type Database = {
           notes?: string | null;
           official_name: string;
           phone?: string | null;
+          public_services?: never;
           schedule?: string | null;
           services?: string[];
           services_verified?: boolean;
@@ -383,6 +385,7 @@ export type Database = {
           notes?: string | null;
           official_name?: string;
           phone?: string | null;
+          public_services?: never;
           schedule?: string | null;
           services?: string[];
           services_verified?: boolean;
@@ -990,7 +993,7 @@ export type Database = {
           official_name?: string | null;
           phone?: string | null;
           schedule?: string | null;
-          services?: never;
+          services?: string[] | null;
           services_verified?: boolean | null;
           source?: string | null;
           source_url?: string | null;
@@ -1015,7 +1018,7 @@ export type Database = {
           official_name?: string | null;
           phone?: string | null;
           schedule?: string | null;
-          services?: never;
+          services?: string[] | null;
           services_verified?: boolean | null;
           source?: string | null;
           source_url?: string | null;
