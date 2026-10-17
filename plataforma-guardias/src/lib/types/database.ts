@@ -31,6 +31,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      attendance_qr_tokens: {
+        Row: {
+          created_at: string;
+          created_by: string;
+          expires_at: string;
+          id: string;
+          shift_id: string;
+          token_hash: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          created_at?: string;
+          created_by: string;
+          expires_at: string;
+          id?: string;
+          shift_id: string;
+          token_hash: string;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string;
+          expires_at?: string;
+          id?: string;
+          shift_id?: string;
+          token_hash?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendance_qr_tokens_shift_id_fkey";
+            columns: ["shift_id"];
+            isOneToOne: false;
+            referencedRelation: "shifts";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       attendance_sessions: {
         Row: {
           assignment_id: string;
@@ -1075,6 +1111,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      check_in_qr: {
+        Args: { p_notes?: string; p_request_id: string; p_token: string };
+        Returns: Json;
+      };
       check_out: {
         Args: {
           p_assignment_id: string;
@@ -1082,6 +1122,10 @@ export type Database = {
           p_reason?: string;
           p_request_id: string;
         };
+        Returns: Json;
+      };
+      check_out_qr: {
+        Args: { p_notes?: string; p_request_id: string; p_token: string };
         Returns: Json;
       };
       correct_attendance: {
@@ -1124,7 +1168,9 @@ export type Database = {
           substitute_for_name: string;
         }[];
       };
+      issue_qr_token: { Args: { p_shift_id: string }; Returns: Json };
       purge_demo_data: { Args: Record<PropertyKey, never>; Returns: Json };
+      qr_token_context: { Args: { p_token: string }; Returns: Json };
       request_correction: {
         Args: {
           p_assignment_id: string;

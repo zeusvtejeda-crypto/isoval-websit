@@ -15,6 +15,12 @@ const bodySchema = z.object({
   requestId: z.string().uuid(),
   notes: z.string().trim().max(500).optional().nullable(),
   reason: z.string().trim().max(500).optional().nullable(),
+  /** Código QR temporal (opcional). Si viene, el registro es con método «qr». */
+  qrToken: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{20,100}$/)
+    .optional()
+    .nullable(),
 });
 
 export type AttendanceSessionPayload = {
@@ -80,13 +86,18 @@ export async function POST(request: Request): Promise<NextResponse<AttendanceApi
   }
 
   const supabase = await createClient();
-  const fn = parsed.action === "entrada" ? "check_in" : "check_out";
-  const { data, error } = await supabase.rpc(fn, {
-    p_assignment_id: parsed.assignmentId,
-    p_request_id: parsed.requestId,
-    p_notes: parsed.notes ?? undefined,
-    p_reason: parsed.reason ?? undefined,
-  });
+  const { data, error } = parsed.qrToken
+    ? await supabase.rpc(parsed.action === "entrada" ? "check_in_qr" : "check_out_qr", {
+        p_token: parsed.qrToken,
+        p_request_id: parsed.requestId,
+        p_notes: parsed.notes ?? undefined,
+      })
+    : await supabase.rpc(parsed.action === "entrada" ? "check_in" : "check_out", {
+        p_assignment_id: parsed.assignmentId,
+        p_request_id: parsed.requestId,
+        p_notes: parsed.notes ?? undefined,
+        p_reason: parsed.reason ?? undefined,
+      });
 
   if (error) {
     const status = error.code === "42501" ? 403 : error.code === "28000" ? 401 : 422;

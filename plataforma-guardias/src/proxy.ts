@@ -48,7 +48,9 @@ export async function proxy(request: NextRequest) {
   if (!isAuthenticated && !isPublic(pathname) && !pathname.startsWith("/api/")) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", pathname);
+    // Conserva la consulta (p. ej. el código QR de /registro/qr?c=…).
+    url.search = "";
+    url.searchParams.set("next", pathname + request.nextUrl.search);
     return NextResponse.redirect(url);
   }
 

@@ -16,6 +16,8 @@ type Params = {
   assignmentId: string;
   notes?: string | null;
   reason?: string | null;
+  /** Código QR temporal: el servidor lo valida y registra con método «qr». */
+  qrToken?: string | null;
 };
 
 function newRequestId(): string {
