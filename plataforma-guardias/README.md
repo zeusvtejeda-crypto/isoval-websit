@@ -140,6 +140,22 @@ Todas están documentadas en [`.env.example`](.env.example).
 
 - **No se inventa un directorio.** Carga solo datos de fuentes oficiales accesibles y conserva su procedencia (`fuente`, `url_fuente`, fecha de verificación y estado verificado/pendiente).
 - Valida nombres oficiales y categorías antes de cargar datos reales.
+
+### Catálogo oficial de Nayarit (`datos-oficiales/`)
+
+Incluye un catálogo listo para el importador, construido solo con fuentes oficiales y reproducible con `datos-oficiales/construir_instalaciones.py`. Las fuentes y reglas están en [`datos-oficiales/FUENTES.md`](datos-oficiales/FUENTES.md).
+
+| Archivo | Contenido |
+| --- | --- |
+| `instalaciones_nayarit_imss_plantilla.csv` | 396 unidades IMSS e IMSS-Bienestar en operación, en el formato del importador. |
+| `instalaciones_nayarit.csv` | 646 establecimientos de todas las instituciones (referencia; no se carga por omisión). |
+| `fuentes/` | Extractos crudos: CLUES (DGIS, corte 2026-08), directorio público del IMSS y catálogos del INEGI. |
+
+- **Fuente principal:** catálogo CLUES de la Secretaría de Salud (DGIS). La clave de unidad es la CLUES.
+- **Validación cruzada:** 116 filas coinciden con el directorio público del IMSS y llevan `verificado`. Las 280 restantes quedan `pendiente`.
+- **Coordenadas:** algunas se corrigieron con el directorio del IMSS o con el centro de la localidad del INEGI. La coordenada original queda en `observaciones`.
+- **Antes de usarlo en producción:** revisa las filas pendientes y las marcadas `revisar` en `observaciones`, y confirma que el corte de CLUES sigue vigente.
+- **Cómo cargarlo:** Administración → Instalaciones → Importar → `instalaciones_nayarit_imss_plantilla.csv` → Validar → Importar. Las unidades co-ubicadas con el mismo nombre se distinguen por su CLUES.
 - Importación: **Administración → Instalaciones → Importar** (CSV/Excel) y **Trabajadores → Importar**. Plantillas en `public/plantillas/`. El flujo valida, detecta duplicados (en el archivo y contra la base) y muestra una vista previa antes de aplicar.
 - Datos de demostración: viven solo en `supabase/seeds/demo.sql`, tienen `is_demo = true` y el prefijo «[DEMO]». Se eliminan con **Administración → Configuración → Eliminar datos de demostración** (función `purge_demo_data`).
 
