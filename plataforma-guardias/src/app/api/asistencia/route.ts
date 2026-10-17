@@ -1,0 +1,85 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { createClient } from "@/lib/supabase/server";
+import { getSessionUser } from "@/lib/auth";
+import { friendlyDbError } from "@/lib/actions";
+
+/**
+ * Registro de entrada/salida. La hora es SIEMPRE la del servidor (función
+ * check_in/check_out en la base de datos). La idempotencia se garantiza con
+ * requestId: un reintento con el mismo requestId devuelve el mismo registro.
+ */
+const bodySchema = z.object({
+  action: z.enum(["entrada", "salida"]),
+  assignmentId: z.string().uuid(),
+  requestId: z.string().uuid(),
+  notes: z.string().trim().max(500).optional().nullable(),
+  reason: z.string().trim().max(500).optional().nullable(),
+});
+
+export type AttendanceSessionPayload = {
+  id: string;
+  assignment_id: string;
+  check_in_at: string;
+  check_out_at: string | null;
+  check_in_method: string;
+  check_out_method: string | null;
+};
+
+export type AttendanceResultKind = "created" | "duplicate" | "already_open" | "open_elsewhere" | "no_open_session";
+
+export type AttendanceApiResult =
+  | { ok: true; result: AttendanceResultKind; message: string; serverTime: string; session: AttendanceSessionPayload | null }
+  | { ok: false; message: string };
+
+const MESSAGES: Record<string, { entrada: string; salida: string }> = {
+  created: { entrada: "Entrada registrada.", salida: "Salida registrada." },
+  duplicate: { entrada: "Esta entrada ya estaba registrada (no se duplicó).", salida: "Esta salida ya estaba registrada (no se duplicó)." },
+  already_open: { entrada: "Ya tienes una entrada abierta en esta guardia; no se registró otra.", salida: "" },
+  open_elsewhere: {
+    entrada: "Hay una entrada abierta en otra guardia. Registra la salida de esa guardia o solicita una corrección.",
+    salida: "",
+  },
+  no_open_session: { entrada: "", salida: "No hay una entrada abierta en esta guardia." },
+};
+
+export async function POST(request: Request): Promise<NextResponse<AttendanceApiResult>> {
+  const user = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ ok: false, message: "Tu sesión terminó. Vuelve a iniciar sesión." }, { status: 401 });
+  }
+
+  let parsed: z.infer<typeof bodySchema>;
+  try {
+    parsed = bodySchema.parse(await request.json());
+  } catch {
+    return NextResponse.json({ ok: false, message: "Solicitud inválida." }, { status: 400 });
+  }
+
+  const supabase = await createClient();
+  const fn = parsed.action === "entrada" ? "check_in" : "check_out";
+  const { data, error } = await supabase.rpc(fn, {
+    p_assignment_id: parsed.assignmentId,
+    p_request_id: parsed.requestId,
+    p_notes: parsed.notes ?? undefined,
+    p_reason: parsed.reason ?? undefined,
+  });
+
+  if (error) {
+    const status = error.code === "42501" ? 403 : error.code === "28000" ? 401 : 422;
+    return NextResponse.json({ ok: false, message: friendlyDbError(error) }, { status });
+  }
+
+  const payload = data as { result: AttendanceResultKind; session: AttendanceSessionPayload | null; server_time: string };
+  const result = payload.result;
+  return NextResponse.json(
+    {
+      ok: true,
+      result,
+      message: MESSAGES[result]?.[parsed.action] || "Operación completada.",
+      serverTime: payload.server_time,
+      session: payload.session ?? null,
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
+}

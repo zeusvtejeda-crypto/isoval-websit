@@ -60,8 +60,12 @@ export async function createAuthUser(opts: {
   const email = opts.email ?? `prueba-${id.slice(0, 8)}@ejemplo.test`;
   await asSuper((c) =>
     c.query(
-      `insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, $3, '{}'::jsonb, now(), now())`,
+      // GoTrue no admite NULL en las columnas de tokens: se inicializan vacías.
+      `insert into auth.users (id, instance_id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+         confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current,
+         phone_change, phone_change_token, reauthentication_token)
+       values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, $3, '{}'::jsonb, now(), now(),
+         '', '', '', '', '', '', '', '')`,
       [id, email, JSON.stringify({ provider: "email", role: opts.role, worker_id: opts.workerId ?? null })],
     ),
   );
