@@ -38,7 +38,7 @@ export function ShiftCalendar({
             aria-labelledby={`cal-${day}`}
             className={cn("flex min-w-0 flex-col rounded-xl border bg-white p-3 lg:min-h-48 lg:p-2", isToday ? "border-brand-800 ring-1 ring-brand-800" : "border-gray-200")}
           >
-            <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 lg:flex-col lg:items-start">
               <h2 id={`cal-${day}`} className="font-semibold capitalize text-gray-900">
                 {formatDayShort(day)}
                 {isToday ? <span className="ml-2 rounded-full bg-brand-800 px-2 py-0.5 text-xs font-semibold normal-case text-white">Hoy</span> : null}
@@ -46,7 +46,7 @@ export function ShiftCalendar({
               {newShiftHref ? (
                 <Link
                   href={newShiftHref(day)}
-                  className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-brand-800 hover:bg-brand-50"
+                  className="inline-flex min-h-11 items-center whitespace-nowrap rounded-lg px-2 text-sm font-semibold text-brand-800 hover:bg-brand-50 lg:-ml-2"
                   aria-label={`Programar guardia el ${formatDayShort(day)}`}
                 >
                   + Programar
