@@ -13,6 +13,7 @@ Aplicación web responsiva e instalable (PWA) con dos módulos conectados:
 ## Contenido
 
 - [Funcionalidades](#funcionalidades)
+- [Registro con código QR (opcional)](#registro-con-código-qr-opcional)
 - [Arquitectura](#arquitectura)
 - [Ejecutar en local](#ejecutar-en-local)
 - [Variables de entorno](#variables-de-entorno)
@@ -21,6 +22,7 @@ Aplicación web responsiva e instalable (PWA) con dos módulos conectados:
 - [Datos: fuentes oficiales, importación y demostración](#datos-fuentes-oficiales-importación-y-demostración)
 - [Despliegue](#despliegue)
 - [Pruebas](#pruebas)
+- [Integración continua](#integración-continua)
 - [Seguridad y privacidad](#seguridad-y-privacidad)
 - [Configuración externa pendiente](#configuración-externa-pendiente)
 
@@ -41,6 +43,20 @@ Aplicación web responsiva e instalable (PWA) con dos módulos conectados:
 | Administración | Usuarios y permisos por sede, aviso de privacidad configurable, política de conservación, parámetros de registro, eliminación de datos de demostración, bitácora. |
 
 Roles: **Administración general**, **Coordinación** (solo sedes asignadas), **Trabajador** (sus propios registros) y **Consulta o auditoría** (solo lectura en su alcance).
+
+## Registro con código QR (opcional)
+
+Una forma más rápida de registrar entrada o salida en el punto de reunión. Los botones normales siguen disponibles.
+
+1. **Coordinación** abre la guardia → **«Mostrar código QR de registro»** y deja la pantalla visible en el punto de reunión.
+2. El código **se renueva solo** y **caduca en ~2 minutos** (configurable en `app_settings`, clave `attendance`, campo `qr_ttl_seconds`; el servidor lo limita a entre 30 y 600 segundos).
+3. **El trabajador** lo escanea con la **cámara nativa de su teléfono** (la app no pide permiso de cámara), inicia sesión si hace falta y **confirma** la entrada o la salida.
+4. El registro queda con método **«Código QR»** (los registros con los botones conservan su propio método).
+
+Límites y seguridad:
+
+- **El QR no prueba presencia física.** Otra persona podría reenviar el enlace mientras siga vigente. Solo facilita el registro con la cuenta propia, igual que «Entrada registrada» no equivale a presencia física verificada.
+- Los códigos los **emite y valida el servidor** (`issue_qr_token`, `qr_token_context`, `check_in_qr`, `check_out_qr`) y en la base **solo se guarda su hash**. Solo la coordinación de la sede o la administración pueden emitirlos, y solo los trabajadores asignados a esa guardia pueden usarlos.
 
 ## Arquitectura
 
@@ -191,6 +207,8 @@ npm run build && npm run test:e2e   # E2E (Playwright, móvil) contra next start
 
 Requisitos de `test:db` y `test:e2e`: `npm run db:start`, `npm run db:reset` y `npm run demo:usuarios`. Si Playwright no encuentra Chromium, define `PLAYWRIGHT_CHROMIUM_PATH`.
 
+**Verificación previa de E2E (global setup).** Antes de las pruebas, `tests/e2e/global-setup.ts` revisa en Postgres (`TEST_DATABASE_URL` o `postgresql://postgres:postgres@127.0.0.1:54322/postgres`), solo con lecturas, que la guardia demo «[DEMO] Guardia matutina» exista y esté **en curso** y que existan las cuentas demo. Las fechas del seed son relativas al momento del reset: si pasaron varias horas, la guardia ya terminó y las pruebas se detienen con el mensaje «Los datos de demostración no están listos o vencieron…». Solución: `npm run db:reset && npm run demo:usuarios`. (Playwright arranca el servidor web antes de esta verificación.)
+
 ### Criterios de aceptación y dónde se prueban
 
 | # | Criterio | Pruebas |
@@ -209,6 +227,21 @@ Requisitos de `test:db` y `test:e2e`: `npm run db:start`, `npm run db:reset` y `
 | 12 | Un coordinador no accede a sedes ajenas | `tests/db` (12), `tests/e2e` |
 | — | Importación del catálogo oficial (396 unidades, CLUES co-ubicadas) | `tests/e2e/importacion-oficial.spec.ts` |
 | — | Endurecimiento: separación de funciones, salida inventada, alcance, columnas protegidas, servicios públicos | `tests/db/hardening.test.ts` |
+| — | Registro con código QR: emisión por coordinación/administración, solo hash, uso por trabajadores asignados, método «Código QR», reintentos sin duplicar, códigos inventados o fuera de la ventana | `tests/db/qr.test.ts`, `tests/e2e/qr.spec.ts` |
+
+## Integración continua
+
+El flujo de GitHub Actions [`.github/workflows/plataforma-guardias.yml`](../.github/workflows/plataforma-guardias.yml) (en la raíz del repositorio) corre en cada `push` y `pull_request` que cambie archivos bajo `plataforma-guardias/` o el propio flujo; también se puede lanzar a mano (*Run workflow*). Una corrida nueva de la misma rama o PR cancela la anterior.
+
+En `ubuntu-latest`, con Node.js 22 y caché de npm:
+
+1. `npm ci` y Supabase local efímero (`npx supabase start` sin Studio ni servicios que no se usan).
+2. Genera `.env.local` con las llaves que imprime `npx supabase status -o env` (`API_URL`, `ANON_KEY`, `SERVICE_ROLE_KEY`), `NEXT_PUBLIC_SITE_URL=http://localhost:3100`, `NEXT_PUBLIC_DEMO_MODE=true` y `TEST_DATABASE_URL`.
+3. `npm run db:reset` y `npm run demo:usuarios`.
+4. `npx next typegen` (tipos de rutas, no versionados), `typecheck`, `lint`, `test` (unidad), `test:db`, `build`.
+5. `npx playwright install --with-deps chromium` y `test:e2e` (contra `next start` en el puerto 3100).
+
+**No usa secretos**: todo es local y se descarta al terminar. **Dónde ver resultados:** pestaña **Actions** del repositorio → flujo *plataforma-guardias* → la corrida (también aparece como verificación en el PR). Si fallan las pruebas E2E, la corrida adjunta el artefacto `playwright-<id>` con el reporte HTML (`playwright-report/`) y las trazas y capturas (`test-results/`); descárgalo, descomprímelo y ábrelo con `npx playwright show-report playwright-report`, o abre un `trace.zip` de `test-results/` con `npx playwright show-trace` o en [trace.playwright.dev](https://trace.playwright.dev).
 
 ## Seguridad y privacidad
 

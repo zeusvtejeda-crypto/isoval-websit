@@ -1,0 +1,7 @@
+"use client";
+
+import { RouteError } from "@/components/attendance/route-error";
+
+export default function RegistroQrError({ error, retry }: { error: unknown; retry: () => void }) {
+  return <RouteError error={error} retry={retry} title="No se pudo abrir el registro con código QR" />;
+}

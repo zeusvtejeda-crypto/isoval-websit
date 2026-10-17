@@ -8,6 +8,8 @@ const PORT = Number(process.env.E2E_PORT ?? 3100);
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // Verifica (solo lectura) que los datos demo existen y no vencieron antes de las pruebas.
+  globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
   retries: 0,

@@ -11,6 +11,7 @@
 | Mapa | Leaflet + leaflet.markercluster, teselas de OpenStreetMap (atribución obligatoria) |
 | PWA | `app/manifest.ts` + `public/sw.js` propio (solo cachea recursos estáticos) |
 | Pruebas | Vitest (unidad y base de datos/RLS), Playwright (E2E móvil) |
+| CI | GitHub Actions (`.github/workflows/plataforma-guardias.yml` en la raíz del repositorio): Supabase local efímero, tipos, lint, unidad, BD, build y E2E en cada push/PR que toque `plataforma-guardias/`; sin secretos (ver README, «Integración continua») |
 
 **Next.js 16.4 tiene cambios importantes.** Antes de usar una API, consulta `node_modules/next/dist/docs/`. Puntos clave:
 - `params` y `searchParams` son `Promise` (usa `await`).
@@ -44,7 +45,7 @@ src/
 supabase/
   migrations/         esquema, RLS, funciones (fuente de verdad)
   seeds/demo.sql      DATOS DE DEMOSTRACIÓN (solo local)
-tests/unit tests/db tests/e2e
+tests/unit tests/db tests/e2e   (tests/e2e/global-setup.ts verifica que los datos demo no vencieron)
 ```
 
 ## Reglas de seguridad (obligatorias)
@@ -52,6 +53,7 @@ tests/unit tests/db tests/e2e
 1. **Permisos en servidor y base de datos.** Cada página privada llama a `requireUser()`, `requireStaff()`, `requireManager()` o `requireAdmin()`. Cada Server Action vuelve a verificar la sesión. RLS protege los datos aunque la interfaz falle.
 2. **Usa siempre `createClient()` de `@/lib/supabase/server`** (sesión del usuario → RLS). `createAdminClient()` solo para Auth (crear/desactivar cuentas) y **después** de `requireAdmin()`.
 3. **Asistencia solo por funciones de la base de datos**: `check_in`, `check_out` (vía `POST /api/asistencia` y `useAttendanceAction`), `correct_attendance`, `add_manual_attendance`, `void_attendance`, `set_assignment_status`, `request_correction`, `review_correction`. No hay escritura directa en `attendance_sessions`.
+   Registro con código QR (opcional): `issue_qr_token` (coordinación de la sede o administración emite un código temporal; caduca según `app_settings.attendance.qr_ttl_seconds`), `qr_token_context` (lo que ve el trabajador al abrir el código), `check_in_qr` y `check_out_qr` (vía `POST /api/asistencia` con el código; método «qr»). Solo se guarda el hash del código y no hay acceso directo a `attendance_qr_tokens`. El QR **no prueba presencia física**.
 4. **Directorio público**: solo `public_facilities`. Nunca trabajadores, teléfonos personales ni guardias.
 5. `worker_private` (número de trabajador, teléfono) solo donde sea necesario y permitido; auditoría no lo ve.
 6. Ninguna clave secreta con prefijo `NEXT_PUBLIC_`.

@@ -88,6 +88,15 @@ export default async function RegistroPage({ searchParams }: { searchParams: Sea
         <AttendanceButtons {...buttonsPropsFor(selected)} />
       </Card>
 
+      {/* Registro con código QR (opcional): el código lo muestra coordinación en el punto de reunión. */}
+      <Alert tone="info" title="¿Te mostraron un código QR? Escanéalo con la cámara de tu teléfono">
+        Se abrirá la página para registrar con el código de tu guardia.{" "}
+        <Link href="/registro/qr" className="font-semibold underline">
+          Cómo funciona
+        </Link>
+        . El código QR no prueba presencia física.
+      </Alert>
+
       {others.length ? (
         <Card>
           <CardHeader title="Otras guardias disponibles para registrar" description="Elige la guardia correcta antes de registrar." />

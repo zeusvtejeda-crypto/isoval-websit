@@ -1,0 +1,125 @@
+# Integración continua de plataforma-guardias.
+# Todo corre contra un Supabase local y efímero dentro del runner: no usa secretos
+# ni servicios externos. Las llaves que se generan son las de desarrollo local.
+name: plataforma-guardias
+
+on:
+  push:
+    paths:
+      - "plataforma-guardias/**"
+      - ".github/workflows/plataforma-guardias.yml"
+  pull_request:
+    paths:
+      - "plataforma-guardias/**"
+      - ".github/workflows/plataforma-guardias.yml"
+  workflow_dispatch:
+
+# Una corrida nueva de la misma rama (o del mismo PR) cancela la anterior.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    name: Tipos, lint, unidad, BD, build y E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: plataforma-guardias
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Postgres de Supabase local (puerto de supabase/config.toml). Lo leen test:db y el global setup de Playwright.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # Puerto de next start durante test:e2e (playwright.config.ts).
+      E2E_PORT: "3100"
+      PLAYWRIGHT_HTML_OPEN: never
+
+    steps:
+      - name: Obtener el código
+        uses: actions/checkout@v7
+
+      - name: Node.js 22 con caché de npm
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plataforma-guardias/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Levantar Supabase local
+        run: npx supabase start -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,supavisor,realtime,mailpit,postgres-meta
+
+      - name: Generar .env.local con las llaves de Supabase local
+        run: |
+          status="$(npx supabase status -o env)"
+          valor() {
+            printf '%s\n' "$status" | sed -n -E "s/^$1=\"?([^\"]*)\"?$/\1/p" | head -n 1
+          }
+          api_url="$(valor API_URL)"
+          anon_key="$(valor ANON_KEY)"
+          service_role_key="$(valor SERVICE_ROLE_KEY)"
+          if [ -z "$api_url" ] || [ -z "$anon_key" ] || [ -z "$service_role_key" ]; then
+            echo "::error::supabase status -o env no devolvió API_URL, ANON_KEY o SERVICE_ROLE_KEY."
+            printf '%s\n' "$status" | cut -d= -f1
+            exit 1
+          fi
+          cat > .env.local <<EOF
+          NEXT_PUBLIC_SUPABASE_URL=$api_url
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon_key
+          SUPABASE_SERVICE_ROLE_KEY=$service_role_key
+          NEXT_PUBLIC_SITE_URL=http://localhost:$E2E_PORT
+          NEXT_PUBLIC_DEFAULT_TIMEZONE=America/Mazatlan
+          NEXT_PUBLIC_DEMO_MODE=true
+          TEST_DATABASE_URL=$TEST_DATABASE_URL
+          EOF
+          echo "Variables escritas en .env.local:"
+          cut -d= -f1 .env.local
+
+      - name: Aplicar migraciones y datos de demostración
+        run: npm run db:reset
+
+      - name: Crear cuentas de demostración
+        run: npm run demo:usuarios
+
+      # next-env.d.ts y .next/types no se versionan: se generan como lo haría next build.
+      - name: Generar tipos de rutas de Next.js
+        run: npx next typegen
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Pruebas de unidad
+        run: npm run test
+
+      - name: Pruebas de base de datos (RLS, funciones, triggers)
+        run: npm run test:db
+
+      - name: Build de producción
+        run: npm run build
+
+      - name: Instalar Chromium para Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Pruebas E2E (Playwright)
+        id: e2e
+        run: npm run test:e2e -- --reporter=list,html
+
+      - name: Subir reporte y trazas de Playwright
+        if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            plataforma-guardias/playwright-report/
+            plataforma-guardias/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
