@@ -1,0 +1,390 @@
+import { describe, expect, it } from "vitest";
+import {
+  summarizeAttendance,
+  type AssignmentStatus,
+  type AttendanceMethod,
+  type RecordStatus,
+  type ShiftStatus,
+} from "@/lib/attendance/calc";
+import type { AssignmentRow, AssignmentWithAttendance, SessionRow, ShiftRow, ShiftWithAttendance } from "@/lib/attendance/load";
+import { buildPresenceBoard, shiftMatchesFilters } from "@/lib/presence/board";
+import { summarizeHome } from "@/lib/presence/home";
+import { addDays, isIsoDay, overlapsLocalDay, parseShiftPeriod, shiftPeriodOf } from "@/lib/presence/periods";
+
+// -----------------------------------------------------------------------------
+// Datos de prueba: se construyen con summarizeAttendance (igual que load.ts).
+// Sede en America/Mazatlan (UTC−7). Día local 2026-10-17 = 07:00Z a 07:00Z del 18.
+// -----------------------------------------------------------------------------
+const MZT = "America/Mazatlan";
+const NOW = new Date("2026-10-17T16:00:00Z"); // 09:00 hora de Mazatlán
+const GRACE = 240;
+
+type SessSpec = { in: string; out?: string | null; method?: AttendanceMethod; status?: RecordStatus };
+type AsgSpec = { id: string; workerId: string; name: string; status?: AssignmentStatus; point?: string | null; sessions?: SessSpec[] };
+type ShiftSpec = {
+  id: string;
+  facilityId?: string;
+  facilityName?: string;
+  tz?: string;
+  start: string;
+  end: string;
+  minStaff?: number;
+  status?: ShiftStatus;
+  tolerance?: number;
+  responsible?: { id: string; full_name: string } | null;
+  assignments: AsgSpec[];
+};
+
+function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
+  const facilityId = spec.facilityId ?? "F1";
+  const tz = spec.tz ?? MZT;
+  const tolerance = spec.tolerance ?? 10;
+  const status = spec.status ?? "programada";
+  const items: AssignmentWithAttendance[] = spec.assignments.map((a) => {
+    const sessions: SessionRow[] = (a.sessions ?? []).map((s, i) => ({
+      id: `${a.id}-s${i}`,
+      assignment_id: a.id,
+      shift_id: spec.id,
+      worker_id: a.workerId,
+      facility_id: facilityId,
+      check_in_at: s.in,
+      check_out_at: s.out ?? null,
+      check_in_method: s.method ?? "propio",
+      check_out_method: s.out ? (s.method ?? "propio") : null,
+      check_in_by: "u1",
+      check_out_by: s.out ? "u1" : null,
+      check_in_reason: null,
+      check_out_reason: null,
+      check_in_request_id: `${a.id}-r${i}`,
+      check_out_request_id: s.out ? `${a.id}-o${i}` : null,
+      notes: null,
+      record_status: s.status ?? "vigente",
+      supersedes_id: null,
+      status_reason: s.status && s.status !== "vigente" ? "motivo" : null,
+      status_changed_at: null,
+      status_changed_by: null,
+      created_at: s.in,
+    }));
+    const assignmentStatus = a.status ?? "asignado";
+    const summary = summarizeAttendance(
+      { startsAt: spec.start, endsAt: spec.end, status },
+      { status: assignmentStatus, substituteForWorkerId: null },
+      sessions.map((s) => ({
+        id: s.id,
+        checkInAt: s.check_in_at,
+        checkOutAt: s.check_out_at,
+        recordStatus: s.record_status,
+        checkInMethod: s.check_in_method,
+        checkOutMethod: s.check_out_method,
+        supersedesId: s.supersedes_id,
+      })),
+      { toleranceMinutes: tolerance, openSessionGraceMinutes: GRACE, now },
+    );
+    const assignment = {
+      id: a.id,
+      shift_id: spec.id,
+      worker_id: a.workerId,
+      assigned_point: a.point ?? null,
+      substitute_for_worker_id: null,
+      status: assignmentStatus,
+      status_reason: null,
+      status_changed_by: null,
+      status_changed_at: null,
+      notes: null,
+      change_reason: null,
+      created_by: null,
+      created_at: spec.start,
+      updated_at: spec.start,
+    } as AssignmentRow;
+    return {
+      assignment,
+      worker: { id: a.workerId, full_name: a.name, internal_code: `TRA-${a.workerId}`, area: null, position: null, facility_id: facilityId },
+      substituteFor: null,
+      sessions,
+      summary,
+    };
+  });
+
+  const nowMs = now.getTime();
+  const effectiveStatus: ShiftStatus =
+    status === "cancelada" || status === "finalizada"
+      ? status
+      : nowMs < Date.parse(spec.start)
+        ? "programada"
+        : nowMs < Date.parse(spec.end)
+          ? "en_curso"
+          : "finalizada";
+  const minStaff = spec.minStaff ?? 1;
+  const active = items.filter((i) => i.assignment.status === "asignado").length;
+  const inService = items.filter((i) => i.summary.status === "en_servicio").length;
+  const insufficient = effectiveStatus === "en_curso" ? inService < minStaff : effectiveStatus === "programada" ? active < minStaff : false;
+
+  const shift = {
+    id: spec.id,
+    facility_id: facilityId,
+    title: null,
+    meeting_point: `Punto ${spec.id}`,
+    starts_at: spec.start,
+    ends_at: spec.end,
+    responsible_worker_id: spec.responsible?.id ?? null,
+    min_staff: minStaff,
+    max_staff: null,
+    instructions: null,
+    status,
+    cancel_reason: status === "cancelada" ? "motivo" : null,
+    is_demo: true,
+    change_reason: null,
+    created_by: null,
+    updated_by: null,
+    created_at: spec.start,
+    updated_at: spec.start,
+    effective_status: effectiveStatus,
+  } as ShiftRow;
+
+  return {
+    shift,
+    effectiveStatus,
+    facility: {
+      id: facilityId,
+      official_name: spec.facilityName ?? `Sede ${facilityId}`,
+      timezone: tz,
+      arrival_tolerance_minutes: tolerance,
+      state_id: 18,
+      municipality_id: null,
+    },
+    responsible: spec.responsible ?? null,
+    assignments: items,
+    coverage: { assigned: active, inService, minStaff, maxStaff: null, insufficient },
+  };
+}
+
+// Guardia matutina en curso (06:00–14:00 local).
+const shiftA = build({
+  id: "A",
+  start: "2026-10-17T13:00:00Z",
+  end: "2026-10-17T21:00:00Z",
+  minStaff: 4,
+  responsible: { id: "wR", full_name: "Rosa Responsable" },
+  assignments: [
+    { id: "aR", workerId: "wR", name: "Rosa Responsable", sessions: [{ in: "2026-10-17T13:02:00Z" }] },
+    { id: "aAna", workerId: "wAna", name: "Ana", point: "Puerta 2", sessions: [{ in: "2026-10-17T13:05:00Z" }] },
+    { id: "aLuis", workerId: "wLuis", name: "Luis", sessions: [{ in: "2026-10-17T13:20:00Z", method: "coordinador" }] },
+    { id: "aMaria", workerId: "wMaria", name: "María" },
+    { id: "aJorge", workerId: "wJorge", name: "Jorge", sessions: [{ in: "2026-10-17T13:00:00Z", out: "2026-10-17T15:00:00Z" }] },
+    { id: "aPedro", workerId: "wPedro", name: "Pedro", status: "cancelado" },
+  ],
+});
+
+// Guardia vespertina por iniciar (14:00–22:00 local), cupo insuficiente. Responsable en servicio en otra guardia.
+const shiftB = build({
+  id: "B",
+  start: "2026-10-17T21:00:00Z",
+  end: "2026-10-18T05:00:00Z",
+  minStaff: 2,
+  responsible: { id: "wAna", full_name: "Ana" },
+  assignments: [{ id: "aSofia", workerId: "wSofia", name: "Sofía" }],
+});
+
+// Guardia que cruzó medianoche (20:00 del 16 a 04:00 del 17 local), ya terminó hace más del margen.
+const shiftC = build({
+  id: "C",
+  start: "2026-10-17T03:00:00Z",
+  end: "2026-10-17T11:00:00Z",
+  responsible: { id: "wNadie", full_name: "Persona sin asignación" },
+  assignments: [
+    { id: "aRaul", workerId: "wRaul", name: "Raúl", sessions: [{ in: "2026-10-17T03:10:00Z" }] },
+    { id: "aElena", workerId: "wElena", name: "Elena" },
+  ],
+});
+
+// Otra sede, mismo día.
+const shiftD = build({
+  id: "D",
+  facilityId: "F2",
+  start: "2026-10-17T14:00:00Z",
+  end: "2026-10-17T20:00:00Z",
+  assignments: [{ id: "aTomas", workerId: "wTomas", name: "Tomás", sessions: [{ in: "2026-10-17T14:01:00Z" }] }],
+});
+
+// Cancelada y de otro día: no deben aparecer.
+const shiftE = build({
+  id: "E",
+  status: "cancelada",
+  start: "2026-10-17T13:00:00Z",
+  end: "2026-10-17T21:00:00Z",
+  assignments: [{ id: "aX", workerId: "wX", name: "Xavier" }],
+});
+const shiftF = build({
+  id: "F",
+  start: "2026-10-19T13:00:00Z",
+  end: "2026-10-19T21:00:00Z",
+  assignments: [{ id: "aY", workerId: "wY", name: "Yolanda" }],
+});
+
+const ALL = [shiftA, shiftB, shiftC, shiftD, shiftE, shiftF];
+const DAY = "2026-10-17";
+
+describe("turnos y días locales", () => {
+  it("clasifica el turno por la hora LOCAL de inicio en la zona de la sede", () => {
+    expect(shiftPeriodOf("2026-10-17T13:00:00Z", MZT)).toBe("matutino"); // 06:00
+    expect(shiftPeriodOf("2026-10-17T21:00:00Z", MZT)).toBe("vespertino"); // 14:00
+    expect(shiftPeriodOf("2026-10-18T05:00:00Z", MZT)).toBe("nocturno"); // 22:00
+    expect(shiftPeriodOf("2026-10-17T12:59:00Z", MZT)).toBe("nocturno"); // 05:59
+    // La misma hora UTC cae en otro turno en Bahía de Banderas (hora del centro).
+    expect(shiftPeriodOf("2026-10-17T20:30:00Z", MZT)).toBe("matutino"); // 13:30
+    expect(shiftPeriodOf("2026-10-17T20:30:00Z", "America/Bahia_Banderas")).toBe("vespertino"); // 14:30
+  });
+
+  it("valida filtros de turno y fechas", () => {
+    expect(parseShiftPeriod("nocturno")).toBe("nocturno");
+    expect(parseShiftPeriod("otro")).toBe("todos");
+    expect(parseShiftPeriod(["matutino"])).toBe("todos");
+    expect(isIsoDay("2026-10-17")).toBe(true);
+    expect(isIsoDay("2026-02-31")).toBe(false);
+    expect(isIsoDay("17/10/2026")).toBe(false);
+    expect(addDays("2026-10-31", 1)).toBe("2026-11-01");
+  });
+
+  it("detecta traslape con el día local (guardias que cruzan medianoche)", () => {
+    expect(overlapsLocalDay("2026-10-17T03:00:00Z", "2026-10-17T11:00:00Z", "2026-10-17", MZT)).toBe(true);
+    expect(overlapsLocalDay("2026-10-17T03:00:00Z", "2026-10-17T11:00:00Z", "2026-10-16", MZT)).toBe(true);
+    // Termina justo a la medianoche local del 17: no pertenece al 17.
+    expect(overlapsLocalDay("2026-10-16T23:00:00Z", "2026-10-17T07:00:00Z", "2026-10-17", MZT)).toBe(false);
+  });
+});
+
+describe("buildPresenceBoard", () => {
+  const board = buildPresenceBoard(ALL, NOW, { day: DAY, period: "todos" });
+
+  it("excluye guardias canceladas y de otros días", () => {
+    expect(board.shiftCount).toBe(4); // A, B, C, D
+    expect(shiftMatchesFilters(shiftF, { day: DAY, period: "todos" })).toBe(false);
+    const names = [...board.inService, ...board.expected, ...board.left, ...board.incomplete].map((x) => x.workerName);
+    expect(names).not.toContain("Xavier");
+    expect(names).not.toContain("Yolanda");
+    expect(names).not.toContain("Pedro"); // asignación cancelada
+  });
+
+  it("lista quién está en servicio con hora de entrada, tiempo transcurrido y método", () => {
+    const names = board.inService.map((i) => i.workerName);
+    expect(names).toEqual(["Rosa Responsable", "Ana", "Luis", "Tomás"]); // por hora de entrada
+    const ana = board.inService.find((i) => i.workerName === "Ana");
+    expect(ana?.checkInAt).toBe("2026-10-17T13:05:00.000Z");
+    expect(ana?.elapsedMinutes).toBe(175);
+    expect(ana?.assignedPoint).toBe("Puerta 2");
+    expect(ana?.registeredByStaff).toBe(false);
+    const luis = board.inService.find((i) => i.workerName === "Luis");
+    expect(luis?.registeredByStaff).toBe(true);
+    expect(luis?.method).toBe("coordinador");
+    expect(board.inService.find((i) => i.workerName === "Rosa Responsable")?.isResponsible).toBe(true);
+  });
+
+  it("marca «Retraso» solo cuando pasó inicio + tolerancia sin entrada", () => {
+    const maria = board.expected.find((e) => e.workerName === "María");
+    expect(maria?.late).toBe(true);
+    expect(maria?.shiftInProgress).toBe(true);
+    expect(maria?.minutesSinceStart).toBe(180);
+    const sofia = board.expected.find((e) => e.workerName === "Sofía");
+    expect(sofia?.late).toBe(false);
+    expect(sofia?.shiftInProgress).toBe(false);
+    expect(board.expected[0].workerName).toBe("María"); // los retrasos primero
+
+    // Dentro de la tolerancia (06:08 local) no hay retraso.
+    const early = buildPresenceBoard([build({ ...specOf("A2"), minStaff: 1 }, new Date("2026-10-17T13:08:00Z"))], new Date("2026-10-17T13:08:00Z"), {
+      day: DAY,
+      period: "todos",
+    });
+    expect(early.expected[0].late).toBe(false);
+  });
+
+  it("separa a quienes ya salieron con su hora de salida", () => {
+    expect(board.left).toHaveLength(1);
+    expect(board.left[0].workerName).toBe("Jorge");
+    expect(board.left[0].checkOutAt).toBe("2026-10-17T15:00:00.000Z");
+    expect(board.left[0].totalMinutes).toBe(120);
+  });
+
+  it("muestra responsables y si están en servicio (en su guardia o en otra)", () => {
+    const byShift = Object.fromEntries(board.responsibles.map((r) => [r.shiftId, r]));
+    expect(byShift.A.presence).toBe("en_servicio");
+    expect(byShift.B.presence).toBe("en_servicio"); // Ana está en servicio en la guardia A
+    expect(byShift.C.presence).toBe("sin_asignacion");
+    expect(byShift.D).toBeUndefined();
+  });
+
+  it("señala guardias sin cobertura suficiente", () => {
+    const ids = board.uncovered.map((c) => c.shiftId);
+    expect(ids).toEqual(["A", "B"]);
+    const a = board.uncovered.find((c) => c.shiftId === "A");
+    expect(a?.inService).toBe(3);
+    expect(a?.missing).toBe(1); // 3 en servicio de 4
+    const b = board.uncovered.find((c) => c.shiftId === "B");
+    expect(b?.missing).toBe(1); // 1 asignada de 2
+  });
+
+  it("lista registros incompletos pendientes de revisión", () => {
+    const byName = Object.fromEntries(board.incomplete.map((i) => [i.workerName, i]));
+    expect(byName["Raúl"].reason).toBe("entrada_sin_salida");
+    expect(byName["Raúl"].checkInAt).toBe("2026-10-17T03:10:00.000Z");
+    expect(byName["Elena"].reason).toBe("sin_registros");
+    expect(board.inService.map((i) => i.workerName)).not.toContain("Raúl");
+  });
+
+  it("filtra por sede y por turno", () => {
+    const f2 = buildPresenceBoard(ALL, NOW, { day: DAY, period: "todos", facilityId: "F2" });
+    expect(f2.shiftCount).toBe(1);
+    expect(f2.inService.map((i) => i.workerName)).toEqual(["Tomás"]);
+
+    const morning = buildPresenceBoard(ALL, NOW, { day: DAY, period: "matutino" });
+    expect(morning.shiftCount).toBe(2); // A (06:00) y D (07:00)
+    expect(morning.expected.map((e) => e.workerName)).toEqual(["María"]);
+
+    const evening = buildPresenceBoard(ALL, NOW, { day: DAY, period: "vespertino" });
+    // B inicia 14:00 local; C inició 20:00 local del día anterior.
+    expect(evening.shiftCount).toBe(2);
+    expect(evening.inService).toHaveLength(0);
+  });
+
+  it("devuelve un tablero vacío sin guardias", () => {
+    const empty = buildPresenceBoard([], NOW, { day: DAY, period: "todos" });
+    expect(empty).toEqual({ shiftCount: 0, inService: [], responsibles: [], expected: [], left: [], uncovered: [], incomplete: [] });
+  });
+});
+
+describe("summarizeHome", () => {
+  it("resume el día: guardias de hoy, personas en servicio, cobertura e incompletos de 7 días", () => {
+    const s = summarizeHome(ALL, NOW, 7);
+    expect(s.shiftsToday).toBe(4); // A, B, C, D (sin cancelada ni la del 19)
+    expect(s.shiftsInProgress).toBe(2); // A y D
+    expect(s.peopleInService).toBe(4); // Rosa, Ana, Luis, Tomás
+    expect(s.insufficientCoverage).toBe(2); // A y B
+    expect(s.incompleteRecent).toBe(1); // Raúl
+    expect(s.noRecordsRecent).toBe(1); // Elena
+  });
+
+  it("no cuenta incompletos de guardias que terminaron hace más de 7 días", () => {
+    const old = build({
+      id: "OLD",
+      start: "2026-10-01T13:00:00Z",
+      end: "2026-10-01T21:00:00Z",
+      assignments: [{ id: "aOld", workerId: "wOld", name: "Antigua", sessions: [{ in: "2026-10-01T13:00:00Z" }] }],
+    });
+    const s = summarizeHome([old], NOW, 7);
+    expect(s.incompleteRecent).toBe(0);
+    expect(s.shiftsToday).toBe(0);
+  });
+
+  it("cuenta una sola vez a la persona en servicio", () => {
+    const s = summarizeHome([shiftA, shiftA], NOW, 7);
+    expect(s.peopleInService).toBe(3);
+  });
+});
+
+function specOf(id: string): ShiftSpec {
+  return {
+    id,
+    start: "2026-10-17T13:00:00Z",
+    end: "2026-10-17T21:00:00Z",
+    assignments: [{ id: `${id}-a`, workerId: `${id}-w`, name: "Persona puntual" }],
+  };
+}
