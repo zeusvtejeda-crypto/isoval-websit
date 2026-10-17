@@ -15,6 +15,7 @@
  */
 import type { AttendanceMethod } from "@/lib/attendance/calc";
 import type { AssignmentWithAttendance, ShiftStatus, ShiftWithAttendance } from "@/lib/attendance/load";
+import { coverageCurrent } from "@/lib/attendance/coverage";
 import { DEFAULT_TIMEZONE } from "@/lib/time";
 import { overlapsLocalDay, shiftPeriodOf, type ShiftPeriodFilter } from "./periods";
 
@@ -126,9 +127,10 @@ export type CoverageEntry = ShiftRef & {
   effectiveStatus: ShiftStatus;
   assigned: number;
   inService: number;
+  attended: number;
   minStaff: number;
   maxStaff: number | null;
-  /** Personas que faltan para el mínimo (en servicio si está en curso; asignadas si es futura). */
+  /** Personas que faltan para el mínimo (en servicio si está en curso; con registro si terminó; asignadas si es futura). */
   missing: number;
 };
 
@@ -274,6 +276,28 @@ function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+function inServiceEntry(item: ShiftWithAttendance, a: AssignmentWithAttendance, nowMs: number, graceMs: number | null): InServiceEntry {
+  const open = a.summary.openSession;
+  if (!open) throw new Error("inServiceEntry requiere una entrada abierta");
+  const endMs = Date.parse(item.shift.ends_at);
+  const base = personRef(item, a);
+  const checkInAt = toIso(open.checkInAt);
+  const method = open.checkInMethod ?? "propio";
+  const shiftEnded = nowMs >= endMs;
+  const responsibleId = item.responsible?.id ?? null;
+  return {
+    ...base,
+    ...scheduleIncidents(a),
+    checkInAt,
+    elapsedMinutes: Math.max(0, Math.floor((nowMs - Date.parse(checkInAt)) / MINUTE)),
+    method,
+    registeredByStaff: method !== "propio",
+    isResponsible: responsibleId != null && base.workerId === responsibleId,
+    shiftEnded,
+    checkOutDeadline: shiftEnded && graceMs != null ? new Date(endMs + graceMs).toISOString() : null,
+  };
+}
+
 function presenceOf(a: AssignmentWithAttendance): { presence: ResponsiblePresence; checkInAt: string | null } {
   const s = a.summary;
   if (s.status === "en_servicio" && s.openSession) return { presence: "en_servicio", checkInAt: toIso(s.openSession.checkInAt) };
@@ -324,7 +348,6 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
     const startMs = Date.parse(item.shift.starts_at);
     const endMs = Date.parse(item.shift.ends_at);
     const tolerance = item.facility?.arrival_tolerance_minutes ?? 10;
-    const responsibleId = item.responsible?.id ?? null;
 
     for (const a of item.assignments) {
       if (a.assignment.status === "cancelado") continue;
@@ -341,20 +364,7 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
           changedAt: a.assignment.status_changed_at ? toIso(a.assignment.status_changed_at) : null,
         });
       } else if (s.status === "en_servicio" && s.openSession) {
-        const checkInAt = toIso(s.openSession.checkInAt);
-        const method = s.openSession.checkInMethod ?? "propio";
-        const shiftEnded = nowMs >= endMs;
-        inService.push({
-          ...base,
-          ...scheduleIncidents(a),
-          checkInAt,
-          elapsedMinutes: Math.max(0, Math.floor((nowMs - Date.parse(checkInAt)) / MINUTE)),
-          method,
-          registeredByStaff: method !== "propio",
-          isResponsible: responsibleId != null && base.workerId === responsibleId,
-          shiftEnded,
-          checkOutDeadline: shiftEnded && graceMs != null ? new Date(endMs + graceMs).toISOString() : null,
-        });
+        inService.push(inServiceEntry(item, a, nowMs, graceMs));
       } else if (s.status === "registro_incompleto") {
         const entry = incompleteEntry(item, a, nowMs);
         if (entry) incomplete.push(entry);
@@ -409,12 +419,13 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
     }
 
     if (item.coverage.insufficient) {
-      const current = item.effectiveStatus === "en_curso" ? item.coverage.inService : item.coverage.assigned;
+      const current = coverageCurrent(item.effectiveStatus, item.coverage).count;
       uncovered.push({
         ...shiftRef(item),
         effectiveStatus: item.effectiveStatus,
         assigned: item.coverage.assigned,
         inService: item.coverage.inService,
+        attended: item.coverage.attended,
         minStaff: item.coverage.minStaff,
         maxStaff: item.coverage.maxStaff,
         missing: Math.max(0, item.coverage.minStaff - current),
@@ -424,6 +435,12 @@ export function buildPresenceBoard(shifts: ShiftWithAttendance[], now: Date, fil
 
   for (const item of lookback) {
     for (const a of item.assignments) {
+      // Guardia de un día anterior con la entrada aún abierta dentro del margen
+      // (p. ej. terminó a las 22:00 y ya pasó la medianoche): sigue en servicio.
+      if (a.assignment.status !== "cancelado" && !isAbsence(a.assignment.status) && a.summary.status === "en_servicio" && a.summary.openSession) {
+        inService.push(inServiceEntry(item, a, nowMs, graceMs));
+        continue;
+      }
       const entry = incompleteEntry(item, a, nowMs);
       if (entry) incomplete.push(entry);
     }

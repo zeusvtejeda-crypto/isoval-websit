@@ -159,7 +159,7 @@ function buildShift(overrides: Partial<ShiftWithAttendance> = {}): ShiftWithAtte
     facility: { id: FACILITY, official_name: "[DEMO] Hospital A", timezone: TZ, arrival_tolerance_minutes: 10, state_id: 18, municipality_id: null },
     responsible: { id: "w-resp", full_name: "[DEMO] Responsable" },
     assignments: [buildAssignment()],
-    coverage: { assigned: 1, inService: 0, minStaff: 2, maxStaff: 4, insufficient: true },
+    coverage: { assigned: 1, inService: 0, attended: 0, minStaff: 2, maxStaff: 4, insufficient: true },
     ...overrides,
   };
 }

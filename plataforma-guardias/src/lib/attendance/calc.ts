@@ -205,8 +205,15 @@ export function summarizeAttendance(
     incidents.push({ type: "sustitucion" });
   }
 
-  const corrected = valid.some(
-    (s) => s.supersedesId || s.checkInMethod === "correccion" || s.checkOutMethod === "correccion",
+  // Incluye versiones reemplazadas y registros anulados por coordinación:
+  // ambos son correcciones administrativas aunque ya no cuenten tiempo.
+  const corrected = sessions.some(
+    (s) =>
+      s.recordStatus === "anulado" ||
+      s.recordStatus === "corregido" ||
+      s.supersedesId ||
+      s.checkInMethod === "correccion" ||
+      s.checkOutMethod === "correccion",
   );
   if (corrected) {
     incidents.push({ type: "correccion_administrativa" });

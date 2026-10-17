@@ -15,6 +15,7 @@ import { dayLabel, GAP_LABEL } from "@/lib/reports/document";
 import { actorLabel, type ActorContext } from "@/lib/reports/actors";
 import { ONLY_STARTED_NOTICE, PRESENCE_NOTICE } from "@/lib/reports/texts";
 import { PageHeader } from "@/components/ui/page-header";
+import { LastUpdated } from "@/components/layout/connection-status";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClasses } from "@/components/ui/button";
@@ -139,6 +140,7 @@ export default async function HistorialTrabajadorPage({ params, searchParams }: 
           </Link>
         }
       />
+      <LastUpdated at={now.toISOString()} timeZone={DEFAULT_TIMEZONE} />
 
       <Card>
         <Form action={`/historial/trabajador/${id}`} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">

@@ -5,6 +5,7 @@ import { Card, CardHeader, Stat } from "@/components/ui/card";
 import { Table, Td, Th } from "@/components/ui/table";
 import { ATTENDANCE_STATUS_TONE, METHOD_LABELS, SHIFT_STATUS_LABELS, SHIFT_STATUS_TONE, type Tone } from "@/lib/attendance/labels";
 import { EXTRA_TIME_NOTE } from "@/lib/presence/texts";
+import { coverageCurrent } from "@/lib/attendance/coverage";
 import { formatDateTime, formatDuration, formatShiftRange, formatTime, todayInTz } from "@/lib/time";
 import {
   ABSENCE_STATUS_LABELS,
@@ -391,9 +392,9 @@ export function CoverageSection({ items }: { items: CoverageEntry[] }) {
     <Section
       id="cobertura"
       title="Guardias sin cobertura suficiente"
-      description="En curso: menos personas en servicio que el mínimo. Por iniciar: menos personas asignadas que el mínimo."
+      description="En curso: menos personas en servicio que el mínimo. Por iniciar: menos personas asignadas que el mínimo. Finalizada: menos personas con registro que el mínimo."
       count={items.length}
-      empty="Todas las guardias de este filtro tienen la cobertura mínima."
+      empty="Ninguna guardia de este filtro quedó por debajo del mínimo (en servicio, con registro o asignadas, según su estado)."
     >
       <Table caption="Guardias con cobertura menor al mínimo">
         <thead>
@@ -417,7 +418,7 @@ export function CoverageSection({ items }: { items: CoverageEntry[] }) {
               </Td>
               <Td>
                 <span className="block">
-                  {c.effectiveStatus === "en_curso" ? `${c.inService} en servicio` : `${c.assigned} asignadas`} de {c.minStaff} mínimo
+                  {coverageCurrent(c.effectiveStatus, c).count} {coverageCurrent(c.effectiveStatus, c).label} de {c.minStaff} mínimo
                 </span>
                 <Badge tone="warning">Faltan {c.missing}</Badge>
               </Td>

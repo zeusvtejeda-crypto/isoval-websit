@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { canManageFacility, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { loadShiftsWithAttendance } from "@/lib/attendance/load";
+import { coverageCurrent } from "@/lib/attendance/coverage";
 import { getSettingNumber } from "@/lib/data/catalogs";
 import { formatOffset, formatShiftRange } from "@/lib/time";
 import { collectActorIds } from "@/lib/shifts/actors";
@@ -173,9 +174,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
           </dl>
           {coverage.insufficient ? (
             <Alert tone="warning" title="Cobertura insuficiente" className="mt-3">
-              {item.effectiveStatus === "en_curso"
-                ? `Hay ${coverage.inService} en servicio y el mínimo es ${coverage.minStaff}.`
-                : `Hay ${coverage.assigned} asignados y el mínimo es ${coverage.minStaff}.`}
+              {`Hay ${coverageCurrent(item.effectiveStatus, coverage).count} ${coverageCurrent(item.effectiveStatus, coverage).label} y el mínimo es ${coverage.minStaff}.`}
             </Alert>
           ) : null}
           <div className="mt-3">

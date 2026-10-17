@@ -6,15 +6,19 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import type { NavItem } from "@/lib/nav";
 
-function isActive(pathname: string, href: string) {
+function matches(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + "/");
+}
+
+function isActive(pathname: string, item: NavItem) {
+  return matches(pathname, item.href) || (item.alsoActive ?? []).some((href) => matches(pathname, href));
 }
 
 function NavLinks({ items, pathname, onNavigate }: { items: NavItem[]; pathname: string; onNavigate?: () => void }) {
   return (
     <ul className="space-y-1">
       {items.map((item) => {
-        const active = isActive(pathname, item.href);
+        const active = isActive(pathname, item);
         return (
           <li key={item.href}>
             <Link
@@ -134,18 +138,18 @@ export function AppNav({
       {bottomBar ? (
         <nav aria-label="Accesos rápidos" className="no-print fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-gray-200 bg-white lg:hidden">
           {primary.map((item) => {
-            const active = isActive(pathname, item.href);
+            const active = isActive(pathname, item);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex min-h-16 items-center justify-center px-1 text-center text-sm font-semibold",
+                  "flex min-h-16 items-center justify-center px-1 text-center text-sm leading-tight font-semibold",
                   active ? "bg-brand-50 text-brand-900" : "text-gray-700",
                 )}
               >
-                {item.short ?? item.label}
+                {item.label}
               </Link>
             );
           })}

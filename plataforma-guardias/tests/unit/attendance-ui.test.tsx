@@ -256,3 +256,26 @@ describe("AttendanceButtons", () => {
     expect(screen.queryByRole("button", { name: /Registrar/ })).toBeNull();
   });
 });
+
+describe("useAttendanceAction: solicitudes pendientes de la acción contraria", () => {
+  it("una entrada «no confirmada» no se reutiliza para el regreso posterior a una salida confirmada", async () => {
+    const { renderHook } = await import("@testing-library/react");
+    const { useAttendanceAction } = await import("@/components/attendance/use-attendance-action");
+    const { result } = renderHook(() => useAttendanceAction());
+    const sentIds = () => fetchMock.mock.calls.map((c) => JSON.parse((c[1] as RequestInit).body as string).requestId as string);
+
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch")); // entrada: se pierde la respuesta
+    await act(() => result.current.submit({ action: "entrada", assignmentId: ASSIGNMENT }));
+    expect(result.current.state.phase).toBe("unconfirmed");
+
+    fetchMock.mockImplementationOnce(() => okResponse(created("salida", "2026-10-17T18:00:00Z")));
+    await act(() => result.current.submit({ action: "salida", assignmentId: ASSIGNMENT }));
+    expect(result.current.state.phase).toBe("confirmed");
+
+    fetchMock.mockImplementationOnce(() => okResponse(created("entrada", "2026-10-17T18:30:00Z")));
+    await act(() => result.current.submit({ action: "entrada", assignmentId: ASSIGNMENT }));
+
+    const [firstEntry, , secondEntry] = sentIds();
+    expect(secondEntry).not.toBe(firstEntry); // el regreso es una solicitud nueva
+  });
+});

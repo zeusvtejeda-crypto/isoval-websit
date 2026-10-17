@@ -22,6 +22,7 @@ import { GAP_LABEL } from "@/lib/reports/document";
 import { SHIFT_WINDOW_HOURS, correctionRequestBlock, shiftWindow } from "@/lib/reports/corrections";
 import { NOT_LINKED_MESSAGE, PRESENCE_DISCLAIMER } from "@/lib/presence/texts";
 import { PageHeader } from "@/components/ui/page-header";
+import { LastUpdated } from "@/components/layout/connection-status";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClasses } from "@/components/ui/button";
@@ -148,6 +149,7 @@ export default async function MiHistorialPage({ searchParams }: { searchParams: 
         title="Mi historial"
         description="Tus guardias ya iniciadas, registros, tiempo registrado e incidencias. Horarios en la zona de cada sede. Las próximas guardias están en «Mi guardia»."
       />
+      <LastUpdated at={now.toISOString()} timeZone={DEFAULT_TIMEZONE} />
 
       <Card>
         <Form action="/mi-historial" className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">

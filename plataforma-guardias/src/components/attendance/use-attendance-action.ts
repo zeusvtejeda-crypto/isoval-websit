@@ -24,6 +24,10 @@ function newRequestId(): string {
   return crypto.randomUUID();
 }
 
+function oppositeKey(params: Params): string {
+  return `${params.action === "entrada" ? "salida" : "entrada"}:${params.assignmentId}`;
+}
+
 /**
  * Envía un registro de entrada/salida con idempotencia:
  * - Un mismo "intento" reutiliza su requestId en cada reintento (doble clic,
@@ -80,7 +84,11 @@ export function useAttendanceAction() {
         return;
       }
       if (body.ok) {
-        requestIds.current.delete(key); // el siguiente intento será una solicitud nueva
+        // El siguiente intento será una solicitud nueva. También se descarta el
+        // intento pendiente de la acción contraria: una entrada «no confirmada»
+        // no debe reutilizarse para un regreso posterior a esta salida (y viceversa).
+        requestIds.current.delete(key);
+        requestIds.current.delete(oppositeKey(params));
         setState({ phase: "confirmed", result: body });
       } else if (body.unconfirmed || res.status >= 500) {
         // Se conserva el requestId: el reintento devolverá «duplicate» si sí se guardó.

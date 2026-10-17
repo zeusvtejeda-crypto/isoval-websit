@@ -2,6 +2,7 @@ import "server-only";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
 import { summarizeAttendance, type AttendanceSummary } from "./calc";
+import { coverageCurrent } from "./coverage";
 import { chunk, fetchAll } from "@/lib/data/fetch-all";
 import { getSettingNumber } from "@/lib/data/catalogs";
 
@@ -41,7 +42,12 @@ export type ShiftWithAttendance = {
     inService: number;
     minStaff: number;
     maxStaff: number | null;
-    /** En curso con menos personas en servicio que el mínimo, o futura con menos asignadas que el mínimo. */
+    /** Asignaciones activas con al menos un registro vigente. */
+    attended: number;
+    /**
+     * En curso con menos personas en servicio que el mínimo, futura con menos
+     * asignadas que el mínimo, o finalizada con menos personas con registro que el mínimo.
+     */
     insufficient: boolean;
   };
 };
@@ -172,13 +178,10 @@ export async function loadShiftsWithAttendance(supabase: ServerSupabase, filters
 
     const active = items.filter((i) => i.assignment.status === "asignado");
     const inService = items.filter((i) => i.summary.status === "en_servicio").length;
+    const attended = active.filter((i) => i.summary.firstCheckIn != null).length;
     const status = shift.effective_status;
     const insufficient =
-      status === "en_curso"
-        ? inService < shift.min_staff
-        : status === "programada"
-          ? active.length < shift.min_staff
-          : false;
+      status === "cancelada" ? false : coverageCurrent(status, { assigned: active.length, inService, attended }).count < shift.min_staff;
 
     const { facility, responsible, effective_status, ...rest } = shift;
     void effective_status;
@@ -188,7 +191,7 @@ export async function loadShiftsWithAttendance(supabase: ServerSupabase, filters
       facility,
       responsible,
       assignments: items,
-      coverage: { assigned: active.length, inService, minStaff: shift.min_staff, maxStaff: shift.max_staff, insufficient },
+      coverage: { assigned: active.length, inService, attended, minStaff: shift.min_staff, maxStaff: shift.max_staff, insufficient },
     };
   });
 }

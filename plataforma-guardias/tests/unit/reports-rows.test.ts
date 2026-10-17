@@ -149,7 +149,7 @@ function makeShift(options: {
     facility: { id: options.facility.id, official_name: options.facility.name, timezone: options.facility.tz, arrival_tolerance_minutes: 10, state_id: 18, municipality_id: null },
     responsible: null,
     assignments,
-    coverage: { assigned: assignments.length, inService: 0, minStaff: 1, maxStaff: null, insufficient: false },
+    coverage: { assigned: assignments.length, inService: 0, attended: 0, minStaff: 1, maxStaff: null, insufficient: false },
   };
 }
 

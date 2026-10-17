@@ -111,6 +111,22 @@ describe("summarizeAttendance", () => {
     expect(s.incidents.map((i) => i.type)).toContain("correccion_administrativa");
   });
 
+  it("un registro anulado no cuenta tiempo pero sí marca la corrección administrativa", () => {
+    const only = summarizeAttendance(shift, base, [
+      { id: "x", checkInAt: "2026-10-17T08:00:00Z", checkOutAt: "2026-10-17T14:00:00Z", recordStatus: "anulado" },
+    ], opts("2026-10-17T15:00:00Z"));
+    expect(only.totalMinutes).toBe(0);
+    expect(only.status).toBe("pendiente");
+    expect(only.incidents.map((i) => i.type)).toEqual(["correccion_administrativa"]);
+
+    const second = summarizeAttendance(shift, base, [
+      { id: "a", checkInAt: "2026-10-17T08:00:00Z", checkOutAt: "2026-10-17T11:00:00Z" },
+      { id: "b", checkInAt: "2026-10-17T11:30:00Z", checkOutAt: "2026-10-17T14:00:00Z", recordStatus: "anulado" },
+    ], opts("2026-10-17T15:00:00Z"));
+    expect(second.totalMinutes).toBe(180);
+    expect(second.incidents.map((i) => i.type)).toEqual(["salida_anticipada", "correccion_administrativa"]);
+  });
+
   it("respeta ausencias justificadas e inasistencias confirmadas", () => {
     expect(summarizeAttendance(shift, { status: "ausencia_justificada" }, [], opts("2026-10-17T15:00:00Z")).status).toBe("ausencia_justificada");
     expect(summarizeAttendance(shift, { status: "inasistencia_confirmada" }, [], opts("2026-10-17T15:00:00Z")).status).toBe("inasistencia_confirmada");

@@ -146,7 +146,15 @@ function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
   const minStaff = spec.minStaff ?? 1;
   const active = items.filter((i) => i.assignment.status === "asignado").length;
   const inService = items.filter((i) => i.summary.status === "en_servicio").length;
-  const insufficient = effectiveStatus === "en_curso" ? inService < minStaff : effectiveStatus === "programada" ? active < minStaff : false;
+  const attended = items.filter((i) => i.assignment.status === "asignado" && i.summary.firstCheckIn != null).length;
+  const insufficient =
+    effectiveStatus === "en_curso"
+      ? inService < minStaff
+      : effectiveStatus === "programada"
+        ? active < minStaff
+        : effectiveStatus === "finalizada"
+          ? attended < minStaff
+          : false;
 
   const shift = {
     id: spec.id,
@@ -183,7 +191,7 @@ function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
     },
     responsible: spec.responsible ?? null,
     assignments: items,
-    coverage: { assigned: active, inService, minStaff, maxStaff: null, insufficient },
+    coverage: { assigned: active, inService, attended, minStaff, maxStaff: null, insufficient },
   };
 }
 
@@ -539,6 +547,54 @@ describe("buildPresenceBoard: incidencias, sustituciones y ausencias", () => {
     const next = buildPresenceBoard([ended], later, { day: "2026-10-18", period: "todos", incompleteSince: new Date(later.getTime() - 7 * 86_400_000) });
     expect(next.absences).toEqual([]);
     expect(next.rosterCount).toBe(0);
+  });
+});
+
+describe("buildPresenceBoard: cobertura de guardias finalizadas y entradas abiertas tras la medianoche", () => {
+  it("una guardia finalizada con menos personas con registro que el mínimo aparece sin cobertura", () => {
+    const later = new Date("2026-10-17T23:00:00Z"); // 16:00 local, la guardia terminó a las 14:00
+    const done = build(
+      {
+        id: "FIN",
+        start: "2026-10-17T13:00:00Z",
+        end: "2026-10-17T21:00:00Z",
+        minStaff: 2,
+        assignments: [
+          { id: "f1", workerId: "wf1", name: "Con registro", sessions: [{ in: "2026-10-17T13:00:00Z", out: "2026-10-17T21:00:00Z" }] },
+          { id: "f2", workerId: "wf2", name: "Sin registro" },
+        ],
+      },
+      later,
+    );
+    expect(done.effectiveStatus).toBe("finalizada");
+    expect(done.coverage).toMatchObject({ assigned: 2, attended: 1, insufficient: true });
+    const b = buildPresenceBoard([done], later, { day: DAY, period: "todos" });
+    expect(b.uncovered).toHaveLength(1);
+    expect(b.uncovered[0]).toMatchObject({ shiftId: "FIN", attended: 1, missing: 1 });
+  });
+
+  it("sigue mostrando en servicio, después de la medianoche, a quien tiene la entrada abierta dentro del margen", () => {
+    // Vespertina 15:00–23:30 local (22:00Z–06:30Z); ahora 00:30 local del día siguiente.
+    const afterMidnight = new Date("2026-10-18T07:30:00Z");
+    const evening = build(
+      {
+        id: "VES",
+        start: "2026-10-17T22:00:00Z",
+        end: "2026-10-18T06:30:00Z",
+        assignments: [{ id: "v1", workerId: "wv1", name: "Sigue aquí", sessions: [{ in: "2026-10-17T22:00:00Z" }] }],
+      },
+      afterMidnight,
+    );
+    const today = buildPresenceBoard([evening], afterMidnight, {
+      day: "2026-10-18",
+      period: "todos",
+      incompleteSince: new Date(afterMidnight.getTime() - 7 * 86_400_000),
+    }, { graceMinutes: GRACE });
+    expect(today.shiftCount).toBe(0); // no es una guardia del día
+    expect(today.inService.map((i) => i.workerName)).toEqual(["Sigue aquí"]);
+    expect(today.inService[0].shiftEnded).toBe(true);
+    expect(today.inService[0].checkOutDeadline).toBe("2026-10-18T10:30:00.000Z");
+    expect(today.incomplete).toEqual([]);
   });
 });
 
