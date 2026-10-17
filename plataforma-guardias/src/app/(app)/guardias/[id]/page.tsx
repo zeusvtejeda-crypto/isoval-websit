@@ -194,13 +194,19 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
                   />
                 </Disclosure>
               ) : null}
-              <ShiftStatusActions
-                action={setShiftStatus}
-                shiftId={shift.id}
-                storedStatus={shift.status}
-                started={hasStarted(shift.starts_at, now)}
-                openSessions={openSessions}
-              />
+              {!user.isAdmin && user.workerId && item.assignments.some((a) => a.assignment.worker_id === user.workerId) ? (
+                <Alert tone="info" title="Estás asignado a esta guardia">
+                  No puedes cancelarla, finalizarla ni reprogramarla. Pide a otra persona de coordinación o a administración.
+                </Alert>
+              ) : (
+                <ShiftStatusActions
+                  action={setShiftStatus}
+                  shiftId={shift.id}
+                  storedStatus={shift.status}
+                  started={hasStarted(shift.starts_at, now)}
+                  openSessions={openSessions}
+                />
+              )}
             </div>
           </Card>
         ) : (

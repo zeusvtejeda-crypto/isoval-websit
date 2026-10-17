@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { homePathFor, type AppRole } from "@/lib/auth";
 import { safeNextPath } from "@/lib/security/safe-next";
-import { clientIp, loginLimiter } from "@/lib/security/rate-limit";
+import { clientIp, loginFailed, loginKeys, loginRetryAfter, loginSucceeded } from "@/lib/security/rate-limit";
 
 export type LoginState = { ok: boolean; message?: string };
 
@@ -15,9 +15,8 @@ export async function login(_prev: LoginState | null, formData: FormData): Promi
   if (!email || !password) {
     return { ok: false, message: "Escribe tu correo y contraseña." };
   }
-  const ip = clientIp(await headers());
-  const keys = [`ip:${ip}`, `email:${email}`];
-  const wait = Math.max(...keys.map((k) => loginLimiter.retryAfter(k)));
+  const keys = loginKeys(clientIp(await headers()), email);
+  const wait = loginRetryAfter(keys);
   if (wait > 0) {
     return { ok: false, message: `Demasiados intentos fallidos. Espera ${Math.ceil(wait / 60_000)} min e inténtalo de nuevo.` };
   }
@@ -28,10 +27,10 @@ export async function login(_prev: LoginState | null, formData: FormData): Promi
     return { ok: false, message: "El servicio de acceso recibió demasiadas solicitudes. Espera unos minutos e inténtalo de nuevo." };
   }
   if (error || !data.user) {
-    keys.forEach((k) => loginLimiter.fail(k));
+    loginFailed(keys);
     return { ok: false, message: "Correo o contraseña incorrectos." };
   }
-  keys.forEach((k) => loginLimiter.succeed(k));
+  loginSucceeded(keys);
   const { data: profile } = await supabase
     .from("profiles")
     .select("role, active")

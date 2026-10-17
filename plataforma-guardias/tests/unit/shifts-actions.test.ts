@@ -231,8 +231,17 @@ describe("setShiftStatus", () => {
   it("limpia el motivo guardado antes de cambiar el estado", async () => {
     const r = await setShiftStatus(null, form({ shift_id: SHIFT, status: "cancelada", reason: "Sin personal disponible" }));
     expect(r.ok).toBe(true);
-    expect(h.log).toEqual([`clear:shifts:${SHIFT}`, "update:shifts"]);
+    // Antes de cancelar se revisa que no haya asistencia vigente.
+    expect(h.log).toEqual(["countValidSessions", `clear:shifts:${SHIFT}`, "update:shifts"]);
     expect(h.ops[0].payload).toMatchObject({ status: "cancelada", cancel_reason: "Sin personal disponible", change_reason: "Sin personal disponible" });
+  });
+
+  it("no cancela una guardia con asistencia vigente (coordinación)", async () => {
+    h.validSessions = 2;
+    const r = await setShiftStatus(null, form({ shift_id: SHIFT, status: "cancelada", reason: "Sin personal disponible" }));
+    expect(r).toMatchObject({ ok: false });
+    expect(r.ok ? "" : r.message).toMatch(/registros de asistencia vigentes/);
+    expect(h.log).toEqual(["countValidSessions"]);
   });
 });
 

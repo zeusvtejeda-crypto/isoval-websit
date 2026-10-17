@@ -100,6 +100,8 @@ export async function removeAssignment(_prev: ActionResult | null, formData: For
   const ctx = await getAssignmentContext(supabase, assignment_id);
   const denied = ensureManage(user, ctx);
   if (denied || !ctx) return denied ?? NO_ACCESS;
+  const own = ensureNotOwn(user, ctx.assignment.worker_id);
+  if (own) return own;
 
   const { count, error: countError } = await supabase
     .from("attendance_sessions")

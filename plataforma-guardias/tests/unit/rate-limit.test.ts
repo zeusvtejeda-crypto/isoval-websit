@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FailureLimiter, clientIp } from "@/lib/security/rate-limit";
+import { FailureLimiter, clientIp, loginKeys } from "@/lib/security/rate-limit";
 
 describe("FailureLimiter", () => {
   it("bloquea tras N fallos dentro de la ventana y se libera al vencer", () => {
@@ -22,11 +22,33 @@ describe("FailureLimiter", () => {
     l.fail("b", 3_000);
     expect(l.retryAfter("b", 3_001)).toBe(0);
   });
+
+  it("al llenarse nunca desaloja un bloqueo vigente", () => {
+    const l = new FailureLimiter(1, 60_000, 600_000, 3);
+    l.fail("victima", 0); // bloqueada
+    expect(l.retryAfter("victima", 1)).toBeGreaterThan(0);
+    for (let i = 0; i < 50; i++) l.fail(`basura-${i}`, 10 + i);
+    expect(l.retryAfter("victima", 100)).toBeGreaterThan(0);
+    expect(l.size).toBeLessThanOrEqual(3);
+  });
 });
 
 describe("clientIp", () => {
-  it("toma la primera IP de x-forwarded-for", () => {
-    expect(clientIp(new Headers({ "x-forwarded-for": "203.0.113.5, 10.0.0.1" }))).toBe("203.0.113.5");
-    expect(clientIp(new Headers())).toBe("desconocida");
+  it("no confía en x-forwarded-for sin proxies declarados", () => {
+    expect(clientIp(new Headers({ "x-forwarded-for": "1.2.3.4, 9.9.9.9" }), 0)).toBeNull();
+    expect(clientIp(new Headers({ "x-real-ip": "203.0.113.5" }), 0)).toBe("203.0.113.5");
+  });
+
+  it("con un proxy de confianza toma la entrada que agregó ese proxy (la última)", () => {
+    // El cliente puede falsificar el inicio de la cadena; el proxy agrega la IP real al final.
+    expect(clientIp(new Headers({ "x-forwarded-for": "1.2.3.4, 203.0.113.5" }), 1)).toBe("203.0.113.5");
+    expect(clientIp(new Headers({ "x-forwarded-for": "1.2.3.4, 203.0.113.5, 10.0.0.2" }), 2)).toBe("203.0.113.5");
+  });
+});
+
+describe("claves de inicio de sesión", () => {
+  it("sin IP confiable no crea claves por IP ni por combinación", () => {
+    expect(loginKeys(null, "a@b.mx")).toEqual({ pair: null, ip: null, email: "email:a@b.mx" });
+    expect(loginKeys("203.0.113.5", "a@b.mx").pair).toBe("pair:203.0.113.5|a@b.mx");
   });
 });

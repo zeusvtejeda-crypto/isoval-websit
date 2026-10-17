@@ -42,3 +42,16 @@ describe("lectura segura de XLSX", () => {
     await expect(parseXlsx(bytes.buffer)).rejects.toThrow(/demasiado grande/);
   });
 });
+
+describe("bomba zip con tamaños declarados falsos", () => {
+  it("corta la descompresión al pasar el límite real, aunque el encabezado declare poco", async () => {
+    const { default: JSZip } = await import("jszip");
+    const { assertInflatedSizeWithin } = await import("@/lib/import/parse");
+    const zip = new JSZip();
+    zip.file("xl/worksheets/sheet1.xml", new Uint8Array(8 * 1024 * 1024)); // 8 MB de ceros (comprime a pocos KB)
+    const buf = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
+    expect(buf.byteLength).toBeLessThan(200 * 1024);
+    await expect(assertInflatedSizeWithin(buf, 1024 * 1024)).rejects.toThrow(/demasiado grande/);
+    await expect(assertInflatedSizeWithin(buf, 16 * 1024 * 1024)).resolves.toBeUndefined();
+  });
+});

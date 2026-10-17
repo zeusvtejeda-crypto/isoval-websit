@@ -12,6 +12,21 @@ import { FACILITY_LOCKED_NOTICE, SCHEDULE_LOCKED_NOTICE, isScheduleLocked } from
 import { SHIFT_FORM_FIELDS, invalidResult, readForm, shiftFormSchema, shiftStatusSchema } from "@/lib/shifts/schemas";
 
 /** Alta o edición de una guardia. Al guardar redirige al detalle. */
+/** Mensaje de la BD (guard_protected_columns) para guardias en las que uno está asignado. */
+const OWN_SHIFT_MESSAGE =
+  "No puedes cancelar, finalizar ni reprogramar una guardia en la que estás asignado. Pide a otra persona de coordinación o a administración.";
+
+/** ¿La persona usuaria (como trabajadora) está asignada a la guardia? Administración queda exenta. */
+async function isOwnShiftLocked(supabase: Awaited<ReturnType<typeof createClient>>, user: { isAdmin: boolean; workerId: string | null }, shiftId: string) {
+  if (user.isAdmin || !user.workerId) return false;
+  const { count } = await supabase
+    .from("shift_assignments")
+    .select("id", { count: "exact", head: true })
+    .eq("shift_id", shiftId)
+    .eq("worker_id", user.workerId);
+  return (count ?? 0) > 0;
+}
+
 export async function saveShift(_prev: ActionResult<{ id: string }> | null, formData: FormData): Promise<ActionResult<{ id: string }>> {
   const user = await requireManager();
   const parsed = shiftFormSchema.safeParse(readForm(formData, SHIFT_FORM_FIELDS));
@@ -64,6 +79,9 @@ export async function saveShift(_prev: ActionResult<{ id: string }> | null, form
       if (schedule.changed && !user.isAdmin && isScheduleLocked(user, await countValidSessions(supabase, current.shift.id))) {
         // La BD también lo impide (guard_protected_columns).
         return { ok: false, message: SCHEDULE_LOCKED_NOTICE, fieldErrors: { date: "Conserva la fecha y las horas guardadas." } };
+      }
+      if (schedule.changed && (await isOwnShiftLocked(supabase, user, current.shift.id))) {
+        return { ok: false, message: OWN_SHIFT_MESSAGE, fieldErrors: { date: "Conserva la fecha y las horas guardadas." } };
       }
       ({ startsAt, endsAt } = schedule);
     } else {
@@ -145,6 +163,12 @@ export async function setShiftStatus(_prev: ActionResult | null, formData: FormD
   }
   if (ctx.shift.status === status) {
     return { ok: false, message: "La guardia ya tiene ese estado." };
+  }
+  if (await isOwnShiftLocked(supabase, user, shift_id)) {
+    return { ok: false, message: OWN_SHIFT_MESSAGE };
+  }
+  if (status === "cancelada" && (await countValidSessions(supabase, shift_id)) > 0 && !user.isAdmin) {
+    return { ok: false, message: "La guardia tiene registros de asistencia vigentes; corrígelos o anúlalos antes de cancelarla." };
   }
   if (status === "finalizada" && ctx.shift.status === "cancelada") {
     return { ok: false, message: "La guardia está cancelada. Reactívala antes de marcarla como finalizada." };

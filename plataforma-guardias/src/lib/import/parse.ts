@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 
 /**
  * Lectura genérica de archivos CSV o Excel (.xlsx) a filas de texto.
@@ -99,12 +100,58 @@ export function zipDeclaredUncompressedSize(buffer: ArrayBuffer): { bytes: numbe
   return { bytes: total, entries };
 }
 
+const TOO_BIG = "El archivo de Excel es demasiado grande una vez descomprimido. Divídelo en partes o usa CSV.";
+
+/**
+ * Descomprime por flujo cada entrada contando los bytes reales y se detiene al
+ * pasar el límite. No confía en los tamaños declarados (un archivo malicioso
+ * puede declarar 16 KB e inflar gigabytes): la memoria queda acotada.
+ */
+export async function assertInflatedSizeWithin(buffer: ArrayBuffer, limit = MAX_XLSX_UNCOMPRESSED_BYTES): Promise<void> {
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(buffer);
+  } catch {
+    throw new Error("El archivo de Excel no es válido o está dañado.");
+  }
+  let total = 0;
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) continue;
+    await new Promise<void>((resolve, reject) => {
+      const stream = entry.nodeStream("nodebuffer");
+      let done = false;
+      stream
+        .on("data", (chunk: Buffer) => {
+          if (done) return;
+          total += chunk.length;
+          if (total > limit) {
+            done = true;
+            stream.pause();
+            reject(new Error(TOO_BIG));
+          }
+        })
+        .on("error", (err: Error) => {
+          if (done) return;
+          done = true;
+          reject(/mismatch|corrupted|invalid/i.test(err.message) ? new Error("El archivo de Excel no es válido o está dañado.") : err);
+        })
+        .on("end", () => {
+          if (done) return;
+          done = true;
+          resolve();
+        })
+        .resume();
+    });
+  }
+}
+
 export async function parseXlsx(buffer: ArrayBuffer): Promise<ParsedFile> {
   const declared = zipDeclaredUncompressedSize(buffer);
   if (!declared) throw new Error("El archivo de Excel no es válido o está dañado.");
   if (declared.entries > MAX_ZIP_ENTRIES || declared.bytes > MAX_XLSX_UNCOMPRESSED_BYTES) {
-    throw new Error("El archivo de Excel es demasiado grande una vez descomprimido. Divídelo en partes o usa CSV.");
+    throw new Error(TOO_BIG);
   }
+  await assertInflatedSizeWithin(buffer);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const sheet = workbook.worksheets[0];

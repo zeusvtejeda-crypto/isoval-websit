@@ -504,7 +504,7 @@ export function AssignmentCard({
               </Disclosure>
             </>
           )}
-          {sessions.length === 0 ? (
+          {sessions.length === 0 && !ownLocked ? (
             <Disclosure summary="Quitar asignación" tone="danger">
               <RemoveAssignmentForm action={actions.remove} assignmentId={assignment.id} workerName={workerName} />
             </Disclosure>

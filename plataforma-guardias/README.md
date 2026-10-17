@@ -109,6 +109,7 @@ Todas están documentadas en [`.env.example`](.env.example).
 | `NEXT_PUBLIC_MAP_TILE_URL`, `NEXT_PUBLIC_MAP_ATTRIBUTION` | Navegador | Proveedor de teselas y su atribución obligatoria. |
 | `NEXT_PUBLIC_MAP_CENTER_LAT`, `NEXT_PUBLIC_MAP_CENTER_LNG`, `NEXT_PUBLIC_MAP_ZOOM` | Navegador | Vista inicial (Nayarit). |
 | `TEST_DATABASE_URL` | Pruebas | Conexión directa a Postgres local para pruebas de BD/RLS. |
+| `TRUSTED_PROXY_HOPS` | Servidor | Proxies propios delante de la app; define de dónde se toma la IP para el límite de intentos. |
 | `NEXT_PUBLIC_ENABLE_SW` | Navegador | `true` registra el service worker también en desarrollo. |
 | `DEMO_PASSWORD`, `ALLOW_DEMO_USERS` | Script `demo:usuarios` | Contraseña de las cuentas demo; forzar su creación fuera de local (no recomendado). |
 | `ADMIN_PASSWORD` | Script `crear-admin` | Solo al ejecutar el comando; no la guardes en archivos. |
@@ -222,8 +223,9 @@ Requisitos de `test:db` y `test:e2e`: `npm run db:start`, `npm run db:reset` y `
 - **Separación de funciones:** nadie (salvo administración) corrige, agrega, anula o revisa su propia asistencia. Las horas capturadas a mano deben caer dentro de la guardia (±12 h).
 - Una entrada olvidada nunca se cierra con la hora actual pasado el margen: se corrige con la hora real.
 - Cabeceras: Content-Security-Policy (orígenes de teselas y Supabase), HSTS cuando el sitio es HTTPS, `X-Frame-Options: DENY`, `nosniff`, `Permissions-Policy` sin cámara, micrófono ni ubicación. `/api/asistencia` exige mismo origen y JSON.
-- Límite de intentos de inicio de sesión por IP y por correo (en memoria, por instancia). Con varias instancias, usa un almacén compartido o el CAPTCHA de Supabase.
-- Importación XLSX: se rechazan archivos de más de 5 MB o de más de 50 MB descomprimidos.
+- Límite de intentos de inicio de sesión: bloqueo estricto por IP + correo y umbrales altos por IP y por correo, para no bloquear a una red compartida ni permitir bloqueos dirigidos. La IP solo se toma de proxies de confianza (`TRUSTED_PROXY_HOPS`). Es en memoria por instancia: con varias instancias usa un almacén compartido o el CAPTCHA de Supabase.
+- Supabase Auth limita los inicios de sesión por IP, y aquí todos llegan desde la IP del servidor: sube «Sign-ins per 5 minutes» en el panel según el tamaño del personal (en local: 300).
+- Importación XLSX: además del tamaño declarado, se descomprime por flujo contando bytes reales y se corta al pasar 50 MB.
 
 ## Configuración externa pendiente
 

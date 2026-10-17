@@ -193,6 +193,54 @@ describe("Alcance de datos", () => {
   });
 });
 
+describe("Caminos alternos de la separación de funciones", () => {
+  it("coordinación no se quita de una guardia ni cambia su propia asignación; otra persona sí", async () => {
+    const shiftId = await createShiftSuper(facilityA, -3000, -2900);
+    const assignmentId = await assignSuper(shiftId, coordWorker);
+    expect(await expectPgError(asUser(coordA, (c) => c.query("delete from public.shift_assignments where id = $1", [assignmentId])))).toMatch(/propia asistencia/);
+    expect(await expectPgError(asUser(coordA, (c) => c.query("update public.shift_assignments set notes = 'propia' where id = $1", [assignmentId])))).toMatch(/propia asistencia/);
+    // Limpiar solo el motivo sí se permite (clearStoredReason).
+    const ok = await asUser(coordA, (c) => c.query("update public.shift_assignments set change_reason = null where id = $1", [assignmentId]));
+    expect(ok.rowCount).toBe(1);
+    const other = await asUser(coordA2, (c) => c.query("update public.shift_assignments set notes = 'Revisado' where id = $1", [assignmentId]));
+    expect(other.rowCount).toBe(1);
+  });
+
+  it("coordinación no cancela, reprograma ni borra una guardia en la que está asignada", async () => {
+    const shiftId = await createShiftSuper(facilityA, 3000, 3100);
+    await assignSuper(shiftId, coordWorker);
+    expect(await expectPgError(asUser(coordA, (c) => c.query("update public.shifts set status = 'cancelada', cancel_reason = 'Propia' where id = $1", [shiftId])))).toMatch(/estás asignado/);
+    expect(await expectPgError(asUser(coordA, (c) => c.query("update public.shifts set starts_at = starts_at + interval '1 day', ends_at = ends_at + interval '1 day' where id = $1", [shiftId])))).toMatch(/estás asignado/);
+    expect(await expectPgError(asUser(coordA, (c) => c.query("delete from public.shifts where id = $1", [shiftId])))).toMatch(/propia asistencia/);
+    const ok = await asUser(coordA2, (c) => c.query("update public.shifts set status = 'cancelada', cancel_reason = 'Reprogramación general' where id = $1", [shiftId]));
+    expect(ok.rowCount).toBe(1);
+  });
+
+  it("no se cancela una guardia con asistencia vigente", async () => {
+    const shiftId = await createShiftSuper(facilityA, -30, 120);
+    const assignmentId = await assignSuper(shiftId, await createWorkerSuper(facilityA));
+    await asUser(coordA2, (c) => c.query("select public.check_in($1, $2, null, 'Registro por coordinación')", [assignmentId, uid()]));
+    expect(await expectPgError(asUser(coordA2, (c) => c.query("update public.shifts set status = 'cancelada', cancel_reason = 'Cancelación' where id = $1", [shiftId])))).toMatch(/registros de asistencia vigentes/);
+  });
+
+  it("coordinación no borra justificaciones de su propia asistencia", async () => {
+    const shiftId = await createShiftSuper(facilityA, -4000, -3900);
+    const assignmentId = await assignSuper(shiftId, coordWorker);
+    await asUser(adminId, (c) => c.query("insert into public.incident_notes (assignment_id, facility_id, incident_type, note) values ($1, $2, 'llegada_tardia', 'Nota de admin')", [assignmentId, facilityA]));
+    expect(await expectPgError(asUser(coordA, (c) => c.query("delete from public.incident_notes where assignment_id = $1", [assignmentId])))).toMatch(/propia asistencia/);
+  });
+
+  it("las funciones nuevas no quedan ejecutables por anon", async () => {
+    await asSuper(async (c) => {
+      await c.query("begin");
+      await c.query("create function public.zz_prueba_privilegios() returns int language sql as 'select 1'");
+      const r = await c.query("select has_function_privilege('anon', 'public.zz_prueba_privilegios()', 'execute') as can");
+      await c.query("rollback");
+      expect(r.rows[0].can).toBe(false);
+    });
+  });
+});
+
 describe("Catálogo nacional", () => {
   it("incluye los municipios de las 32 entidades con nombres INEGI", async () => {
     const r = await asSuper((c) => c.query("select count(*)::int as n, count(distinct state_id)::int as e from public.municipalities"));
