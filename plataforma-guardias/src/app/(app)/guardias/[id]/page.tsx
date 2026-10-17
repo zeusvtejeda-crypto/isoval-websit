@@ -81,7 +81,13 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
   const allSessions = item.assignments.flatMap((a) => a.sessions);
 
   const [names, workerProfiles, notes, corrections, facilityWorkers, others, checkInWindow] = await Promise.all([
-    getProfileNames(supabase, collectActorIds(allSessions)),
+    getProfileNames(
+      supabase,
+      collectActorIds(
+        allSessions,
+        item.assignments.map((a) => a.assignment),
+      ),
+    ),
     getWorkerProfileIds(supabase, workerIds),
     getIncidentNotes(supabase, assignmentIds),
     getPendingCorrections(supabase, assignmentIds),
@@ -91,9 +97,10 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
   ]);
   const checkInOpensAt = new Date(Date.parse(shift.starts_at) - checkInWindow * 60_000);
 
-  const assignedWorkers = item.assignments
-    .filter((a) => a.worker)
-    .map((a) => ({ id: a.assignment.worker_id, full_name: a.worker?.full_name ?? "" }));
+  const assignedWorkers = item.assignments.map((a) => ({
+    id: a.assignment.worker_id,
+    full_name: a.worker?.full_name ?? "Persona no visible",
+  }));
   const openSessions = item.assignments.filter((a) => a.summary.openSession).length;
   const title = shiftDisplayTitle(shift);
 

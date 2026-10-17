@@ -198,6 +198,12 @@ export function AssignmentCard({
   const maxLocal = utcToLocalInput(now, tz);
   const manualOut = utcToLocalInput(Math.min(now.getTime(), Date.parse(shift.ends_at)), tz);
 
+  const statusMeta = [
+    assignment.status_changed_at ? formatDateTime(assignment.status_changed_at, tz) : null,
+    assignment.status_changed_by ? `por ${describeActor(assignment.status_changed_by, names, { currentUserId, method: "coordinador" })}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
   const noteByType = new Map(notes.map((n) => [n.incident_type, n]));
   const incidentTypes: IncidentType[] = [...summary.incidents.map((i) => i.type)];
   for (const n of notes) if (!incidentTypes.includes(n.incident_type)) incidentTypes.push(n.incident_type);
@@ -239,7 +245,7 @@ export function AssignmentCard({
             <dt className="inline font-medium text-gray-900">Motivo del estado: </dt>
             <dd className="inline">
               {assignment.status_reason}
-              {assignment.status_changed_at ? ` (${formatDateTime(assignment.status_changed_at, tz)})` : ""}
+              {statusMeta ? ` (${statusMeta})` : ""}
             </dd>
           </div>
         ) : null}
