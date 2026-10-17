@@ -184,6 +184,26 @@ describe("AttendanceButtons", () => {
     expect(second.requestId).toBe(first.requestId);
   });
 
+  it("si el servidor no pudo confirmar con la base (503 «unconfirmed»), queda «no confirmado» y el reintento usa la misma solicitud", async () => {
+    fetchMock.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve({ ok: false, unconfirmed: true, message: "No se pudo confirmar el registro con el servidor de datos. Reintenta: no se duplicará." }),
+      } as unknown as Response),
+    );
+    fetchMock.mockReturnValueOnce(okResponse({ ...created("entrada", "2026-10-17T15:05:00Z"), result: "duplicate" }));
+    renderButtons();
+    await userEvent.click(entrada());
+    expect(await screen.findByText("Registro NO confirmado")).toBeInTheDocument();
+    expect(screen.queryByText(/No se registró/i)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Reintentar envío" }));
+    expect(await screen.findByText("Entrada registrada a las 08:05 (hora del servidor)")).toBeInTheDocument();
+    const first = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(second.requestId).toBe(first.requestId);
+  });
+
   it("si se pierde la conexión tras «no confirmado», el reintento queda deshabilitado y no envía", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     renderButtons();

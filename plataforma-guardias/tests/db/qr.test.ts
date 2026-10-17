@@ -44,8 +44,8 @@ afterAll(async () => {
   await pool.end();
 });
 
-async function issue(user: string, shift = shiftId): Promise<string> {
-  const r = await asUser(user, (c) => c.query("select public.issue_qr_token($1) as r", [shift]));
+async function issue(user: string, shift = shiftId, revoke = false): Promise<string> {
+  const r = await asUser(user, (c) => c.query("select public.issue_qr_token($1, $2) as r", [shift, revoke]));
   return r.rows[0].r.token as string;
 }
 
@@ -116,4 +116,116 @@ describe("Registro con QR", () => {
     const r = await asUser(u, (c) => c.query("select public.check_in($1, $2) as r", [a, uid()]));
     expect(r.rows[0].r.session.check_in_method).toBe("propio");
   });
+
+  it("el contexto informa si no se puede registrar (guardia cancelada, asignación inactiva, trabajador inactivo) y el servidor lo rechaza", async () => {
+    const s1 = await createShiftSuper(facilityA, -30, 240);
+    const w1 = await createWorkerSuper(facilityA);
+    const u1 = await createAuthUser({ role: "trabajador", workerId: w1 });
+    const a1 = await assignSuper(s1, w1);
+    const t1 = await issue(coordA, s1);
+    const okCtx = await asUser(u1, (c) => c.query("select public.qr_token_context($1) as r", [t1]));
+    expect(okCtx.rows[0].r.can_register).toBe(true);
+    // Guardia cancelada después de emitir
+    await asSuper((c) => c.query("update public.shifts set status = 'cancelada', cancel_reason = 'Prueba' where id = $1", [s1]));
+    const c1 = await asUser(u1, (c) => c.query("select public.qr_token_context($1) as r", [t1]));
+    expect(c1.rows[0].r.can_register).toBe(false);
+    expect(c1.rows[0].r.shift_status).toBe("cancelada");
+    expect(await expectPgError(asUser(u1, (c) => c.query("select public.check_in_qr($1, $2)", [t1, uid()])))).toMatch(/cancelada/);
+
+    // Asignación cancelada
+    const s2 = await createShiftSuper(facilityA, -30, 240);
+    const a2 = await assignSuper(s2, w1);
+    await asSuper((c) => c.query("update public.shift_assignments set status = 'cancelado' where id = $1", [a2]));
+    const t2 = await issue(coordA, s2);
+    const c2 = await asUser(u1, (c) => c.query("select public.qr_token_context($1) as r", [t2]));
+    expect(c2.rows[0].r.assignment_status).toBe("cancelado");
+    expect(c2.rows[0].r.can_register).toBe(false);
+    expect(await expectPgError(asUser(u1, (c) => c.query("select public.check_in_qr($1, $2)", [t2, uid()])))).toMatch(/no está activa/);
+
+    // Trabajador inactivo
+    const s3 = await createShiftSuper(facilityA, -30, 240);
+    const w3 = await createWorkerSuper(facilityA);
+    const u3 = await createAuthUser({ role: "trabajador", workerId: w3 });
+    await assignSuper(s3, w3);
+    await asSuper((c) => c.query("update public.workers set active = false where id = $1", [w3]));
+    const t3 = await issue(coordA, s3);
+    const c3 = await asUser(u3, (c) => c.query("select public.qr_token_context($1) as r", [t3]));
+    expect(c3.rows[0].r.worker_active).toBe(false);
+    expect(await expectPgError(asUser(u3, (c) => c.query("select public.check_in_qr($1, $2)", [t3, uid()])))).toMatch(/inactivo/);
+    void a1;
+  });
+
+  it("la emisión queda en la bitácora sin el código, y el registro guarda qué código se usó", async () => {
+    const s1 = await createShiftSuper(facilityA, -30, 240);
+    const w1 = await createWorkerSuper(facilityA);
+    const u1 = await createAuthUser({ role: "trabajador", workerId: w1 });
+    await assignSuper(s1, w1);
+    const token = await issue(coordA, s1);
+    const audit = await asUser(coordA, (c) =>
+      c.query("select record_id, actor_id, new_data::text as data from public.audit_log where table_name = 'attendance_qr_tokens' and new_data->>'shift_id' = $1", [s1]),
+    );
+    expect(audit.rowCount).toBe(1);
+    expect(audit.rows[0].actor_id).toBe(coordA);
+    expect(audit.rows[0].data).not.toContain(token);
+    const r = await asUser(u1, (c) => c.query("select public.check_in_qr($1, $2) as r", [token, uid()]));
+    expect(r.rows[0].r.session.qr_check_in_token_id).toBe(audit.rows[0].record_id);
+    const out = await asUser(u1, (c) => c.query("select public.check_out_qr($1, $2) as r", [token, uid()]));
+    expect(out.rows[0].r.session.qr_check_out_token_id).toBe(audit.rows[0].record_id);
+  });
+
+  it("la variable del método QR no se queda pegada para registros normales en la misma transacción", async () => {
+    const s1 = await createShiftSuper(facilityA, -30, 240);
+    const w1 = await createWorkerSuper(facilityA);
+    const u1 = await createAuthUser({ role: "trabajador", workerId: w1 });
+    const a1 = await assignSuper(s1, w1);
+    const token = await issue(coordA, s1);
+    const r = await asUser(u1, async (c) => {
+      await c.query("select public.check_in_qr($1, $2)", [token, uid()]);
+      return c.query(
+        "select coalesce(current_setting('app.attendance_method', true), '') as method, coalesce(current_setting('app.qr_token_id', true), '') as token_id",
+      );
+    });
+    expect(r.rows[0].method).toBe("");
+    expect(r.rows[0].token_id).toBe("");
+    // Un registro normal posterior queda con método propio y sin código.
+    const out = await asUser(u1, (c) => c.query("select public.check_out($1, $2) as r", [a1, uid()]));
+    expect(out.rows[0].r.session.check_out_method).toBe("propio");
+    expect(out.rows[0].r.session.qr_check_out_token_id).toBeNull();
+  });
+
+  it("«Renovar ahora» invalida los códigos anteriores; la rotación automática no", async () => {
+    const s1 = await createShiftSuper(facilityA, -30, 240);
+    const w1 = await createWorkerSuper(facilityA);
+    const u1 = await createAuthUser({ role: "trabajador", workerId: w1 });
+    await assignSuper(s1, w1);
+    const t1 = await issue(coordA, s1);
+    const t2 = await issue(coordA, s1); // rotación automática: ambos vigentes
+    await asUser(u1, (c) => c.query("select public.qr_token_context($1)", [t1]));
+    await issue(coordA, s1, true); // renovación manual
+    expect(await expectPgError(asUser(u1, (c) => c.query("select public.qr_token_context($1)", [t1])))).toMatch(/expiró/);
+    expect(await expectPgError(asUser(u1, (c) => c.query("select public.qr_token_context($1)", [t2])))).toMatch(/expiró/);
+  });
+
+  it("limita la emisión de códigos por guardia", async () => {
+    const s1 = await createShiftSuper(facilityA, -30, 240);
+    for (let i = 0; i < 40; i++) await issue(coordA, s1);
+    expect(await expectPgError(asUser(coordA, (c) => c.query("select public.issue_qr_token($1)", [s1])))).toMatch(/demasiados códigos/);
+  });
+
+  it("coordinación que se registra con QR no puede corregir su propio registro", async () => {
+    const cw = await createWorkerSuper(facilityA);
+    const coordWorker = await createAuthUser({ role: "coordinador", workerId: cw });
+    await grantScope(coordWorker, facilityA);
+    const s1 = await createShiftSuper(facilityA, -30, 240);
+    await assignSuper(s1, cw);
+    const token = await issue(coordWorker, s1);
+    const r = await asUser(coordWorker, (c) => c.query("select public.check_in_qr($1, $2) as r", [token, uid()]));
+    expect(r.rows[0].r.session.check_in_method).toBe("qr");
+    expect(
+      await expectPgError(
+        asUser(coordWorker, (c) => c.query("select public.void_attendance($1, 'Anulación propia')", [r.rows[0].r.session.id])),
+      ),
+    ).toMatch(/propia asistencia/);
+  });
 });
+

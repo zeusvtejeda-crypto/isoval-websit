@@ -121,7 +121,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
               </Link>
             ) : null}
             {canManage && shift.status !== "cancelada" ? (
-              <Link href={`/guardias/${shift.id}/qr`} className={buttonClasses("outline")}>
+              <Link href={`/pantalla-qr/${shift.id}`} className={buttonClasses("outline")}>
                 Mostrar código QR de registro
               </Link>
             ) : null}

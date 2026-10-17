@@ -45,7 +45,7 @@ export default async function GuardiaQrPage({ params }: { params: Promise<{ id: 
   const title = shiftDisplayTitle(shift);
   const back = (
     <Link href={`/guardias/${shift.id}`} className={buttonClasses("outline")}>
-      Volver a la guardia
+      Salir de la pantalla del código
     </Link>
   );
 

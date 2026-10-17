@@ -48,8 +48,8 @@ Roles: **Administración general**, **Coordinación** (solo sedes asignadas), **
 
 Una forma más rápida de registrar entrada o salida en el punto de reunión. Los botones normales siguen disponibles.
 
-1. **Coordinación** abre la guardia → **«Mostrar código QR de registro»** y deja la pantalla visible en el punto de reunión.
-2. El código **se renueva solo** y **caduca en ~2 minutos** (configurable en `app_settings`, clave `attendance`, campo `qr_ttl_seconds`; el servidor lo limita a entre 30 y 600 segundos).
+1. **Coordinación** abre la guardia → **«Mostrar código QR de registro»** (`/pantalla-qr/<id>`). Es una pantalla tipo kiosco, sin menú ni nombre de la cuenta, para dejarla visible en el punto de reunión. Aun así la sesión de coordinación sigue abierta en ese dispositivo: no lo dejes sin supervisión.
+2. El código **se renueva solo** y **caduca en ~2 minutos** (configurable en `app_settings`, clave `attendance`, campo `qr_ttl_seconds`; el servidor lo limita a entre 30 y 600 segundos). La renovación automática deja un margen para quien está escaneando; **«Renovar ahora» invalida de inmediato los códigos anteriores**.
 3. **El trabajador** lo escanea con la **cámara nativa de su teléfono** (la app no pide permiso de cámara), inicia sesión si hace falta y **confirma** la entrada o la salida.
 4. El registro queda con método **«Código QR»** (los registros con los botones conservan su propio método).
 
@@ -57,6 +57,9 @@ Límites y seguridad:
 
 - **El QR no prueba presencia física.** Otra persona podría reenviar el enlace mientras siga vigente. Solo facilita el registro con la cuenta propia, igual que «Entrada registrada» no equivale a presencia física verificada.
 - Los códigos los **emite y valida el servidor** (`issue_qr_token`, `qr_token_context`, `check_in_qr`, `check_out_qr`) y en la base **solo se guarda su hash**. Solo la coordinación de la sede o la administración pueden emitirlos, y solo los trabajadores asignados a esa guardia pueden usarlos.
+- **Trazabilidad:** cada emisión queda en la bitácora (quién, guardia, vencimiento; nunca el código) y cada registro QR guarda qué código se usó. Hay un límite de emisión por guardia.
+- Si la guardia está cancelada, la asignación no está activa o el trabajador está inactivo, la pantalla del trabajador lo explica en lugar de ofrecer el botón.
+- La página del trabajador quita el código de la barra de direcciones al cargar. Si se pierde la respuesta del servidor, el registro queda «no confirmado» y el reintento no duplica.
 
 ## Arquitectura
 

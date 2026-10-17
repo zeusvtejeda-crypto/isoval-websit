@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { describeConfirmation } from "@/components/attendance/attendance-buttons";
 import { useAttendanceAction, type AttendanceActionState } from "@/components/attendance/use-attendance-action";
@@ -37,7 +37,19 @@ export function QrAttendance({ assignmentId, qrToken, hasOpenSession, timeZone, 
   const { state, submit, sending } = useAttendanceAction();
   const [current, setCurrent] = useState<QrAttendanceAction>(hasOpenSession ? "salida" : "entrada");
   const [sent, setSent] = useState<QrAttendanceAction | null>(null);
+  // Tras cada respuesta el botón queda inactivo un momento: si cambió de acción
+  // (p. ej. «entrada» → «salida»), un toque tardío no registra la contraria.
+  const [locked, setLocked] = useState(false);
   const busy = useRef(false);
+
+  // El código ya está en memoria: se quita de la barra de direcciones para que
+  // no quede en el historial ni se comparta por accidente.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("c")) return;
+    url.searchParams.delete("c");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, []);
 
   const outcome = state.phase === "confirmed" ? state.result.result : null;
   const next = nextQrAction(current, outcome);
@@ -54,6 +66,8 @@ export function QrAttendance({ assignmentId, qrToken, hasOpenSession, timeZone, 
       await submit({ action, assignmentId, qrToken });
     } finally {
       busy.current = false;
+      setLocked(true);
+      window.setTimeout(() => setLocked(false), 1500);
     }
   }
 
@@ -72,7 +86,7 @@ export function QrAttendance({ assignmentId, qrToken, hasOpenSession, timeZone, 
       ) : null}
 
       {next && state.phase !== "unconfirmed" ? (
-        <Button size="xl" className="w-full" disabled={!online || sending} onClick={() => void run(next)}>
+        <Button size="xl" className="w-full" disabled={!online || sending || locked} onClick={() => void run(next)}>
           {sending ? "Enviando…" : BUTTON_TEXT[next]}
         </Button>
       ) : null}

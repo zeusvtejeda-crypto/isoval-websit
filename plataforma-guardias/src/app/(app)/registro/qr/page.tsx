@@ -36,7 +36,7 @@ function HowTo({ invalid }: { invalid: boolean }) {
           <li>Toca el enlace que aparece. Se abrirá esta página con los datos de tu guardia; si te lo pide, inicia sesión con tu cuenta.</li>
           <li>Revisa la guardia y toca «Registrar entrada con código QR» o «Registrar salida con código QR».</li>
         </ol>
-        <p className="mt-3 text-gray-700">El código cambia cada pocos minutos: una foto o captura deja de servir. {QR_NOT_PRESENCE}</p>
+        <p className="mt-3 text-gray-700">El código caduca en unos 2 minutos; mientras siga vigente, otra persona podría reenviarlo. {QR_NOT_PRESENCE}</p>
         <div className="mt-4">
           <LinkButton href="/registro" variant="outline" size="lg">
             Registrar sin código
@@ -142,13 +142,19 @@ export default async function RegistroQrPage({ searchParams }: { searchParams: S
             </p>
           ) : null}
         </div>
-        <QrAttendance
-          assignmentId={ctx.assignmentId}
-          qrToken={param.token}
-          hasOpenSession={ctx.hasOpenSession}
-          timeZone={tz}
-          label={`${facility} · ${ctx.meetingPoint}`}
-        />
+        {ctx.canRegister ? (
+          <QrAttendance
+            assignmentId={ctx.assignmentId}
+            qrToken={param.token}
+            hasOpenSession={ctx.hasOpenSession}
+            timeZone={tz}
+            label={`${facility} · ${ctx.meetingPoint}`}
+          />
+        ) : (
+          <Alert tone="warning" title="No es posible registrar con este código">
+            {ctx.blockedReason} Si crees que es un error, avisa a coordinación.
+          </Alert>
+        )}
       </Card>
     </div>
   );

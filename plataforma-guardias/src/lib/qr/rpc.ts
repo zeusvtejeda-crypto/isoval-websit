@@ -33,6 +33,10 @@ const contextSchema = z.object({
   facility_name: z.string().nullable().optional(),
   facility_timezone: z.string().nullable().optional(),
   has_open_session: z.boolean(),
+  can_register: z.boolean().optional(),
+  shift_status: z.string().optional(),
+  assignment_status: z.string().optional(),
+  worker_active: z.boolean().optional(),
   expires_at: timestamp.nullable().optional(),
   server_time: timestamp,
 });
@@ -47,9 +51,20 @@ export type QrTokenContext = {
   facilityName: string | null;
   facilityTimezone: string | null;
   hasOpenSession: boolean;
+  /** false si la guardia está cancelada, la asignación no está activa o el trabajador está inactivo. */
+  canRegister: boolean;
+  /** Motivo legible cuando no se puede registrar. */
+  blockedReason: string | null;
   expiresAt: string | null;
   serverTime: string;
 };
+
+function blockedReasonOf(d: { shift_status?: string; assignment_status?: string; worker_active?: boolean }): string | null {
+  if (d.shift_status === "cancelada") return "La guardia está cancelada.";
+  if (d.assignment_status && d.assignment_status !== "asignado") return "Tu asignación a esta guardia no está activa.";
+  if (d.worker_active === false) return "Tu registro de trabajador está inactivo.";
+  return null;
+}
 
 /** Respuesta de qr_token_context, o null si no tiene la forma esperada. */
 export function parseQrContext(data: unknown): QrTokenContext | null {
@@ -66,6 +81,8 @@ export function parseQrContext(data: unknown): QrTokenContext | null {
     facilityName: d.facility_name ?? null,
     facilityTimezone: d.facility_timezone ?? null,
     hasOpenSession: d.has_open_session,
+    canRegister: d.can_register ?? true,
+    blockedReason: d.can_register === false ? (blockedReasonOf(d) ?? "No es posible registrar con este código.") : null,
     expiresAt: d.expires_at ?? null,
     serverTime: d.server_time,
   };

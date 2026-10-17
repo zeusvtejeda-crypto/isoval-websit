@@ -82,6 +82,9 @@ export function useAttendanceAction() {
       if (body.ok) {
         requestIds.current.delete(key); // el siguiente intento será una solicitud nueva
         setState({ phase: "confirmed", result: body });
+      } else if (body.unconfirmed || res.status >= 500) {
+        // Se conserva el requestId: el reintento devolverá «duplicate» si sí se guardó.
+        setState({ phase: "unconfirmed", message: body.message });
       } else {
         requestIds.current.delete(key);
         setState({ phase: "rejected", message: body.message });

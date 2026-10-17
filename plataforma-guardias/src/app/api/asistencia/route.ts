@@ -36,7 +36,12 @@ export type AttendanceResultKind = "created" | "duplicate" | "already_open" | "o
 
 export type AttendanceApiResult =
   | { ok: true; result: AttendanceResultKind; message: string; serverTime: string; session: AttendanceSessionPayload | null }
-  | { ok: false; message: string };
+  | {
+      ok: false;
+      message: string;
+      /** No se sabe si el servidor de datos guardó el registro (falla de red/tiempo de espera). */
+      unconfirmed?: boolean;
+    };
 
 const MESSAGES: Record<string, { entrada: string; salida: string }> = {
   created: { entrada: "Entrada registrada.", salida: "Salida registrada." },
@@ -100,6 +105,15 @@ export async function POST(request: Request): Promise<NextResponse<AttendanceApi
       });
 
   if (error) {
+    // Sin código de Postgres = falla de red o tiempo de espera hacia Supabase: el
+    // registro pudo o no guardarse. Se responde «no confirmado» para que el
+    // cliente reintente con el MISMO identificador (idempotente).
+    if (!error.code) {
+      return NextResponse.json(
+        { ok: false, unconfirmed: true, message: "No se pudo confirmar el registro con el servidor de datos. Reintenta: no se duplicará." },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     const status = error.code === "42501" ? 403 : error.code === "28000" ? 401 : 422;
     return NextResponse.json({ ok: false, message: friendlyDbError(error) }, { status });
   }

@@ -69,7 +69,8 @@ describe("QrDisplay (pantalla del código)", () => {
     expect(screen.getByText("Generando código…")).toBeInTheDocument();
 
     const img = await screen.findByRole("img", { name: /Código QR para registrar/ });
-    expect(action).toHaveBeenCalledWith(SHIFT);
+    // La emisión automática no invalida códigos anteriores.
+    expect(action).toHaveBeenCalledWith(SHIFT, undefined);
     expect(img.getAttribute("src")).toBe(`data:image/svg+xml;utf8,${encodeURIComponent(SVG)}`);
     expect(qrBox()).toHaveAttribute("data-token", TOKEN_1);
     expect(qrBox()).toHaveAttribute("data-url", `http://localhost:3000/registro/qr?c=${TOKEN_1}`);
@@ -93,6 +94,8 @@ describe("QrDisplay (pantalla del código)", () => {
     await act(() => vi.advanceTimersByTimeAsync(6_000));
     await waitFor(() => expect(qrBox()).toHaveAttribute("data-token", TOKEN_2));
     expect(action).toHaveBeenCalledTimes(2);
+    // La renovación automática NO invalida el código anterior (margen para escanear).
+    expect(action).toHaveBeenLastCalledWith(SHIFT, undefined);
   });
 
   it("con la pestaña oculta no renueva; al volver a verla pide un código nuevo", async () => {
@@ -120,6 +123,9 @@ describe("QrDisplay (pantalla del código)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Renovar ahora" }));
     await waitFor(() => expect(qrBox()).toHaveAttribute("data-token", TOKEN_2));
     expect(action).toHaveBeenCalledTimes(2);
+    // La renovación manual invalida los códigos anteriores.
+    expect(action).toHaveBeenLastCalledWith(SHIFT, { revokePrevious: true });
+    expect(screen.getByText(/los códigos anteriores dejan de servir/)).toBeInTheDocument();
   });
 
   it("fuera de la ventana de registro explica el motivo, no muestra código y reintenta cada minuto", async () => {

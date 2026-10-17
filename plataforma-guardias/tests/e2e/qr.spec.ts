@@ -30,7 +30,7 @@ async function openQrScreen(page: Page): Promise<string> {
   const link = page.getByRole("link", { name: "Mostrar código QR de registro" });
   await expect(link).toBeVisible();
   await link.click();
-  await expect(page).toHaveURL(new RegExp(`/guardias/${SHIFT}/qr$`));
+  await expect(page).toHaveURL(new RegExp(`/pantalla-qr/${SHIFT}$`));
   await expect(page.getByRole("heading", { level: 1, name: "Código QR de registro" })).toBeVisible();
   const box = qrBox(page);
   await expect(box.getByRole("img", { name: /Código QR para registrar/ })).toBeVisible();
@@ -78,7 +78,8 @@ test.describe("Registro con código QR", () => {
     await page.getByLabel("Correo electrónico").fill(LUIS.email);
     await page.getByLabel("Contraseña").fill(DEMO_PASSWORD);
     await page.getByRole("button", { name: "Entrar" }).click();
-    await expect(page).toHaveURL(new RegExp(`/registro/qr\\?c=${token}$`));
+    // Tras cargar, la página quita el código de la barra de direcciones.
+    await expect(page).toHaveURL(new RegExp(`/registro/qr(\\?c=${token})?$`));
 
     await expect(page.getByRole("heading", { level: 1, name: "Registro con código QR" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: SHIFT_TITLE })).toBeVisible();
@@ -151,11 +152,11 @@ test.describe("Registro con código QR", () => {
     await page.goto(`/guardias/${SHIFT}`);
     await expect(page.getByRole("heading", { level: 1, name: SHIFT_TITLE })).toBeVisible();
     await expect(page.getByRole("link", { name: "Mostrar código QR de registro" })).toHaveCount(0);
-    await page.goto(`/guardias/${SHIFT}/qr`);
+    await page.goto(`/pantalla-qr/${SHIFT}`);
     await expect(page).toHaveURL(/\/sin-acceso/);
 
     await loginAs(page, LUIS.email);
-    await page.goto(`/guardias/${SHIFT}/qr`);
+    await page.goto(`/pantalla-qr/${SHIFT}`);
     await expect(page).toHaveURL(/\/sin-acceso/);
   });
 });

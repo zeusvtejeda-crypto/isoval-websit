@@ -83,6 +83,8 @@ function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
       check_in_reason: null,
       check_out_reason: null,
       check_in_request_id: `${a.id}-r${i}`,
+      qr_check_in_token_id: null,
+      qr_check_out_token_id: null,
       check_out_request_id: s.out ? `${a.id}-o${i}` : null,
       notes: null,
       record_status: s.status ?? "vigente",

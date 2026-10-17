@@ -25,7 +25,8 @@ export type QrShiftDetails = {
 export type QrDisplayProps = {
   shiftId: string;
   /** Server Action que emite el código (reverifica sesión y permisos). */
-  issueAction: (shiftId: string) => Promise<QrIssueResult>;
+  /** revokePrevious: la renovación manual invalida los códigos vigentes de la guardia. */
+  issueAction: (shiftId: string, options?: { revokePrevious?: boolean }) => Promise<QrIssueResult>;
   details: QrShiftDetails;
   /** Texto con la ventana en que el servidor emite códigos (hora de la sede). */
   windowText?: string;
@@ -123,13 +124,13 @@ export function QrDisplay({ shiftId, issueAction, details, windowText }: QrDispl
 
   useScreenWakeLock();
 
-  const request = useCallback(async () => {
+  const request = useCallback(async (revokePrevious = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
     const sentAt = Date.now();
     let result: QrIssueResult | undefined;
     try {
-      result = await issueAction(shiftId);
+      result = await issueAction(shiftId, revokePrevious ? { revokePrevious: true } : undefined);
     } catch {
       result = undefined;
     } finally {
@@ -201,7 +202,8 @@ export function QrDisplay({ shiftId, issueAction, details, windowText }: QrDispl
   function renewNow() {
     if (inFlight.current) return;
     setManual(true);
-    void request();
+    // Renovación manual: el código anterior deja de servir de inmediato.
+    void request(true);
   }
 
   async function toggleFullscreen() {
@@ -219,15 +221,18 @@ export function QrDisplay({ shiftId, issueAction, details, windowText }: QrDispl
   const state = visibleCode ? "ready" : expired ? "expired" : error ? "error" : "loading";
 
   const controls = (
-    <div className="flex flex-wrap gap-2">
-      <Button size="lg" onClick={renewNow} disabled={!online || manual}>
-        {manual ? "Renovando…" : "Renovar ahora"}
-      </Button>
-      {fullscreenSupported ? (
-        <Button size="lg" variant="outline" onClick={() => void toggleFullscreen()}>
-          {fullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-2">
+        <Button size="lg" onClick={renewNow} disabled={!online || manual}>
+          {manual ? "Renovando…" : "Renovar ahora"}
         </Button>
-      ) : null}
+        {fullscreenSupported ? (
+          <Button size="lg" variant="outline" onClick={() => void toggleFullscreen()}>
+            {fullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+          </Button>
+        ) : null}
+      </div>
+      <p className="text-sm text-gray-600">Al renovar manualmente, los códigos anteriores dejan de servir de inmediato.</p>
     </div>
   );
 

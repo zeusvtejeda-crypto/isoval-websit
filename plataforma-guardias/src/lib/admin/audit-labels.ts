@@ -27,6 +27,7 @@ export const AUDIT_TABLE_LABELS: Record<string, string> = {
   app_settings: "Configuración",
   retention: "Política de conservación de datos",
   demo_data: "Datos de demostración",
+  attendance_qr_tokens: "Códigos QR de registro",
   states: "Entidades federativas",
   municipalities: "Municipios",
 };

@@ -15,14 +15,17 @@ import { qrSvg } from "@/lib/qr/svg";
  * exige además que la cuenta gestione la sede, que la guardia no esté
  * cancelada y que esté dentro de la ventana de registro.
  */
-export async function issueQrCode(shiftId: string): Promise<QrIssueResult> {
+export async function issueQrCode(shiftId: string, options?: { revokePrevious?: boolean }): Promise<QrIssueResult> {
   await requireManager();
   if (typeof shiftId !== "string" || !isGuid(shiftId)) {
     return { ok: false, kind: "not_found", message: "La guardia indicada no es válida." };
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("issue_qr_token", { p_shift_id: shiftId });
+  const { data, error } = await supabase.rpc("issue_qr_token", {
+    p_shift_id: shiftId,
+    p_revoke_previous: options?.revokePrevious === true,
+  });
   if (error) {
     return { ok: false, kind: classifyIssueError(error), message: friendlyDbError(error, "No se pudo generar el código QR.") };
   }

@@ -114,6 +114,8 @@ function makeShift(options: {
       check_in_method: s.checkInMethod ?? "propio",
       check_in_reason: null,
       check_in_request_id: `${s.id}-in`,
+      qr_check_in_token_id: null,
+      qr_check_out_token_id: null,
       check_out_at: s.checkOutAt ? new Date(s.checkOutAt).toISOString() : null,
       check_out_by: s.checkOutAt ? "u-demo" : null,
       check_out_method: s.checkOutAt ? (s.checkOutMethod ?? "propio") : null,

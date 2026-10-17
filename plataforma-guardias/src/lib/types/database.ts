@@ -84,6 +84,8 @@ export type Database = {
           facility_id: string;
           id: string;
           notes: string | null;
+          qr_check_in_token_id: string | null;
+          qr_check_out_token_id: string | null;
           record_status: Database["public"]["Enums"]["record_status"];
           shift_id: string;
           status_changed_at: string | null;
@@ -109,6 +111,8 @@ export type Database = {
           facility_id: string;
           id?: string;
           notes?: string | null;
+          qr_check_in_token_id?: string | null;
+          qr_check_out_token_id?: string | null;
           record_status?: Database["public"]["Enums"]["record_status"];
           shift_id: string;
           status_changed_at?: string | null;
@@ -133,6 +137,8 @@ export type Database = {
           facility_id?: string;
           id?: string;
           notes?: string | null;
+          qr_check_in_token_id?: string | null;
+          qr_check_out_token_id?: string | null;
           record_status?: Database["public"]["Enums"]["record_status"];
           shift_id?: string;
           status_changed_at?: string | null;
@@ -1168,7 +1174,7 @@ export type Database = {
           substitute_for_name: string;
         }[];
       };
-      issue_qr_token: { Args: { p_shift_id: string }; Returns: Json };
+      issue_qr_token: { Args: { p_revoke_previous?: boolean; p_shift_id: string }; Returns: Json };
       purge_demo_data: { Args: Record<PropertyKey, never>; Returns: Json };
       qr_token_context: { Args: { p_token: string }; Returns: Json };
       request_correction: {
