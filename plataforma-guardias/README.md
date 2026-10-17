@@ -253,8 +253,11 @@ En `ubuntu-latest`, con Node.js 22 y caché de npm:
 - No se recopilan CURP, datos médicos, biométricos ni ubicación. Sin reconocimiento facial ni rastreo.
 - «Entrada registrada» no equivale a presencia física verificada (se indica en la interfaz).
 - Sin conexión, la interfaz nunca muestra un registro como guardado si el servidor no lo confirmó.
-- Correcciones sin borrar el original; bitácora inmutable (triggers impiden editarla o borrarla).
-- Política de conservación configurable; exportaciones restringidas por permisos (RLS).
+- Correcciones sin borrar el original; bitácora inmutable (triggers impiden editarla o borrarla). Una asignación con estado registrado, asistencia, justificaciones o solicitudes no se borra: se cancela con motivo.
+- Motivo obligatorio también en configuración, categorías, catálogos geográficos, sedes asignadas a cuentas y restablecimiento de contraseñas (este último queda en la bitácora sin datos secretos). Los motivos internos solo se leen en la bitácora (administración).
+- Política de conservación configurable: al aplicarla también se redactan las copias de esos datos en la bitácora (valores y motivo); se conservan autor, fecha, acción y campos cambiados. Exportaciones restringidas por permisos (RLS).
+- Una cuenta de consulta o auditoría no puede vincularse a un trabajador: es de solo lectura.
+- La comprobación de números de trabajador de otras sedes (al dar de alta o importar) solo responde sí/no y tiene una cuota de 2000 números distintos por día para cada cuenta de coordinación.
 - La llave de servicio solo existe en el servidor.
 - **Separación de funciones:** nadie (salvo administración) corrige, agrega, anula o revisa su propia asistencia. Las horas capturadas a mano deben caer dentro de la guardia (±12 h).
 - Una entrada olvidada nunca se cierra con la hora actual pasado el margen: se corrige con la hora real.
