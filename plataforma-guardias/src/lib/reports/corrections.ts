@@ -229,7 +229,7 @@ export function describeCorrection(request: CorrectionRequestTimes, session: Cur
     if (assignmentStatus === "cancelado") {
       warnings.push("La asignación está cancelada: no se puede agregar un registro. Recházala con una nota.");
       canApprove = false;
-    } else if (isRevertibleAbsence(assignmentStatus)) {
+    } else if (isRevertibleAbsence(assignmentStatus) && shift?.status !== "cancelada") {
       // review_correction regresa la asignación a «Asignado» antes de agregar el registro.
       const label = ASSIGNMENT_STATUS_LABELS[assignmentStatus];
       const reason = assignmentStatusReason?.trim();

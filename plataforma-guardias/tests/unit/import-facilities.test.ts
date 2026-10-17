@@ -433,6 +433,19 @@ describe("duplicados contra la base", () => {
     expect(byCode).toMatchObject({ status: "actualizacion", targetCode: "INS-000004", patch: { phone: "311 000 0000" } });
   });
 
+  it("en el mismo archivo, una actualización por identificador con la clave vacía usa la clave registrada", () => {
+    const colocated = [
+      ...existing,
+      facility({ id: "f0000000-0000-4000-8000-00000000000d", internal_code: "INS-000004", official_name: "Linda Vista", unit_key: "NTIMS000721", category_id: 3 }),
+    ];
+    const update = { ...base, categoria: "otras-unidades-medicas", identificador_interno: "INS-000004", nombre_oficial: "Linda Vista", telefono: "311 000 0000" };
+    const created = { ...base, categoria: "otras-unidades-medicas", nombre_oficial: "Linda Vista", clave_unidad: "NTIMS009999" };
+    for (const rows of [[update, created], [created, update]]) {
+      const statuses = validateFacilityRows(rows, catalogs, colocated, "crear_actualizar", { today: "2026-10-17" }).rows.map((r) => r.status);
+      expect(statuses.sort()).toEqual(["actualizacion", "nueva"]); // sin depender del orden de las filas
+    }
+  });
+
   it("una instalación inactiva con categoría inactiva se puede actualizar sin cambiar la categoría", () => {
     const result = run([
       { ...base, nombre_oficial: "Clinica Cerrada", categoria: "archivo-historico", fuente: "Portal oficial", observaciones: "Cerrada temporalmente" },

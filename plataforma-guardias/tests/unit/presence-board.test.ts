@@ -26,6 +26,7 @@ vi.mock("next/form", async () => {
     default: ({ action, children, ...rest }: { action: string; children: ReactNode }) => h("form", { action, ...rest }, children),
   };
 });
+import { computeCoverage, coverageCurrent } from "@/lib/attendance/coverage";
 import { addDays, isIsoDay, overlapsLocalDay, parseShiftPeriod, shiftPeriodOf } from "@/lib/presence/periods";
 
 // -----------------------------------------------------------------------------
@@ -144,17 +145,7 @@ function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
           ? "en_curso"
           : "finalizada";
   const minStaff = spec.minStaff ?? 1;
-  const active = items.filter((i) => i.assignment.status === "asignado").length;
-  const inService = items.filter((i) => i.summary.status === "en_servicio").length;
-  const attended = items.filter((i) => i.assignment.status === "asignado" && i.summary.firstCheckIn != null).length;
-  const insufficient =
-    effectiveStatus === "en_curso"
-      ? inService < minStaff
-      : effectiveStatus === "programada"
-        ? active < minStaff
-        : effectiveStatus === "finalizada"
-          ? attended < minStaff
-          : false;
+  const coverage = computeCoverage(effectiveStatus, items, minStaff, null);
 
   const shift = {
     id: spec.id,
@@ -191,7 +182,7 @@ function build(spec: ShiftSpec, now: Date = NOW): ShiftWithAttendance {
     },
     responsible: spec.responsible ?? null,
     assignments: items,
-    coverage: { assigned: active, inService, attended, minStaff, maxStaff: null, insufficient },
+    coverage,
   };
 }
 
@@ -547,6 +538,28 @@ describe("buildPresenceBoard: incidencias, sustituciones y ausencias", () => {
     const next = buildPresenceBoard([ended], later, { day: "2026-10-18", period: "todos", incompleteSince: new Date(later.getTime() - 7 * 86_400_000) });
     expect(next.absences).toEqual([]);
     expect(next.rosterCount).toBe(0);
+  });
+});
+
+describe("computeCoverage", () => {
+  const item = (status: string, summary: string, checkedIn: boolean) => ({
+    assignment: { status },
+    summary: { status: summary, firstCheckIn: checkedIn ? new Date("2026-10-17T13:00:00Z") : null },
+  });
+  const items = [item("asignado", "en_servicio", true), item("asignado", "finalizada", true), item("asignado", "pendiente", false), item("cancelado", "cancelada", false)];
+
+  it("compara con el mínimo la cifra que corresponde a cada estado", () => {
+    expect(computeCoverage("programada", items, 4, null)).toMatchObject({ assigned: 3, insufficient: true });
+    expect(computeCoverage("programada", items, 3, null).insufficient).toBe(false);
+    expect(computeCoverage("en_curso", items, 2, null)).toMatchObject({ inService: 1, insufficient: true });
+    expect(computeCoverage("finalizada", items, 2, null)).toMatchObject({ attended: 2, insufficient: false });
+    expect(computeCoverage("finalizada", items, 3, null).insufficient).toBe(true);
+    expect(computeCoverage("cancelada", items, 10, null).insufficient).toBe(false);
+  });
+
+  it("concuerda en número la etiqueta de asignadas", () => {
+    expect(coverageCurrent("programada", { assigned: 1, inService: 0, attended: 0 }).label).toBe("asignada");
+    expect(coverageCurrent("programada", { assigned: 2, inService: 0, attended: 0 }).label).toBe("asignadas");
   });
 });
 

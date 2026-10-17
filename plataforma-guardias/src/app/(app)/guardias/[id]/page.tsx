@@ -15,6 +15,7 @@ import {
   getIncidentNotes,
   getOtherActiveWorkers,
   getPendingCorrections,
+  getAssignmentsWithCorrections,
   getProfileNames,
   getShiftContext,
   getWorkerProfileIds,
@@ -83,7 +84,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
   const workerIds = item.assignments.map((a) => a.assignment.worker_id);
   const allSessions = item.assignments.flatMap((a) => a.sessions);
 
-  const [names, workerProfiles, notes, corrections, facilityWorkers, others, checkInWindow, openSessionGrace] = await Promise.all([
+  const [names, workerProfiles, notes, corrections, withCorrections, facilityWorkers, others, checkInWindow, openSessionGrace] = await Promise.all([
     getProfileNames(
       supabase,
       collectActorIds(
@@ -94,6 +95,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
     getWorkerProfileIds(supabase, workerIds),
     getIncidentNotes(supabase, assignmentIds),
     getPendingCorrections(supabase, assignmentIds),
+    getAssignmentsWithCorrections(supabase, assignmentIds),
     canManage ? getActiveWorkersOfFacility(supabase, shift.facility_id) : Promise.resolve([] as WorkerOption[]),
     canManage ? getOtherActiveWorkers(supabase, shift.facility_id) : Promise.resolve({ workers: [] as WorkerOption[], truncated: false }),
     getSettingNumber(supabase, "attendance", "checkin_window_before_minutes", 120),
@@ -251,6 +253,7 @@ export default async function GuardiaDetallePage({ params }: { params: Promise<{
                   workerProfileId={workerProfiles[a.assignment.worker_id] ?? null}
                   notes={notes.filter((n) => n.assignment_id === a.assignment.id)}
                   corrections={corrections.filter((c) => c.assignment_id === a.assignment.id)}
+                  hasCorrectionRequests={withCorrections.has(a.assignment.id)}
                   requestId={newRequestId()}
                   now={now}
                   checkInOpensAt={checkInOpensAt}

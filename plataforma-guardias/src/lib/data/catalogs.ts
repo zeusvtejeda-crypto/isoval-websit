@@ -5,7 +5,9 @@ import { fetchAll } from "./fetch-all";
 
 export type State = Pick<Database["public"]["Tables"]["states"]["Row"], "id" | "name" | "abbreviation" | "default_timezone" | "enabled">;
 export type Municipality = Pick<Database["public"]["Tables"]["municipalities"]["Row"], "id" | "state_id" | "name" | "inegi_code" | "timezone">;
-export type Category = Database["public"]["Tables"]["facility_categories"]["Row"];
+/** El motivo interno (change_reason) solo lo conserva la bitácora: no es legible. */
+export type Category = Omit<Database["public"]["Tables"]["facility_categories"]["Row"], "change_reason">;
+export const CATEGORY_COLUMNS = "id, slug, name, description, icon, color, sort_order, active, created_at, updated_at";
 export type FacilityOption = { id: string; official_name: string; timezone: string; state_id: number; municipality_id: number | null; is_demo: boolean };
 
 export async function getStates(supabase: ServerSupabase, onlyEnabled = false): Promise<State[]> {
@@ -25,7 +27,7 @@ export async function getMunicipalities(supabase: ServerSupabase, stateId?: numb
 }
 
 export async function getCategories(supabase: ServerSupabase, onlyActive = false): Promise<Category[]> {
-  let q = supabase.from("facility_categories").select("*").order("sort_order").order("name");
+  let q = supabase.from("facility_categories").select(CATEGORY_COLUMNS).order("sort_order").order("name");
   if (onlyActive) q = q.eq("active", true);
   const { data, error } = await q;
   if (error) throw new Error(error.message);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NOT_UTF8_MESSAGE, decodeCsvBytes, parseCsv, parseImportFile } from "@/lib/import/parse";
+import { MIXED_ENCODING_MESSAGE, decodeCsvBytes, parseCsv, parseImportFile } from "@/lib/import/parse";
 
 /** Bytes en Windows-1252 (lo que guarda Excel con «CSV (delimitado por comas)»). */
 function windows1252(text: string): Uint8Array<ArrayBuffer> {
@@ -36,7 +36,14 @@ describe("codificación de CSV", () => {
 
   it("rechaza texto con caracteres ya dañados («�») en lugar de importarlos", () => {
     const damaged = "nombre_oficial,municipio\nCL�NICA RURAL,Tepic\n";
-    expect(() => parseCsv(damaged)).toThrow(NOT_UTF8_MESSAGE);
-    expect(() => parseCsv(damaged)).toThrow(/fila 2/);
+    expect(() => parseCsv(damaged)).toThrow(/La fila 2 tiene caracteres dañados/);
+  });
+
+  it("rechaza un archivo UTF-8 con algún byte de otra codificación en lugar de dañar todos los acentos", () => {
+    const utf8 = new TextEncoder().encode(CSV);
+    const mixed = new Uint8Array([...utf8, ...windows1252("Clínica Café,Xalisco\r\n")]);
+    expect(() => decodeCsvBytes(mixed)).toThrow(MIXED_ENCODING_MESSAGE);
+    // Un Windows-1252 completo con acentos y signos habituales sigue leyéndose.
+    expect(decodeCsvBytes(windows1252("Ñuño «Ánimas» · Tepic, Bahía\r\n"))).toBe("Ñuño «Ánimas» · Tepic, Bahía\r\n");
   });
 });

@@ -205,6 +205,7 @@ export function AssignmentCard({
   workerProfileId,
   notes,
   corrections,
+  hasCorrectionRequests = false,
   requestId,
   now,
   checkInOpensAt,
@@ -224,6 +225,8 @@ export function AssignmentCard({
   workerProfileId: string | null;
   notes: IncidentNoteRow[];
   corrections: CorrectionRequestRow[];
+  /** ¿Tiene solicitudes de corrección en cualquier estado? (entonces no puede quitarse). */
+  hasCorrectionRequests?: boolean;
   /** Identificador generado por el servidor para el registro manual (idempotencia). */
   requestId: string;
   now: Date;
@@ -529,7 +532,7 @@ export function AssignmentCard({
               </Disclosure>
             </>
           )}
-          {sessions.length === 0 && assignment.status === "asignado" && notes.length === 0 && corrections.length === 0 && !ownLocked ? (
+          {sessions.length === 0 && assignment.status === "asignado" && notes.length === 0 && corrections.length === 0 && !hasCorrectionRequests && !ownLocked ? (
             <Disclosure summary="Quitar asignación" tone="danger">
               <RemoveAssignmentForm action={actions.remove} assignmentId={assignment.id} workerName={workerName} />
             </Disclosure>

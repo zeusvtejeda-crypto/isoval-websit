@@ -83,16 +83,16 @@ describe("eventos de bitácora redactados por la política de conservación", ()
     expect(auditFieldChanges(normal, ctx)).toEqual([{ field: "phone", label: "Teléfono", before: "311 555 0101", after: "311 555 0202" }]);
   });
 
-  it("la tarjeta muestra el aviso, el autor, el motivo y los campos, sin valores", () => {
-    renderCard(event({}));
+  it("la tarjeta muestra el aviso, el autor y los campos, sin valores ni motivo", () => {
+    renderCard(event({ reason: null }));
     expect(screen.getByText("Contenido eliminado")).toBeInTheDocument();
     expect(screen.getByText("Contenido eliminado por la política de conservación (17/10/2026 10:30).")).toBeInTheDocument();
-    expect(screen.getByText(/Se conservan el autor, la fecha, la acción, los campos que cambiaron y el motivo\./)).toBeInTheDocument();
+    expect(screen.getByText(/Se conservan el autor, la fecha, la acción y los campos que cambiaron\./)).toBeInTheDocument();
+    expect(screen.getByText("Eliminado junto con el contenido")).toBeInTheDocument();
     expect(screen.getByText("Campos que cambiaron: Teléfono, Número de trabajador.")).toBeInTheDocument();
     expect(screen.getByText("Datos privados de trabajadores")).toBeInTheDocument();
     expect(screen.getByText("Modificación")).toBeInTheDocument();
     expect(screen.getByText(/Admin Uno/)).toBeInTheDocument();
-    expect(screen.getByText("Actualización de contacto")).toBeInTheDocument();
     // Sin valores ni resumen de campos.
     expect(screen.queryByText(/311 555/)).not.toBeInTheDocument();
     expect(screen.queryByText(/campos? modificados?/)).not.toBeInTheDocument();
@@ -104,8 +104,8 @@ describe("eventos de bitácora redactados por la política de conservación", ()
   });
 
   it("en un alta redactada no menciona campos cambiados", () => {
-    renderCard(event({ action: "INSERT", changed_fields: null, table_name: "attendance_sessions" }));
-    expect(screen.getByText(/Se conservan el autor, la fecha, la acción y el motivo\./)).toBeInTheDocument();
+    renderCard(event({ action: "INSERT", changed_fields: null, table_name: "attendance_sessions", reason: null }));
+    expect(screen.getByText(/Se conservan el autor, la fecha y la acción\./)).toBeInTheDocument();
     expect(screen.queryByText(/Campos que cambiaron/)).not.toBeInTheDocument();
   });
 

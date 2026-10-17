@@ -257,6 +257,19 @@ export async function getPendingCorrections(supabase: ServerSupabase, assignment
   return out;
 }
 
+/** Asignaciones con alguna solicitud de corrección (en cualquier estado): ya no pueden quitarse. */
+export async function getAssignmentsWithCorrections(supabase: ServerSupabase, assignmentIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const batch of chunk(assignmentIds)) {
+    if (batch.length === 0) continue;
+    const rows = await fetchAll<{ assignment_id: string }>((from, to) =>
+      supabase.from("correction_requests").select("assignment_id").in("assignment_id", batch).order("assignment_id").range(from, to),
+    );
+    for (const r of rows) out.add(r.assignment_id);
+  }
+  return out;
+}
+
 /** Identificador de solicitud generado en el servidor al mostrar un formulario (idempotencia). */
 export function newRequestId(): string {
   return crypto.randomUUID();

@@ -2,7 +2,7 @@ import "server-only";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/types/database";
 import { summarizeAttendance, type AttendanceSummary } from "./calc";
-import { coverageCurrent } from "./coverage";
+import { computeCoverage } from "./coverage";
 import { chunk, fetchAll } from "@/lib/data/fetch-all";
 import { getSettingNumber } from "@/lib/data/catalogs";
 
@@ -176,12 +176,7 @@ export async function loadShiftsWithAttendance(supabase: ServerSupabase, filters
       return { assignment: assignment as AssignmentRow, worker, substituteFor: substitute, sessions: own, summary };
     });
 
-    const active = items.filter((i) => i.assignment.status === "asignado");
-    const inService = items.filter((i) => i.summary.status === "en_servicio").length;
-    const attended = active.filter((i) => i.summary.firstCheckIn != null).length;
     const status = shift.effective_status;
-    const insufficient =
-      status === "cancelada" ? false : coverageCurrent(status, { assigned: active.length, inService, attended }).count < shift.min_staff;
 
     const { facility, responsible, effective_status, ...rest } = shift;
     void effective_status;
@@ -191,7 +186,7 @@ export async function loadShiftsWithAttendance(supabase: ServerSupabase, filters
       facility,
       responsible,
       assignments: items,
-      coverage: { assigned: active.length, inService, attended, minStaff: shift.min_staff, maxStaff: shift.max_staff, insufficient },
+      coverage: computeCoverage(status, items, shift.min_staff, shift.max_staff),
     };
   });
 }

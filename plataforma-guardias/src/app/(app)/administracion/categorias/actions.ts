@@ -20,8 +20,9 @@ function revalidateCategories() {
  * Un motivo igual al guardado lo borraría app.touch_row() y la bitácora
  * quedaría sin motivo: en ese caso se limpia antes de escribir.
  */
-async function prepareReason(supabase: ServerSupabase, id: number, stored: string | null | undefined, reason: string): Promise<string | null> {
-  if (stored !== reason) return null;
+async function prepareReason(supabase: ServerSupabase, id: number): Promise<string | null> {
+  // El motivo guardado no es legible (solo lo conserva la bitácora): se limpia
+  // siempre, para que app.touch_row() no descarte un motivo repetido.
   const error = await clearStoredReason(supabase, "facility_categories", id);
   return error ? friendlyDbError(error, "No se pudo guardar la categoría.") : null;
 }
@@ -37,7 +38,7 @@ export async function saveCategory(_prev: ActionResult | null, formData: FormDat
   const v = parsed.data;
 
   const supabase = await createClient();
-  const { data: all, error: readError } = await supabase.from("facility_categories").select("id, name, slug, change_reason");
+  const { data: all, error: readError } = await supabase.from("facility_categories").select("id, name, slug");
   if (readError) return { ok: false, message: friendlyDbError(readError) };
   const current = v.id ? (all ?? []).find((c) => c.id === v.id) : undefined;
   if (v.id && !current) return { ok: false, message: "La categoría no existe o fue eliminada." };
@@ -62,7 +63,7 @@ export async function saveCategory(_prev: ActionResult | null, formData: FormDat
   };
 
   if (v.id) {
-    const reasonIssue = await prepareReason(supabase, v.id, current?.change_reason, v.reason);
+    const reasonIssue = await prepareReason(supabase, v.id);
     if (reasonIssue) return { ok: false, message: reasonIssue };
     const { data, error } = await supabase.from("facility_categories").update(values).eq("id", v.id).select("id");
     if (error) return { ok: false, message: friendlyDbError(error, "No se pudo guardar la categoría.") };
@@ -86,10 +87,10 @@ export async function setCategoryActive(_prev: ActionResult | null, formData: Fo
   const active = parsed.data.active === "1";
 
   const supabase = await createClient();
-  const { data: current, error: readError } = await supabase.from("facility_categories").select("id, change_reason").eq("id", category_id).maybeSingle();
+  const { data: current, error: readError } = await supabase.from("facility_categories").select("id").eq("id", category_id).maybeSingle();
   if (readError) return { ok: false, message: friendlyDbError(readError) };
   if (!current) return { ok: false, message: "La categoría no existe o no tienes permiso para modificarla." };
-  const reasonIssue = await prepareReason(supabase, category_id, current.change_reason, reason);
+  const reasonIssue = await prepareReason(supabase, category_id);
   if (reasonIssue) return { ok: false, message: reasonIssue };
 
   const { data, error } = await supabase.from("facility_categories").update({ active, change_reason: reason }).eq("id", category_id).select("id, name");
@@ -123,15 +124,15 @@ export async function deleteCategory(_prev: ActionResult | null, formData: FormD
   }
 
   // La bitácora del borrado toma el motivo guardado en la fila: se guarda antes
-  // de borrar (sin generar otra entrada). Si ya es el mismo no se reescribe,
-  // porque app.touch_row() lo dejaría en null al ver un valor repetido.
-  const { data: current, error: readError } = await supabase.from("facility_categories").select("id, change_reason").eq("id", category_id).maybeSingle();
+  // de borrar (sin generar otra entrada), limpiando antes el anterior para que
+  // app.touch_row() no lo descarte si se repite.
+  const { data: current, error: readError } = await supabase.from("facility_categories").select("id").eq("id", category_id).maybeSingle();
   if (readError) return { ok: false, message: friendlyDbError(readError, "No se pudo eliminar la categoría.") };
   if (!current) return { ok: false, message: "La categoría no existe o ya fue eliminada." };
-  if (current.change_reason !== reason) {
-    const { error: reasonError } = await supabase.from("facility_categories").update({ change_reason: reason }).eq("id", category_id);
-    if (reasonError) return { ok: false, message: friendlyDbError(reasonError, "No se pudo eliminar la categoría.") };
-  }
+  const reasonIssue = await prepareReason(supabase, category_id);
+  if (reasonIssue) return { ok: false, message: reasonIssue };
+  const { error: reasonError } = await supabase.from("facility_categories").update({ change_reason: reason }).eq("id", category_id);
+  if (reasonError) return { ok: false, message: friendlyDbError(reasonError, "No se pudo eliminar la categoría.") };
 
   const { data, error } = await supabase.from("facility_categories").delete().eq("id", category_id).select("id");
   if (error) {

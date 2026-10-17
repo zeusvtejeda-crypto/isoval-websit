@@ -669,10 +669,13 @@ export function validateFacilityRows(
     const unitKey = unitKeyKey(p.unitKey);
     const placeKey = p.name && p.state && p.municipality ? namePlaceKey(p.name, p.state.id, p.municipality.id) : null;
     const firstUnitRow = unitKey ? seenUnit.get(unitKey) : undefined;
-    const firstPlaceRow = firstSeenPlace(placeKey, unitKey);
+    // Para el nombre y lugar cuenta la clave efectiva: una actualización por
+    // identificador con la clave vacía conserva la clave registrada.
+    const placeUnit = unitKey ?? (p.internalCode ? unitKeyKey(byCode.get(p.internalCode)?.unit_key ?? null) : null);
+    const firstPlaceRow = firstSeenPlace(placeKey, placeUnit);
     const firstCodeRow = p.internalCode ? seenCode.get(p.internalCode) : undefined;
     remember(seenUnit, unitKey, rowNumber);
-    rememberPlace(placeKey, unitKey, rowNumber);
+    rememberPlace(placeKey, placeUnit, rowNumber);
     remember(seenCode, p.internalCode ?? null, rowNumber);
 
     if (errors.length > 0 || !p.category || !p.state || !p.municipality) {

@@ -29,6 +29,8 @@ const h = vi.hoisted(() => ({
   rows: {} as Record<string, unknown>,
   validSessions: 0,
   sessionCount: 0,
+  /** Conteos por tabla (si no se indica, se usa sessionCount). */
+  counts: {} as Record<string, number>,
   facility: null as unknown,
   writeError: null as unknown,
   rpcError: null as unknown,
@@ -75,7 +77,7 @@ function chain(table: string) {
   const self = () => c;
   for (const m of ["eq", "in", "is", "order", "range", "or", "limit"]) c[m] = self;
   c.select = (_cols?: string, opts?: { head?: boolean }) => {
-    if (opts?.head) result = { count: h.sessionCount, error: null };
+    if (opts?.head) result = { count: h.counts[table] ?? h.sessionCount, error: null };
     return c;
   };
   c.update = (payload: unknown) => {
@@ -183,6 +185,7 @@ beforeEach(() => {
   h.rows = {};
   h.validSessions = 0;
   h.sessionCount = 0;
+  h.counts = {};
   h.facility = { id: FAC, timezone: MAZ, active: true };
   h.writeError = null;
   h.rpcError = null;
@@ -277,9 +280,12 @@ describe("acciones sobre asignaciones y registros", () => {
     expect(absent.ok ? "" : absent.message).toMatch(/Asignación cancelada/);
 
     h.assignmentCtx = { shift, timezone: MAZ, assignment: { id: ASSIGNMENT, shift_id: SHIFT, worker_id: "w1", status: "asignado" } };
-    h.sessionCount = 1; // también aplica al conteo de justificaciones y solicitudes
-    const withHistory = await removeAssignment(null, form({ assignment_id: ASSIGNMENT, reason: "Asignada por error" }));
-    expect(withHistory).toMatchObject({ ok: false });
+    for (const table of ["attendance_sessions", "incident_notes", "correction_requests"]) {
+      h.counts = { [table]: 1 };
+      const withHistory = await removeAssignment(null, form({ assignment_id: ASSIGNMENT, reason: "Asignada por error" }));
+      expect(withHistory, table).toMatchObject({ ok: false });
+      expect(withHistory.ok ? "" : withHistory.message).toMatch(/no puede quitarse/);
+    }
     expect(h.log).toEqual([]);
   });
 

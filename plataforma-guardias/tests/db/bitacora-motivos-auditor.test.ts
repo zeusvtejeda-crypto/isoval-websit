@@ -233,8 +233,10 @@ describe("Bitácora con motivo", () => {
     expect(notice.rows).toHaveLength(1);
     const head = await asUser(null, (c) => c.query("select count(*)::int as n from public.municipalities where state_id = 18"));
     expect(head.rows[0].n).toBeGreaterThan(0);
-    // Administración sí los lee.
-    await asUser(admin, (c) => c.query("select change_reason from public.states where id = 18"));
+    // Tampoco las cuentas autenticadas (ni administración): el motivo solo lo conserva la bitácora.
+    for (const table of ["states", "municipalities", "facility_categories", "app_settings", "user_facility_scopes"]) {
+      expect(await expectPgError(asUser(admin, (c) => c.query(`select change_reason from public.${table} limit 1`)))).toMatch(/permission denied/);
+    }
   });
 });
 

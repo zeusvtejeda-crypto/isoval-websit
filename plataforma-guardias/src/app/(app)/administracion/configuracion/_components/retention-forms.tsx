@@ -41,9 +41,9 @@ function ImpactSummary({ impact }: { impact: RetentionImpact }) {
           conserva su registro de trabajador);
         </li>
         <li>
-          el contenido (valores anterior y nuevo) de{" "}
+          el contenido (valores anterior y nuevo, y motivo) de{" "}
           {plural(impact.auditRowsRedacted, "evento de bitácora que copiaba", "eventos de bitácora que copiaban")} esos datos; los eventos se
-          conservan con su autor, fecha, acción y motivo.
+          conservan con su autor, fecha y acción.
         </li>
       </ul>
     </div>
@@ -132,7 +132,7 @@ export function RetentionActions() {
   const preview = useActionForm(previewRetention);
   const apply = useActionForm(applyRetention, {
     confirm: () =>
-      "Se eliminarán DEFINITIVAMENTE las guardias, registros y eventos de bitácora anteriores a las fechas de corte, y el número de trabajador y teléfono de los trabajadores inactivos. También se borrarán las copias de esos datos en la bitácora (los eventos se conservan con autor, fecha, acción y motivo, sin los valores). Esta acción no se puede deshacer. ¿Aplicar ahora?",
+      "Se eliminarán DEFINITIVAMENTE las guardias, registros y eventos de bitácora anteriores a las fechas de corte, y el número de trabajador y teléfono de los trabajadores inactivos. También se borrarán las copias de esos datos en la bitácora (los eventos se conservan con autor, fecha y acción, sin los valores ni el motivo). Esta acción no se puede deshacer. ¿Aplicar ahora?",
   });
   const confirmError = apply.fieldError("confirm");
   const previewImpact = preview.state?.ok ? preview.state.data : undefined;

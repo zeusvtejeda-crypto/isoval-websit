@@ -1,6 +1,6 @@
 import "server-only";
 import type { ServerSupabase } from "@/lib/supabase/server";
-import { getCategories, type Category } from "@/lib/data/catalogs";
+import { CATEGORY_COLUMNS, getCategories, type Category } from "@/lib/data/catalogs";
 
 export type CategoryWithUsage = Category & { usage: number };
 
@@ -18,7 +18,7 @@ export async function getCategoriesWithUsage(supabase: ServerSupabase): Promise<
 }
 
 export async function getCategoryWithUsage(supabase: ServerSupabase, id: number): Promise<CategoryWithUsage | null> {
-  const { data, error } = await supabase.from("facility_categories").select("*").eq("id", id).maybeSingle();
+  const { data, error } = await supabase.from("facility_categories").select(CATEGORY_COLUMNS).eq("id", id).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
   return { ...data, usage: await usageOf(supabase, id) };

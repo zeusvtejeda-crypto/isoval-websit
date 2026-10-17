@@ -69,15 +69,21 @@ export function AuditEventCard({
         ) : null}
         <div className="sm:col-span-2">
           <dt className="text-gray-500">Motivo</dt>
-          <dd className="whitespace-pre-line break-words text-gray-900">{event.reason?.trim() ? event.reason : <span className="text-gray-500">Sin motivo registrado</span>}</dd>
+          <dd className="whitespace-pre-line break-words text-gray-900">
+            {event.reason?.trim() ? (
+              event.reason
+            ) : (
+              <span className="text-gray-500">{redacted ? "Eliminado junto con el contenido" : "Sin motivo registrado"}</span>
+            )}
+          </dd>
         </div>
       </dl>
       {redacted ? (
         <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
           <p className="font-medium text-gray-900">{redacted}</p>
           <p className="mt-0.5 text-gray-700">
-            Ya no se muestran los valores anterior y nuevo. Se conservan el autor, la fecha, la acción
-            {redactedFields.length > 0 ? ", los campos que cambiaron" : ""} y el motivo.
+            Ya no se muestran los valores anterior y nuevo ni el motivo. Se conservan el autor, la fecha
+            {redactedFields.length > 0 ? ", la acción y los campos que cambiaron" : " y la acción"}.
           </p>
           {redactedFields.length > 0 ? <p className="mt-0.5 break-words text-gray-700">Campos que cambiaron: {redactedFields.join(", ")}.</p> : null}
         </div>

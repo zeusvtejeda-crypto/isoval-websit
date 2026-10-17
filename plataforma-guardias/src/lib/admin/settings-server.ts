@@ -63,16 +63,15 @@ export async function saveSettingValue(
   next: Record<string, string | number | boolean | null>,
   reason: string,
 ): Promise<DbError | null> {
-  const { data: current, error: readError } = await supabase.from("app_settings").select("value, change_reason").eq("key", key).maybeSingle();
+  const { data: current, error: readError } = await supabase.from("app_settings").select("value").eq("key", key).maybeSingle();
   if (readError) return readError;
   const value = mergeSettingValue(current?.value, next) as { [k: string]: Json | undefined };
 
   if (current) {
-    // Un motivo igual al guardado lo borraría app.touch_row(): se limpia antes.
-    if (current.change_reason === reason) {
-      const cleared = await clearStoredReason(supabase, "app_settings", key);
-      if (cleared) return cleared;
-    }
+    // Un motivo igual al guardado lo borraría app.touch_row(); como el motivo
+    // guardado no es legible (solo lo conserva la bitácora), se limpia siempre.
+    const cleared = await clearStoredReason(supabase, "app_settings", key);
+    if (cleared) return cleared;
     const { data, error } = await supabase.from("app_settings").update({ value, change_reason: reason }).eq("key", key).select("key");
     if (error) return error;
     if (!data || data.length === 0) return { message: "No tienes permiso para realizar esta acción.", code: "42501" };

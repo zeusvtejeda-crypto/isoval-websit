@@ -178,7 +178,7 @@ describe("política de conservación y copias en la bitácora", () => {
     });
   });
 
-  it("al aplicar, las copias quedan sin datos personales y se conservan autor, fecha, acción, campos y motivo", async () => {
+  it("al aplicar, las copias quedan sin datos personales y se conservan autor, fecha, acción y campos (sin motivo)", async () => {
     await inRollback(async (c) => {
       const f = await prepare(c);
       const before = await purgedAuditRows(c, f);
@@ -205,21 +205,22 @@ describe("política de conservación y copias en la bitácora", () => {
         before.map((r) => r.id),
       );
       expect(after).toHaveLength(before.length);
-      const keptColumns = ["id", "table_name", "action", "actor_id", "occurred_at", "changed_fields", "reason", "record_id"];
+      const keptColumns = ["id", "table_name", "action", "actor_id", "occurred_at", "changed_fields", "record_id"];
       const pick = (row: Record<string, unknown>) => Object.fromEntries(keptColumns.map((k) => [k, row[k]]));
       for (const [i, row] of after.entries()) {
         expect(row.old_data).toBeNull();
         expect(row.new_data).toEqual({ redactado: "conservacion" });
         expect(row.redacted_at).not.toBeNull();
+        expect(row.reason).toBeNull(); // el motivo puede copiar el texto del registro eliminado
         expect(pick(row)).toEqual(pick(before[i]));
       }
       expect(after.find((r) => r.table_name === "worker_private" && r.action === "UPDATE")).toMatchObject({
         changed_fields: ["phone"],
-        reason: "Cambio de teléfono",
+        reason: null,
       });
       const leaks = await c.query(
         `select count(*)::int as n from public.audit_log
-         where coalesce(old_data::text, '') || coalesce(new_data::text, '') ~ $1`,
+         where coalesce(old_data::text, '') || coalesce(new_data::text, '') || coalesce(reason, '') ~ $1`,
         [`${f.oldPhone}|${f.oldEmployee}|Llegó con su hija|consulta médica|Avisó por teléfono`],
       );
       expect(leaks.rows[0].n).toBe(0);

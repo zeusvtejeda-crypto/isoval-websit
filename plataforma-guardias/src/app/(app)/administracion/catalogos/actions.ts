@@ -33,12 +33,10 @@ function revalidateCatalogs() {
 
 /**
  * app.reset_change_reason() deja en null un motivo igual al guardado (para no
- * arrastrar motivos viejos a la bitácora): si se repite, se limpia antes.
+ * arrastrar motivos viejos a la bitácora). El motivo guardado no es legible
+ * (solo lo conserva la bitácora), así que se limpia siempre antes de escribir.
  */
-async function prepareReason(supabase: ServerSupabase, table: "states" | "municipalities", id: number, reason: string): Promise<string | null> {
-  const { data, error } = await supabase.from(table).select("change_reason").eq("id", id).maybeSingle();
-  if (error) return friendlyCatalogError(error, "No se pudo guardar el cambio.");
-  if (!data || data.change_reason !== reason) return null;
+async function prepareReason(supabase: ServerSupabase, table: "states" | "municipalities", id: number): Promise<string | null> {
   const cleared = await clearStoredReason(supabase, table, id);
   return cleared ? friendlyCatalogError(cleared, "No se pudo guardar el cambio.") : null;
 }
@@ -51,7 +49,7 @@ export async function setStateCoverage(_prev: ActionResult | null, formData: For
   const { state_id, enabled, reason } = parsed.data;
 
   const supabase = await createClient();
-  const reasonIssue = await prepareReason(supabase, "states", state_id, reason);
+  const reasonIssue = await prepareReason(supabase, "states", state_id);
   if (reasonIssue) return failure(reasonIssue);
   const { data, error } = await supabase.from("states").update({ enabled, change_reason: reason }).eq("id", state_id).select("id, name");
   if (error) return failure(friendlyCatalogError(error, "No se pudo cambiar la cobertura."));
@@ -74,7 +72,7 @@ export async function saveStateTimezone(_prev: ActionResult | null, formData: Fo
   const { state_id, default_timezone, reason } = parsed.data;
 
   const supabase = await createClient();
-  const reasonIssue = await prepareReason(supabase, "states", state_id, reason);
+  const reasonIssue = await prepareReason(supabase, "states", state_id);
   if (reasonIssue) return failure(reasonIssue);
   const { data, error } = await supabase.from("states").update({ default_timezone, change_reason: reason }).eq("id", state_id).select("id, name");
   if (error) return failure(friendlyCatalogError(error, "No se pudo guardar la zona horaria."));
@@ -95,7 +93,7 @@ export async function saveMunicipalityTimezone(_prev: ActionResult | null, formD
   const { state_id, municipality_id, timezone, reason } = parsed.data;
 
   const supabase = await createClient();
-  const reasonIssue = await prepareReason(supabase, "municipalities", municipality_id, reason);
+  const reasonIssue = await prepareReason(supabase, "municipalities", municipality_id);
   if (reasonIssue) return failure(reasonIssue);
   const { data, error } = await supabase
     .from("municipalities")

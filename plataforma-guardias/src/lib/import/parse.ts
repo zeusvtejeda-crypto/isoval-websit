@@ -39,8 +39,6 @@ function cleanRows(headers: string[], rows: string[][]): ParsedFile {
   return { headers: norm.filter(Boolean), rows: out };
 }
 
-export const NOT_UTF8_MESSAGE = "El archivo no está en UTF-8: guárdalo como «CSV UTF-8» o .xlsx";
-
 /**
  * Texto de un CSV a partir de sus bytes: UTF-8 (con o sin BOM) y, si no es UTF-8
  * válido, Windows-1252, que es lo que guarda Excel en Windows con «CSV
@@ -50,19 +48,30 @@ export function decodeCsvBytes(bytes: ArrayBuffer | Uint8Array): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    return new TextDecoder("windows-1252").decode(bytes);
+    const text = new TextDecoder("windows-1252").decode(bytes);
+    // Un archivo casi todo en UTF-8 con algún byte de otra codificación se
+    // leería entero como Windows-1252 y los acentos quedarían como «Ã­» o «Ã±».
+    if (MIXED_ENCODING.test(text)) throw new Error(MIXED_ENCODING_MESSAGE);
+    return text;
   }
 }
+
+/** Secuencias típicas de UTF-8 leído como Windows-1252 (p. ej. «Ã­», «Ã±», «Ã“»). */
+const MIXED_ENCODING = /[ÂÃ][\u0080-\u00BF\u0152\u0153\u0160\u0161\u0178\u017D\u017E\u0192\u02C6\u02DC\u2013-\u2026\u2030\u2039\u203A\u20AC\u2122]/;
+export const MIXED_ENCODING_MESSAGE =
+  "El archivo mezcla codificaciones (UTF-8 y otra): guárdalo completo como «CSV UTF-8» o .xlsx para no dañar los acentos.";
 
 export function parseCsv(text: string): ParsedFile {
   const result = Papa.parse<string[]>(text.replace(/^﻿/, ""), { skipEmptyLines: "greedy" });
   if (result.errors.length && result.data.length === 0) {
     throw new Error("No se pudo leer el CSV: " + result.errors[0].message);
   }
-  // «�» (U+FFFD) solo aparece si el texto ya se leyó con otra codificación:
-  // se rechaza en lugar de importar nombres oficiales dañados.
+  // «�» (U+FFFD) en un UTF-8 válido indica que el texto ya se dañó antes (al
+  // copiarlo de otra codificación): se rechaza en lugar de importar nombres dañados.
   const damaged = result.data.findIndex((r) => r.some((c) => (c ?? "").includes("\ufffd")));
-  if (damaged >= 0) throw new Error(`${NOT_UTF8_MESSAGE} (la fila ${damaged + 1} tiene caracteres dañados «\ufffd»).`);
+  if (damaged >= 0) {
+    throw new Error(`La fila ${damaged + 1} tiene caracteres dañados («\ufffd»): corrígelos en el archivo original y vuelve a guardarlo como «CSV UTF-8» o .xlsx.`);
+  }
   const [headers = [], ...rows] = result.data;
   return cleanRows(headers, rows);
 }

@@ -163,17 +163,21 @@ describe("Corrección de una inasistencia confirmada", () => {
   it("si la aprobación falla no cambia nada (traslape con otro registro vigente)", async () => {
     const { worker, assignmentId } = await absentAssignment("inasistencia_confirmada");
     const user = await createAuthUser({ role: "trabajador", workerId: worker });
-    // La persona ya tiene un registro vigente a esa hora en otra guardia.
-    const otherShift = await createShiftSuper(facility, -600, -60);
+    // La persona ya tiene un registro vigente a esa hora en otra guardia que no
+    // se traslapa con esta (empieza cuando esta termina), así la asignación sí
+    // puede reactivarse y lo que falla es el registro solicitado.
+    const otherShift = await createShiftSuper(facility, -60, 60);
     const otherAssignment = await assignSuper(otherShift, worker);
     await asUser(coordA, (c) =>
-      c.query("select public.add_manual_attendance($1, now() - interval '8 hours', now() - interval '3 hours', 'Registro en otra guardia', $2)", [
+      c.query("select public.add_manual_attendance($1, now() - interval '3 hours', now() - interval '150 minutes', 'Registro en otra guardia', $2)", [
         otherAssignment,
         uid(),
       ]),
     );
     const req = await asUser(user, (c) => c.query(REQUEST_SQL, [assignmentId, "Estuve en esta guardia"]));
-    expect(await expectPgError(asUser(coordB, (c) => c.query("select * from public.review_correction($1, true, null)", [req.rows[0].id])))).toMatch(/traslapa/);
+    const msg = await expectPgError(asUser(coordB, (c) => c.query("select * from public.review_correction($1, true, null)", [req.rows[0].id])));
+    expect(msg).toMatch(/registro vigente|attendance_no_overlap/);
+    expect(msg).not.toMatch(/otra guardia/);
     const a = await assignment(assignmentId);
     expect(a.status).toBe("inasistencia_confirmada");
     expect(a.status_reason).toBe("No se presentó según el responsable");
