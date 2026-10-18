@@ -56,9 +56,12 @@ async function callShared(fn: Rpc, items: Item[]): Promise<number | null> {
   }
 }
 
-/** Combinación y correo se reservan; la IP sola solo se consulta (se cuenta tras un fallo). */
-function loginItems(keys: LoginKeys): Item[] {
-  const items: Item[] = [{ scope: "email", key: keys.email, limiter: emailLimiter, reserve: true }];
+/**
+ * Combinación y correo se reservan; la IP sola solo se consulta (se cuenta tras
+ * un fallo). Desde un dispositivo de confianza no se usa el umbral por correo.
+ */
+function loginItems(keys: LoginKeys, trustedDevice = false): Item[] {
+  const items: Item[] = trustedDevice ? [] : [{ scope: "email", key: keys.email, limiter: emailLimiter, reserve: true }];
   if (keys.pair) items.push({ scope: "pair", key: keys.pair, limiter: pairLimiter, reserve: true });
   if (keys.ip) items.push({ scope: "ip", key: keys.ip, limiter: ipLimiter });
   return items;
@@ -70,9 +73,9 @@ const reserved = (items: Item[]) => items.filter((i) => i.reserve);
  * Reserva un intento de inicio de sesión. Devuelve la espera en ms si está
  * bloqueado (sin contar nada) o 0 si puede verificar la contraseña.
  */
-export async function reserveLoginAttempt(keys: LoginKeys): Promise<number> {
-  const memory = loginAttempt(keys);
-  const shared = await callShared("rate_limit_attempt", loginItems(keys));
+export async function reserveLoginAttempt(keys: LoginKeys, trustedDevice = false): Promise<number> {
+  const memory = loginAttempt(keys, Date.now(), trustedDevice);
+  const shared = await callShared("rate_limit_attempt", loginItems(keys, trustedDevice));
   return shared ?? memory;
 }
 
@@ -86,9 +89,9 @@ export async function recordLoginFailure(keys: LoginKeys): Promise<void> {
 }
 
 /** Error del servicio de acceso (429, 5xx o sin conexión): devuelve la reserva. */
-export async function refundLoginAttempt(keys: LoginKeys): Promise<void> {
-  loginRefund(keys);
-  await callShared("rate_limit_refund", reserved(loginItems(keys)));
+export async function refundLoginAttempt(keys: LoginKeys, trustedDevice = false): Promise<void> {
+  loginRefund(keys, Date.now(), trustedDevice);
+  await callShared("rate_limit_refund", reserved(loginItems(keys, trustedDevice)));
 }
 
 /** Acertar limpia la combinación IP + correo y el correo, nunca la IP. */

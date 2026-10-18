@@ -76,9 +76,10 @@ describe("ipSubject", () => {
 });
 
 describe("clientIp", () => {
-  it("no confía en x-forwarded-for sin proxies declarados", () => {
-    expect(clientIp(new Headers({ "x-forwarded-for": "1.2.3.4, 9.9.9.9" }), 0)).toBeNull();
-    expect(clientIp(new Headers({ "x-real-ip": "203.0.113.5" }), 0)).toBe("203.0.113.5");
+  it("no confía en x-forwarded-for sin proxies declarados ni en x-real-ip sin TRUST_X_REAL_IP", () => {
+    expect(clientIp(new Headers({ "x-forwarded-for": "1.2.3.4, 9.9.9.9" }), 0, false)).toBeNull();
+    expect(clientIp(new Headers({ "x-real-ip": "203.0.113.5" }), 0, false)).toBeNull(); // cualquiera la inventa
+    expect(clientIp(new Headers({ "x-real-ip": "203.0.113.5" }), 0, true)).toBe("203.0.113.5"); // la plataforma la sobrescribe
   });
 
   it("con un proxy de confianza toma la entrada que agregó ese proxy (la última)", () => {

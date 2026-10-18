@@ -5,6 +5,7 @@ import { login, type LoginState } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input } from "@/components/ui/form";
 import { useOnline } from "@/components/layout/connection-status";
+import { Turnstile } from "@/components/security/turnstile";
 
 export function LoginForm({ next }: { next: string }) {
   const [state, action, pending] = useActionState<LoginState | null, FormData>(login, null);
@@ -18,6 +19,7 @@ export function LoginForm({ next }: { next: string }) {
       <Field label="Contraseña" htmlFor="password" required>
         <Input id="password" name="password" type="password" autoComplete="current-password" required />
       </Field>
+      <Turnstile action="login" resetKey={state} />
       <FormMessage state={state} />
       {!online ? <p className="text-sm font-medium text-amber-800">Sin conexión: no es posible iniciar sesión.</p> : null}
       <Button type="submit" size="lg" className="w-full" disabled={pending || !online}>

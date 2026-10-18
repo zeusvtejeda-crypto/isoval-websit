@@ -5,6 +5,7 @@ import { changePassword } from "./actions";
 import type { ActionResult } from "@/lib/actions";
 import { Button } from "@/components/ui/button";
 import { Field, FormMessage, Input } from "@/components/ui/form";
+import { Turnstile } from "@/components/security/turnstile";
 
 export function PasswordForm() {
   const [state, action, pending] = useActionState<ActionResult | null, FormData>(changePassword, null);
@@ -20,6 +21,7 @@ export function PasswordForm() {
       <Field label="Confirma la nueva contraseña" htmlFor="confirm" required error={err("confirm")}>
         <Input id="confirm" name="confirm" type="password" autoComplete="new-password" minLength={12} required aria-invalid={Boolean(err("confirm"))} />
       </Field>
+      <Turnstile action="cambio-contrasena" resetKey={state} />
       <FormMessage state={state} />
       <Button type="submit" disabled={pending}>
         {pending ? "Guardando…" : "Cambiar contraseña"}

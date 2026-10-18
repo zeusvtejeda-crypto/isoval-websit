@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import type { ActionResult } from "@/lib/actions";
 import { isAuthServiceError, recordPasswordChangeSuccess, refundPasswordChange, reservePasswordChange } from "@/lib/security/shared-limits";
+import { captchaTokenFrom } from "@/lib/security/captcha";
 
 const schema = z
   .object({
@@ -40,7 +41,16 @@ export async function changePassword(_prev: ActionResult | null, formData: FormD
 
   const supabase = await createClient();
   // Confirma la contraseña actual antes de cambiarla.
-  const { error: authError } = await supabase.auth.signInWithPassword({ email: user.email, password: parsed.data.current });
+  const captchaToken = captchaTokenFrom(formData);
+  const { error: authError } = await supabase.auth.signInWithPassword({
+    email: user.email,
+    password: parsed.data.current,
+    options: captchaToken ? { captchaToken } : undefined,
+  });
+  if (authError?.code === "captcha_failed") {
+    await refundPasswordChange(user.id);
+    return { ok: false, message: "Completa la verificación anti-robots e inténtalo de nuevo." };
+  }
   if (isAuthServiceError(authError)) {
     await refundPasswordChange(user.id);
     return { ok: false, message: "No se pudo conectar con el servicio de acceso. Inténtalo de nuevo en unos minutos." };

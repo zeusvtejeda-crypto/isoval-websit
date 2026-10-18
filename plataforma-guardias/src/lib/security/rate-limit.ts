@@ -10,6 +10,9 @@
  *   solicitudes simultáneas no pasan todas; acertar lo devuelve y un error del
  *   servicio de acceso lo reembolsa.
  * - Bloqueo estricto solo por la combinación IP + correo.
+ * - Un dispositivo donde la cuenta ya inició sesión (cookie firmada) no queda
+ *   sujeto al umbral por correo: así nadie bloquea a otra persona con intentos
+ *   desde muchas IP.
  * - Umbrales altos por IP (red compartida) y por correo (ataque distribuido).
  * - Acertar limpia la combinación y el correo, nunca la IP.
  * - La IP solo se toma de proxies de confianza (TRUSTED_PROXY_HOPS); una IPv6 se
@@ -117,15 +120,21 @@ export const passwordChangeLimiter = new FailureLimiter(5, 15 * MIN, 15 * MIN);
 /**
  * IP del cliente. Solo se confía en x-forwarded-for si TRUSTED_PROXY_HOPS > 0
  * (número de proxies propios delante de la app): se toma la entrada que agregó
- * el proxy de confianza más externo. Si no, x-real-ip (la fija la plataforma).
+ * el proxy de confianza más externo. x-real-ip solo cuenta con TRUST_X_REAL_IP=1,
+ * cuando la plataforma la sobrescribe (p. ej. Vercel); si no, cualquiera la inventa.
  * Devuelve null si no hay un dato confiable.
  */
-export function clientIp(headers: Headers, hops = Number(process.env.TRUSTED_PROXY_HOPS ?? 0)): string | null {
+export function clientIp(
+  headers: Headers,
+  hops = Number(process.env.TRUSTED_PROXY_HOPS ?? 0),
+  trustRealIp = process.env.TRUST_X_REAL_IP === "1" || process.env.TRUST_X_REAL_IP === "true",
+): string | null {
   const chain = (headers.get("x-forwarded-for") ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
   if (Number.isInteger(hops) && hops > 0 && chain.length >= hops) return chain[chain.length - hops];
+  if (!trustRealIp) return null;
   const real = headers.get("x-real-ip")?.trim();
   return real || null;
 }
@@ -168,15 +177,15 @@ export function loginKeys(ip: string | null, email: string) {
  * Reserva un intento de inicio de sesión (combinación y correo). Devuelve la
  * espera en ms si alguna clave (también la IP) está bloqueada; 0 = permitido.
  */
-export function loginAttempt(keys: LoginKeys, now = Date.now()): number {
+export function loginAttempt(keys: LoginKeys, now = Date.now(), trustedDevice = false): number {
   const wait = Math.max(
     keys.pair ? pairLimiter.retryAfter(keys.pair, now) : 0,
     keys.ip ? ipLimiter.retryAfter(keys.ip, now) : 0,
-    emailLimiter.retryAfter(keys.email, now),
+    trustedDevice ? 0 : emailLimiter.retryAfter(keys.email, now),
   );
   if (wait > 0) return wait;
   if (keys.pair) pairLimiter.attempt(keys.pair, now);
-  emailLimiter.attempt(keys.email, now);
+  if (!trustedDevice) emailLimiter.attempt(keys.email, now);
   return 0;
 }
 
@@ -186,9 +195,9 @@ export function loginFailed(keys: LoginKeys, now = Date.now()): void {
 }
 
 /** Error del servicio de acceso (no de credenciales): se devuelve la reserva. */
-export function loginRefund(keys: LoginKeys, now = Date.now()): void {
+export function loginRefund(keys: LoginKeys, now = Date.now(), trustedDevice = false): void {
   if (keys.pair) pairLimiter.refund(keys.pair, now);
-  emailLimiter.refund(keys.email, now);
+  if (!trustedDevice) emailLimiter.refund(keys.email, now);
 }
 
 export function loginSucceeded(keys: LoginKeys): void {
