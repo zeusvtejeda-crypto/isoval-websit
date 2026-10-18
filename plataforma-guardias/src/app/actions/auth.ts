@@ -5,7 +5,8 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { homePathFor, type AppRole } from "@/lib/auth";
 import { safeNextPath } from "@/lib/security/safe-next";
-import { clientIp, loginFailed, loginKeys, loginRetryAfter, loginSucceeded } from "@/lib/security/rate-limit";
+import { clientIp, loginKeys } from "@/lib/security/rate-limit";
+import { loginWait, recordLoginFailure, recordLoginSuccess } from "@/lib/security/shared-limits";
 
 export type LoginState = { ok: boolean; message?: string };
 
@@ -16,7 +17,7 @@ export async function login(_prev: LoginState | null, formData: FormData): Promi
     return { ok: false, message: "Escribe tu correo y contraseña." };
   }
   const keys = loginKeys(clientIp(await headers()), email);
-  const wait = loginRetryAfter(keys);
+  const wait = await loginWait(keys);
   if (wait > 0) {
     return { ok: false, message: `Demasiados intentos fallidos. Espera ${Math.ceil(wait / 60_000)} min e inténtalo de nuevo.` };
   }
@@ -27,10 +28,10 @@ export async function login(_prev: LoginState | null, formData: FormData): Promi
     return { ok: false, message: "El servicio de acceso recibió demasiadas solicitudes. Espera unos minutos e inténtalo de nuevo." };
   }
   if (error || !data.user) {
-    loginFailed(keys);
+    await recordLoginFailure(keys);
     return { ok: false, message: "Correo o contraseña incorrectos." };
   }
-  loginSucceeded(keys);
+  await recordLoginSuccess(keys);
   const { data: profile } = await supabase
     .from("profiles")
     .select("role, active")

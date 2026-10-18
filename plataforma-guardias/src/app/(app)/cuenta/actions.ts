@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import type { ActionResult } from "@/lib/actions";
-import { passwordChangeLimiter } from "@/lib/security/rate-limit";
+import { passwordChangeWait, recordPasswordChangeFailure, recordPasswordChangeSuccess } from "@/lib/security/shared-limits";
 
 const schema = z
   .object({
@@ -33,8 +33,7 @@ export async function changePassword(_prev: ActionResult | null, formData: FormD
   }
   if (!user.email) return { ok: false, message: "Tu cuenta no tiene correo asociado. Contacta a administración." };
 
-  const limitKey = `pwd:${user.id}`;
-  const wait = passwordChangeLimiter.retryAfter(limitKey);
+  const wait = await passwordChangeWait(user.id);
   if (wait > 0) {
     return { ok: false, message: `Demasiados intentos con la contraseña actual. Espera ${Math.ceil(wait / 60_000)} min e inténtalo de nuevo.` };
   }
@@ -43,10 +42,10 @@ export async function changePassword(_prev: ActionResult | null, formData: FormD
   // Confirma la contraseña actual antes de cambiarla.
   const { error: authError } = await supabase.auth.signInWithPassword({ email: user.email, password: parsed.data.current });
   if (authError) {
-    passwordChangeLimiter.fail(limitKey);
+    await recordPasswordChangeFailure(user.id);
     return { ok: false, message: "La contraseña actual no es correcta.", fieldErrors: { current: "Contraseña incorrecta." } };
   }
-  passwordChangeLimiter.succeed(limitKey);
+  await recordPasswordChangeSuccess(user.id);
 
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
   if (error?.code === "weak_password") return { ok: false, message: "La contraseña no cumple la política de seguridad: usa al menos 12 caracteres con minúsculas, mayúsculas y números." };

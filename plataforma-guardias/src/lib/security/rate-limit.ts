@@ -2,7 +2,8 @@
  * Límites de intentos fallidos en memoria (por instancia del servidor).
  * Complementan el límite de Supabase Auth, que ve a todas las personas con la IP
  * del servidor porque el inicio de sesión ocurre en una Server Action.
- * Con varias instancias conviene un almacén compartido (p. ej. Redis) o CAPTCHA.
+ * El almacén compartido entre instancias (Postgres) está en ./shared-limits.ts;
+ * estos contadores en memoria son su respaldo si la base no responde.
  *
  * Diseño (para no permitir bloqueos dirigidos ni evasión):
  * - Bloqueo estricto solo por la combinación IP + correo.
@@ -16,9 +17,9 @@ export class FailureLimiter {
   private readonly entries = new Map<string, Entry>();
 
   constructor(
-    private readonly maxFailures: number,
-    private readonly windowMs: number,
-    private readonly blockMs: number,
+    readonly maxFailures: number,
+    readonly windowMs: number,
+    readonly blockMs: number,
     private readonly maxKeys = 10_000,
   ) {}
 
@@ -96,6 +97,8 @@ export function clientIp(headers: Headers, hops = Number(process.env.TRUSTED_PRO
   const real = headers.get("x-real-ip")?.trim();
   return real || null;
 }
+
+export type LoginKeys = ReturnType<typeof loginKeys>;
 
 /** Claves de un intento de inicio de sesión. */
 export function loginKeys(ip: string | null, email: string) {

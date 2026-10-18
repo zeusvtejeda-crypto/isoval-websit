@@ -39,7 +39,7 @@ src/
     time.ts           zonas horarias y formatos
     actions.ts        ActionResult y friendlyDbError
     reason.ts         clearStoredReason (motivos repetidos en la bitácora)
-    security/         safe-next (redirecciones), rate-limit (intentos de login)
+    security/         safe-next (redirecciones), rate-limit y shared-limits (intentos de login, compartidos en Postgres)
     directory/        búsqueda, íconos de categoría, municipios repetidos
     admin/            etiquetas de bitácora, contraseñas temporales, catálogos
 supabase/
