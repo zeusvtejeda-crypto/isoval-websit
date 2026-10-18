@@ -10,6 +10,7 @@ import {
   pdfCell,
   pdfSafe,
   totalsEntries,
+  truncateCell,
   type ReportDocument,
 } from "./document";
 import type { GroupSummary } from "./rows";
@@ -57,7 +58,7 @@ function groupTable(pdf: jsPDF, title: string, firstHeader: string, groups: Grou
   y = writeLines(pdf, [note], y, 8);
   const body: RowInput[] = groups.length
     ? groups.map((g) => [
-        pdfSafe(g.detail ? `${g.label} (${g.detail})` : g.label),
+        pdfSafe(truncateCell(g.detail ? `${g.label} (${g.detail})` : g.label)),
         ...GROUP_COLUMNS.map((c) => (c.kind === "hours" ? formatHoursMinutes(c.value(g.totals)) : String(c.value(g.totals)))),
       ])
     : [[{ content: "Sin datos para los filtros seleccionados.", colSpan: GROUP_COLUMNS.length + 1 }]];

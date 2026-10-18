@@ -195,6 +195,22 @@ export const DETAIL_COLUMNS: ColumnDef[] = [
   },
 ];
 
+/**
+ * Máximo de caracteres por celda de texto en Excel y PDF. Un solo valor muy
+ * largo (una nota de miles de caracteres) haría muy lenta la generación del PDF
+ * (y el Excel solo admite 32 767 por celda): se recorta con «…».
+ */
+export const CELL_TEXT_MAX = 1000;
+
+export function truncateCell(text: string, max = CELL_TEXT_MAX): string {
+  if (text.length <= max) return text;
+  let end = max - 1;
+  // No partir un par sustituto (emoji y otros caracteres fuera del plano básico).
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end).trimEnd()}…`;
+}
+
 export function flagText(value: boolean): string {
   return value ? "Sí" : "No";
 }
@@ -211,13 +227,13 @@ export function xlsxCell(column: ColumnDef, row: ReportRow): string | number | n
     case "flag":
       return flagText(Boolean(v));
     default:
-      return String(v);
+      return truncateCell(String(v));
   }
 }
 
 /** Valor de celda para PDF (texto compacto: horas en h:mm). */
 export function pdfCell(column: ColumnDef, row: ReportRow): string {
-  if (column.pdfValue) return column.pdfValue(row);
+  if (column.pdfValue) return truncateCell(column.pdfValue(row));
   const v = column.value(row);
   if (column.kind === "flag") return flagText(Boolean(v));
   if (v == null) return "—";
@@ -227,7 +243,7 @@ export function pdfCell(column: ColumnDef, row: ReportRow): string {
     case "minutes":
       return String(Math.trunc(Number(v)));
     default:
-      return String(v);
+      return truncateCell(String(v));
   }
 }
 

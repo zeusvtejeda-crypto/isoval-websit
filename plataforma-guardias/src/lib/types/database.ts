@@ -1176,7 +1176,7 @@ export type Database = {
           p_state_id: number;
           p_usual_shift?: string;
         };
-        Returns: string;
+        Returns: Json;
       };
       create_workers: { Args: { p_change_reason: string; p_rows: Json }; Returns: Json };
       effective_status: {
@@ -1309,6 +1309,10 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      set_employee_number: {
+        Args: { p_number: string; p_reason: string; p_worker_id: string };
+        Returns: string;
       };
       set_user_scopes: {
         Args: { p_facility_ids: string[]; p_reason: string; p_user_id: string };

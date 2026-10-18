@@ -96,13 +96,14 @@ describe("Alta atómica de trabajador", () => {
     const name = `Alta atómica ${suffix()}`;
     const number = `ATN-${suffix()}`;
     const r = await asUser(coordA, (c) =>
-      c.query("select public.create_worker(p_full_name => $1, p_state_id => 18, p_facility_id => $2, p_employee_number => $3, p_phone => '311 000 1234') as id", [
+      c.query("select public.create_worker(p_full_name => $1, p_state_id => 18, p_facility_id => $2, p_employee_number => $3, p_phone => '311 000 1234') as r", [
         name,
         facilityA,
         number,
       ]),
     );
-    const id = r.rows[0].id as string;
+    expect(r.rows[0].r).toMatchObject({ ok: true });
+    const id = r.rows[0].r.id as string;
     const row = await asSuper((c) =>
       c.query(
         "select w.facility_id, w.change_reason, w.created_by, p.employee_number, p.phone from public.workers w join public.worker_private p on p.worker_id = w.id where w.id = $1",
@@ -119,36 +120,39 @@ describe("Alta atómica de trabajador", () => {
     ]);
   });
 
-  it("número registrado en otra sede: error claro y NO queda ningún registro", async () => {
+  it("número registrado en otra sede: responde «taken» sin error y NO queda ningún registro", async () => {
     const name = `Duplicado entre sedes ${suffix()}`;
     // La coordinación de A no ve el número (es de la sede B).
     const visible = await asUser(coordA, (c) => c.query("select 1 from public.worker_private where employee_number = $1", [numberB]));
     expect(visible.rowCount).toBe(0);
 
-    let code = "";
-    const msg = await expectPgError(
-      asUser(coordA, (c) =>
-        c
-          .query("select public.create_worker(p_full_name => $1, p_state_id => 18, p_facility_id => $2, p_employee_number => $3)", [
-            name,
-            facilityA,
-            ` ${numberB.toLowerCase()} `,
-          ])
-          .catch((e: { code?: string }) => {
-            code = e.code ?? "";
-            throw e;
-          }),
-      ),
+    // Sin error: así se conserva la cuota de comprobación consumida (20261017001330).
+    const r = await asUser(coordA, (c) =>
+      c.query("select public.create_worker(p_full_name => $1, p_state_id => 18, p_facility_id => $2, p_employee_number => $3) as r", [
+        name,
+        facilityA,
+        ` ${numberB.toLowerCase()} `,
+      ]),
     );
-    expect(msg).toBe("Ese número de trabajador ya está registrado (posiblemente en otra sede).");
-    expect(code).toBe("23505");
+    expect(r.rows[0].r).toEqual({
+      ok: false,
+      taken: true,
+      code: "23505",
+      message: "Ese número de trabajador ya está registrado (posiblemente en otra sede).",
+    });
     expect(await countWorkersNamed(name)).toBe(0);
   });
 
-  it("aplica RLS: coordinación no crea trabajadores en una sede ajena", async () => {
+  it("coordinación no crea trabajadores en una sede ajena (mismo permiso que la política workers_insert)", async () => {
     const name = `Sede ajena ${suffix()}`;
     const msg = await expectPgError(asUser(coordA, (c) => c.query("select public.create_worker($1, 18, $2)", [name, facilityB])));
-    expect(msg).toMatch(/row-level security/);
+    expect(msg).toBe("No puedes registrar trabajadores en esa instalación.");
+    expect(await countWorkersNamed(name)).toBe(0);
+    for (const user of [trabajadorId, auditorA, coordSinSede]) {
+      expect(await expectPgError(asUser(user, (c) => c.query("select public.create_worker($1, 18, $2)", [name, facilityA])))).toBe(
+        "No puedes registrar trabajadores en esa instalación.",
+      );
+    }
     expect(await countWorkersNamed(name)).toBe(0);
   });
 
@@ -162,7 +166,7 @@ describe("Alta atómica de trabajador", () => {
     const r = await asUser(coordA, (c) => c.query("select public.create_workers($1::jsonb, $2) as r", [JSON.stringify(rows), `Importación de prueba ${suffix()}`]));
     const results = r.rows[0].r as { ok: boolean; id?: string; code?: string; message?: string }[];
     expect(results.map((x) => x.ok)).toEqual([true, false, true]);
-    expect(results[1]).toMatchObject({ code: "23505", message: "Ese número de trabajador ya está registrado (posiblemente en otra sede)." });
+    expect(results[1]).toMatchObject({ taken: true, code: "23505", message: "Ese número de trabajador ya está registrado (posiblemente en otra sede)." });
     expect(await countWorkersNamed(names[0])).toBe(1);
     expect(await countWorkersNamed(names[1])).toBe(0);
     expect(await countWorkersNamed(names[2])).toBe(1);

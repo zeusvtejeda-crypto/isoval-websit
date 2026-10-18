@@ -34,6 +34,12 @@ export type SessionUser = {
 /**
  * Capa de acceso a datos: obtiene el usuario autenticado y su perfil.
  * Se memoriza por solicitud. Valida el JWT con getClaims().
+ *
+ * Un JWT vigente cuya sesión ya se cerró (cierre de sesión, cuenta desactivada)
+ * cuenta como sin sesión: getClaims() puede aceptarlo sin consultar a Auth, pero
+ * la lectura del perfil pasa por RLS y la política profiles_read exige
+ * app.session_alive() (migración 20261017001320_sesiones.sql), así que el
+ * perfil no aparece y se devuelve null.
  */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createClient();
@@ -42,6 +48,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const sub = claims?.sub;
   if (!sub) return null;
 
+  // Sin perfil visible = cuenta inactiva o sesión revocada.
   const { data: profile } = await supabase
     .from("profiles")
     .select("id, role, display_name, worker_id, active")

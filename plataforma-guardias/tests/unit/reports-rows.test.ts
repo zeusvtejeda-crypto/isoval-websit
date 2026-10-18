@@ -17,9 +17,11 @@ import {
   type IncidentNoteLite,
 } from "@/lib/reports/rows";
 import {
+  CELL_TEXT_MAX,
   DETAIL_COLUMNS,
   GAP_LABEL,
   buildReportDocument,
+  truncateCell,
   xmlSafeText,
   contentDisposition,
   describeFilters,
@@ -684,5 +686,81 @@ describe("render de Excel y PDF", () => {
     // La celda puede partirse en varias líneas.
     expect(raw).toContain("Llegada tard\xeda: Retraso");
     expect(raw).toContain("0:45");
+  });
+});
+
+describe("celdas de texto muy largas", () => {
+  // 100 000 caracteres en una sola nota (la base de datos ya no lo permite,
+  // pero la exportación no debe depender de eso).
+  const longNote = `${"Nota muy larga del registro. ".repeat(3449).slice(0, 99_996)}Fin.`;
+  const shift = makeShift({
+    facility: FAC_A,
+    startsAt: "2026-10-16T15:00:00Z",
+    endsAt: "2026-10-16T23:00:00Z",
+    now: NOW,
+    assignments: [
+      {
+        id: "n1",
+        workerId: W1,
+        workerName: "Ana Peña",
+        sessions: [{ checkInAt: "2026-10-16T15:00:00Z", checkOutAt: "2026-10-16T23:00:00Z" }],
+        sessionNotes: [longNote],
+      },
+    ],
+  });
+  const meta: ReportMeta = {
+    title: "Reporte de guardias: asistencia registrada",
+    generatedAt: NOW,
+    generatedTimeZone: MZT,
+    requesterName: "Coordinación (demo)",
+    requesterRole: "Coordinación",
+    filterLines: [],
+  };
+  const doc = buildReportDocument(
+    meta,
+    attachIncidentNotes(buildReportRows([shift], { now: NOW }), [
+      { assignment_id: "n1", incident_type: "llegada_tardia", note: longNote, justified: true },
+    ]),
+  );
+  const column = (key: string) => DETAIL_COLUMNS.find((c) => c.key === key)!;
+
+  it("truncateCell recorta con «…» sin partir caracteres fuera del plano básico", () => {
+    expect(truncateCell("corto")).toBe("corto");
+    expect(truncateCell("a".repeat(CELL_TEXT_MAX))).toHaveLength(CELL_TEXT_MAX);
+    const cut = truncateCell("a".repeat(2000));
+    expect(cut).toHaveLength(CELL_TEXT_MAX);
+    expect(cut.endsWith("…")).toBe(true);
+    // El corte caería entre las dos mitades de un emoji: se recorta antes.
+    const emoji = truncateCell(`${"a".repeat(CELL_TEXT_MAX - 2)}😀😀😀`);
+    expect(emoji).toBe(`${"a".repeat(CELL_TEXT_MAX - 2)}…`);
+    expect(xmlSafeText(emoji)).toBe(emoji);
+  });
+
+  it("una nota de 100 000 caracteres se recorta en Excel y PDF, y el PDF se genera rápido", async () => {
+    expect(longNote).toHaveLength(100_000);
+    expect(doc.rows[0].observations).toEqual([longNote]);
+    for (const key of ["observaciones", "justificacion"]) {
+      const xl = xlsxCell(column(key), doc.rows[0]) as string;
+      const pdf = pdfCell(column(key), doc.rows[0]);
+      for (const text of [xl, pdf]) {
+        expect(text.length).toBeLessThanOrEqual(CELL_TEXT_MAX);
+        expect(text.endsWith("…")).toBe(true);
+      }
+      expect(xl).toContain("Nota muy larga del registro.");
+    }
+
+    const started = performance.now();
+    const bytes = renderPdf(doc);
+    const elapsed = performance.now() - started;
+    expect(elapsed).toBeLessThan(5000);
+    // Sin el recorte la celda ocuparía decenas de páginas.
+    const pages = Buffer.from(bytes).toString("latin1").match(/\/Type \/Page\b/g) ?? [];
+    expect(pages.length).toBeLessThanOrEqual(3);
+
+    const xlsx = await renderXlsx(doc);
+    const zip = await JSZip.loadAsync(xlsx);
+    const strings = await zip.file("xl/sharedStrings.xml")!.async("string");
+    expect(strings).not.toContain(longNote.slice(0, 2000));
+    expect(strings).toContain("…");
   });
 });

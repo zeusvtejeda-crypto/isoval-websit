@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
 import { Disclaimer } from "@/components/layout/disclaimer";
 import { buttonClasses } from "@/components/ui/button";
 
@@ -8,8 +9,13 @@ export const metadata: Metadata = { title: "Página no encontrada" };
 /**
  * Página 404 general: direcciones que no existen y notFound() en rutas sin
  * not-found.tsx propio. Se muestra dentro del layout raíz.
+ *
+ * Se genera en cada solicitud (connection()): la CSP de src/proxy.ts lleva un
+ * nonce por solicitud y una versión prerenderizada no lo tendría, así que el
+ * navegador bloquearía todo su JavaScript.
  */
-export default function NotFound() {
+export default async function NotFound() {
+  await connection();
   return (
     <div className="flex min-h-dvh flex-col">
       <main id="contenido" className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-4 py-10">

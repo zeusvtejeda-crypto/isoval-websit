@@ -15,7 +15,7 @@
 
 **Next.js 16.4 tiene cambios importantes.** Antes de usar una API, consulta `node_modules/next/dist/docs/`. Puntos clave:
 - `params` y `searchParams` son `Promise` (usa `await`).
-- El middleware se llama `src/proxy.ts` (función `proxy`).
+- El middleware se llama `src/proxy.ts` (función `proxy`). Fija la CSP con nonce (`script-src 'nonce-…' 'strict-dynamic'`), que solo funciona en páginas renderizadas por solicitud: una página prerenderizada no lleva nonce y el navegador bloquea todo su JavaScript. Por eso `app/not-found.tsx` llama a `connection()` (el árbol de cada ruta lo incluye, así ninguna página se prerenderiza; no lo quites). `STATIC_ROUTES` del proxy (`/offline`, `/sin-acceso`) no tocan la sesión y usan la CSP sin nonce.
 - `cacheComponents` está **desactivado** a propósito (datos privados por usuario).
 
 ## Estructura
@@ -32,7 +32,8 @@ src/
   components/attendance/ hook useAttendanceAction (idempotencia y estado sin conexión)
   lib/
     auth.ts           DAL: getSessionUser, requireUser/Staff/Manager/Admin
-    supabase/         server.ts (RLS), client.ts (navegador), admin.ts (llave de servicio, solo servidor)
+    supabase/         server.ts (RLS), cookies.ts (cookies de sesión HttpOnly sin caducidad propia), admin.ts (llave de servicio, solo servidor); no hay cliente de Supabase en el navegador
+    csp.ts            Content-Security-Policy (nonce por solicitud; la aplica src/proxy.ts)
     attendance/       calc.ts (cálculos puros), load.ts (carga + cálculo), labels.ts (textos)
     data/             catálogos y paginación (fetchAll)
     import/parse.ts   lectura CSV/XLSX

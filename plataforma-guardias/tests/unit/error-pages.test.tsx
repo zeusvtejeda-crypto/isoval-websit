@@ -12,6 +12,8 @@ vi.mock("next/link", () => ({
 }));
 // global-error importa los estilos globales; en pruebas no hacen falta.
 vi.mock("@/app/globals.css", () => ({}));
+// not-found espera la solicitud (connection()) para renderizarse con el nonce de la CSP.
+vi.mock("next/server", () => ({ connection: async () => undefined }));
 
 import NotFound, { metadata as notFoundMetadata } from "@/app/not-found";
 import RootError from "@/app/error";
@@ -28,8 +30,8 @@ function serverError(message = "detalle interno: SELECT * FROM worker_private"):
 }
 
 describe("página no encontrada (app/not-found.tsx)", () => {
-  it("dice «Página no encontrada» en español y enlaza al inicio y al directorio", () => {
-    render(<NotFound />);
+  it("dice «Página no encontrada» en español y enlaza al inicio y al directorio", async () => {
+    render(await NotFound());
     expect(screen.getByRole("heading", { level: 1, name: "Página no encontrada" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ir al inicio" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Ver directorio" })).toHaveAttribute("href", "/directorio");

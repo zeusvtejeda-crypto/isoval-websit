@@ -114,7 +114,8 @@ type RelatedTable = "workers" | "shifts" | "attendance_sessions" | "correction_r
 /** Cuenta los registros relacionados con la instalación (todo lo que impide borrarla). */
 export async function countFacilityRelations(supabase: ServerSupabase, facilityId: string): Promise<FacilityRelations> {
   const countOf = async (table: RelatedTable) => {
-    const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true }).eq("facility_id", facilityId);
+    // facility_id es legible en todas estas tablas (algunas ya tienen permisos por columna).
+    const { count, error } = await supabase.from(table).select("facility_id", { count: "exact", head: true }).eq("facility_id", facilityId);
     if (error) throw new Error(error.message);
     return count ?? 0;
   };

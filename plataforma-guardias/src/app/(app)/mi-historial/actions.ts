@@ -17,6 +17,9 @@ export type CorrectionState =
     })
   | null;
 
+const PENDING_NEW_RECORD_MESSAGE =
+  "Ya existe una solicitud pendiente para agregar un registro en esta guardia. Espera a que se revise antes de enviar otra.";
+
 type AssignmentLookup = {
   id: string;
   worker_id: string;
@@ -82,9 +85,14 @@ export async function requestCorrection(_prev: CorrectionState, formData: FormDa
     p_reason: resolved.reason,
   });
   if (rpcError) {
-    // Índice único: una sola solicitud pendiente por registro (el mensaje de la función no lleva acentos
-    // y friendlyDbError lo convertiría en un genérico «duplicado»).
-    if (rpcError.code === "23505") return fail("Ya existe una solicitud pendiente para ese registro.", { sessionId: "Ya tiene una solicitud pendiente." });
+    // Índices únicos: una sola solicitud pendiente por registro y una sola de
+    // registro nuevo por guardia (se responde aquí para no depender del texto
+    // de la función).
+    if (rpcError.code === "23505") {
+      return resolved.sessionId
+        ? fail("Ya existe una solicitud pendiente para ese registro.", { sessionId: "Ya tiene una solicitud pendiente." })
+        : fail(PENDING_NEW_RECORD_MESSAGE, { sessionId: "Ya hay una solicitud pendiente de registro nuevo." });
+    }
     return fail(friendlyDbError(rpcError, "No se pudo enviar la solicitud."));
   }
 

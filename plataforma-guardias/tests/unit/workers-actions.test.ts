@@ -5,7 +5,9 @@ import type { WorkerImportRowResult } from "@/lib/import/workers";
 /**
  * Alta de trabajadores con la BD simulada: sede obligatoria, comprobación previa
  * del número de trabajador en todas las sedes (employee_number_taken) y alta
- * atómica por RPC (create_worker / create_workers) sin INSERT directos.
+ * atómica por RPC (create_worker / create_workers) sin INSERT directos. El
+ * número de trabajador nunca se escribe directamente en worker_private: solo
+ * con set_employee_number (que consume la cuota de comprobación).
  */
 
 const FAC = "d0000000-0000-4000-8000-000000000001";
@@ -121,7 +123,7 @@ describe("saveWorker: alta", () => {
 
   it("crea registro y datos privados en una sola llamada (create_worker)", async () => {
     h.rpcResult.employee_number_taken = { data: false, error: null };
-    h.rpcResult.create_worker = { data: NEW_ID, error: null };
+    h.rpcResult.create_worker = { data: { ok: true, id: NEW_ID }, error: null };
     const { redirect } = await run(form({ facility_id: FAC, employee_number: "E-78", phone: "311 000 0000", area: "Enfermería" }));
     expect(redirect).toBe(`/trabajadores/${NEW_ID}?guardado=1`);
     expect(h.rpc.map((r) => r.name)).toEqual(["employee_number_taken", "create_worker"]);
@@ -141,7 +143,8 @@ describe("saveWorker: alta", () => {
 
   it("si el número se registra entre la comprobación y el alta, no se crea nada y se marca el campo", async () => {
     h.rpcResult.employee_number_taken = { data: false, error: null };
-    h.rpcResult.create_worker = { data: null, error: { code: "23505", message: EMPLOYEE_NUMBER_TAKEN } };
+    // create_worker no lanza error (la cuota consumida se conserva): responde «taken».
+    h.rpcResult.create_worker = { data: { ok: false, taken: true, code: "23505", message: EMPLOYEE_NUMBER_TAKEN }, error: null };
     const { result, redirect } = await run(form({ facility_id: FAC, employee_number: "E-79" }));
     expect(redirect).toBeNull();
     expect(result).toMatchObject({ ok: false, fieldErrors: { employee_number: EMPLOYEE_NUMBER_TAKEN } });
@@ -155,7 +158,48 @@ describe("saveWorker: alta", () => {
   });
 });
 
+const privateWrites = () => h.writes.filter((w) => w.table === "worker_private" && w.op !== "update");
+
 describe("saveWorker: edición", () => {
+  it("cambia el número con set_employee_number y el teléfono directamente, sin escribir employee_number", async () => {
+    h.rows.workers = { id: WORKER, facility_id: FAC, change_reason: null };
+    h.rows.worker_private = { employee_number: "E-1", phone: null, change_reason: null };
+    h.rpcResult.employee_number_taken = { data: false, error: null };
+    h.rpcResult.set_employee_number = { data: "ok", error: null };
+    const { redirect } = await run(
+      form({ id: WORKER, facility_id: FAC, employee_number: "E-80", phone: "311 000 0000", change_reason: "Corrección de número" }),
+    );
+    expect(redirect).toBe(`/trabajadores/${WORKER}?guardado=1`);
+    expect(h.rpc.map((r) => r.name)).toEqual(["employee_number_taken", "set_employee_number"]);
+    expect(h.rpc[1].args).toEqual({ p_worker_id: WORKER, p_number: "E-80", p_reason: "Corrección de número" });
+    expect(privateWrites()).toEqual([
+      { table: "worker_private", op: "upsert", payload: { worker_id: WORKER, phone: "311 000 0000", change_reason: "Corrección de número" } },
+    ]);
+    for (const w of h.writes) expect(JSON.stringify(w.payload)).not.toContain("employee_number");
+  });
+
+  it("sin cambios en el número no llama a set_employee_number", async () => {
+    h.rows.workers = { id: WORKER, facility_id: FAC, change_reason: null };
+    h.rows.worker_private = { employee_number: "E-1", phone: null, change_reason: null };
+    h.rpcResult.employee_number_taken = { data: false, error: null };
+    const { redirect } = await run(form({ id: WORKER, facility_id: FAC, employee_number: "E-1", change_reason: "Cambio de área" }));
+    expect(redirect).toBe(`/trabajadores/${WORKER}?guardado=1`);
+    expect(h.rpc.map((r) => r.name)).toEqual(["employee_number_taken"]);
+    expect(privateWrites()).toEqual([]);
+  });
+
+  it("si set_employee_number responde «taken» se marca el campo y se avisa que los datos generales sí se guardaron", async () => {
+    h.rows.workers = { id: WORKER, facility_id: FAC, change_reason: null };
+    h.rows.worker_private = null;
+    h.rpcResult.employee_number_taken = { data: false, error: null };
+    h.rpcResult.set_employee_number = { data: "taken", error: null };
+    const { result, redirect } = await run(form({ id: WORKER, facility_id: FAC, employee_number: "E-81", change_reason: "Alta de número" }));
+    expect(redirect).toBeNull();
+    expect(result).toMatchObject({ ok: false, fieldErrors: { employee_number: EMPLOYEE_NUMBER_TAKEN } });
+    expect(result?.message).toContain("Se guardaron los datos generales");
+    expect(result?.message).toContain(EMPLOYEE_NUMBER_TAKEN);
+  });
+
   it("cambiar a un número ya registrado da error en el campo (excluye al propio trabajador)", async () => {
     h.rows.workers = { id: WORKER, facility_id: FAC, change_reason: null };
     h.rpcResult.employee_number_taken = { data: true, error: null };
@@ -219,6 +263,57 @@ describe("importación: servidor", () => {
     expect(out.get(2)).toEqual({ result: "creada" });
     expect(out.get(3)).toEqual({ result: "fallo", message: EMPLOYEE_NUMBER_TAKEN });
     expect(h.writes).toEqual([]);
+  });
+
+  it("create_workers: una fila con número registrado responde «taken» y se reporta con el mensaje propio", async () => {
+    h.rpcResult.create_workers = { data: [{ ok: false, taken: true, code: "23505", message: "x" }], error: null };
+    const out = await applyWorkerImport(supabase as never, [createRow(2, "Persona Uno", { employee_number: "OCULTO-2", phone: null })], "Importación de prueba");
+    expect(out.get(2)).toEqual({ result: "fallo", message: EMPLOYEE_NUMBER_TAKEN });
+  });
+
+  function updateRow(row: number, privateData: WorkerImportRowResult["privateData"], patch: WorkerImportRowResult["patch"] = null): WorkerImportRowResult {
+    return {
+      row,
+      status: "actualizacion",
+      messages: [],
+      name: "Persona Uno",
+      facilityLabel: null,
+      targetId: WORKER,
+      targetCode: null,
+      create: null,
+      patch,
+      privateData,
+      changes: ["número de trabajador"],
+      noop: false,
+    };
+  }
+
+  it("actualización: el número cambia con set_employee_number y el teléfono solo si cambió", async () => {
+    h.rows = { worker_private: [{ worker_id: WORKER, employee_number: "E-1", phone: "311 000 0001" }] };
+    h.rpcResult.set_employee_number = { data: "ok", error: null };
+    const out = await applyWorkerImport(supabase as never, [updateRow(2, { employee_number: "E-2", phone: "311 000 0001" })], "Importación de prueba");
+    expect(out.get(2)).toEqual({ result: "actualizada" });
+    expect(h.rpc).toEqual([{ name: "set_employee_number", args: { p_worker_id: WORKER, p_number: "E-2", p_reason: "Importación de prueba" } }]);
+    expect(h.writes).toEqual([]);
+  });
+
+  it("actualización: número registrado en otra sede tras cambiar datos generales", async () => {
+    h.rows = { worker_private: [{ worker_id: WORKER, employee_number: null, phone: null }] };
+    h.rpcResult.set_employee_number = { data: "taken", error: null };
+    const out = await applyWorkerImport(
+      supabase as never,
+      [updateRow(2, { employee_number: "OCULTO-2", phone: "311 000 0002" }, { area: "Enfermería" })],
+      "Importación de prueba",
+    );
+    expect(out.get(2)).toEqual({
+      result: "actualizada",
+      message: `Se actualizaron los datos generales y el teléfono, pero no el número de trabajador: ${EMPLOYEE_NUMBER_TAKEN}`,
+    });
+    expect(h.writes.map((w) => [w.table, w.op])).toEqual([
+      ["workers", "update"],
+      ["worker_private", "upsert"],
+    ]);
+    expect(h.writes[1].payload).toEqual({ worker_id: WORKER, phone: "311 000 0002", change_reason: "Importación de prueba" });
   });
 
   it("si el lote completo falla, ninguna fila se reporta como creada", async () => {

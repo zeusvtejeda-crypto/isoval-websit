@@ -39,11 +39,18 @@ async function clearReasonIfSame(
   return error;
 }
 
+/** Resultado de create_worker: {ok: true, id} o {ok: false, taken: true, …}. */
+function parseCreateWorker(data: unknown): { id: string | null; taken: boolean } {
+  const o = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
+  return { id: o.ok === true && typeof o.id === "string" ? o.id : null, taken: o.taken === true };
+}
+
 /**
  * Alta o edición de un trabajador. El alta crea el registro y sus datos
- * privados en una sola transacción (create_worker). La edición escribe workers
- * y después worker_private (solo si hay datos privados o ya existía la fila).
- * Al guardar redirige a la ficha.
+ * privados en una sola transacción (create_worker). La edición escribe workers,
+ * después el teléfono en worker_private (si cambió) y el número de trabajador
+ * con set_employee_number (si cambió): authenticated no escribe
+ * employee_number directamente. Al guardar redirige a la ficha.
  */
 export async function saveWorker(_prev: SaveResult | null, formData: FormData): Promise<SaveResult> {
   const user = await requireManager();
@@ -91,7 +98,8 @@ export async function saveWorker(_prev: SaveResult | null, formData: FormData): 
   }
 
   // Número de trabajador repetido en cualquier sede, también en las que la cuenta
-  // no ve (la función solo responde sí/no). El índice único cubre las carreras.
+  // no ve (la función solo responde sí/no). Las carreras las cubren create_worker
+  // y set_employee_number, que responden «taken» sin crear ni cambiar nada.
   const employeeNumber = v.employee_number ?? null;
   if (employeeNumber) {
     const { data: taken, error } = await supabase.rpc("employee_number_taken", { p_number: employeeNumber, p_except_worker: v.id });
@@ -101,7 +109,7 @@ export async function saveWorker(_prev: SaveResult | null, formData: FormData): 
 
   // Alta: registro y datos privados juntos; si algo falla no queda nada creado.
   if (!v.id) {
-    const { data: newId, error } = await supabase.rpc("create_worker", {
+    const { data, error } = await supabase.rpc("create_worker", {
       p_full_name: v.full_name,
       p_state_id: v.state_id,
       p_facility_id: v.facility_id,
@@ -114,13 +122,13 @@ export async function saveWorker(_prev: SaveResult | null, formData: FormData): 
       p_phone: v.phone,
       p_change_reason: v.change_reason ?? "Alta de trabajador",
     });
-    if (error || !newId) {
-      const message = friendlyDbError(error, "No se pudo registrar el trabajador.");
-      if (error?.code === "23505" && /número de trabajador/.test(message)) {
-        return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { employee_number: message } };
-      }
-      return { ok: false, message };
-    }
+    if (error) return { ok: false, message: friendlyDbError(error, "No se pudo registrar el trabajador.") };
+    const created = parseCreateWorker(data);
+    // Número registrado entre la comprobación y el alta: la función no crea nada
+    // y responde «taken» (sin error, para conservar la cuota consumida).
+    if (created.taken) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: { employee_number: EMPLOYEE_NUMBER_TAKEN } };
+    if (!created.id) return { ok: false, message: "No se pudo registrar el trabajador." };
+    const newId = created.id;
     revalidatePath("/trabajadores");
     revalidatePath(`/trabajadores/${newId}`);
     redirect(`/trabajadores/${newId}?guardado=1`);
@@ -149,7 +157,8 @@ export async function saveWorker(_prev: SaveResult | null, formData: FormData): 
   if (error) return { ok: false, message: friendlyDbError(error, "No se pudo guardar el trabajador.") };
   if (!data || data.length === 0) return { ok: false, message: "No tienes permiso para modificar este registro." };
 
-  // Datos privados: solo si hay datos o ya existía la fila.
+  // Datos privados: el teléfono se escribe directamente; el número de trabajador
+  // solo con set_employee_number (consume la cuota de comprobación).
   const phone = v.phone ?? null;
   const { data: existingPrivate, error: privateReadError } = await supabase
     .from("worker_private")
@@ -157,24 +166,41 @@ export async function saveWorker(_prev: SaveResult | null, formData: FormData): 
     .eq("worker_id", workerId)
     .maybeSingle();
   let privateError = privateReadError;
-  if (!privateError && (employeeNumber || phone || existingPrivate)) {
-    const same = existingPrivate && existingPrivate.employee_number === employeeNumber && existingPrivate.phone === phone;
-    if (!same) privateError = await clearReasonIfSame(supabase, "worker_private", workerId, existingPrivate?.change_reason, reason);
-    if (!same && !privateError) {
-      const { error } = await supabase
-        .from("worker_private")
-        .upsert({ worker_id: workerId, employee_number: employeeNumber, phone, change_reason: reason }, { onConflict: "worker_id" });
+  // Lo que no se guardó (para el mensaje): sin leer la fila no se escribe nada.
+  let missing = "el número de trabajador ni el teléfono";
+  let phoneWritten = false;
+  let numberTaken = false;
+  const phoneChanged = (existingPrivate?.phone ?? null) !== phone;
+  const numberChanged = (existingPrivate?.employee_number ?? null) !== employeeNumber;
+  if (!privateError && phoneChanged) {
+    privateError = await clearReasonIfSame(supabase, "worker_private", workerId, existingPrivate?.change_reason, reason);
+    if (!privateError) {
+      const { error } = await supabase.from("worker_private").upsert({ worker_id: workerId, phone, change_reason: reason }, { onConflict: "worker_id" });
       privateError = error;
     }
+    if (privateError) missing = numberChanged ? "el número de trabajador ni el teléfono" : "el teléfono";
+    else phoneWritten = true;
+  }
+  if (!privateError && numberChanged) {
+    const { data: outcome, error } = await supabase.rpc("set_employee_number", {
+      p_worker_id: workerId,
+      p_number: employeeNumber ?? "",
+      p_reason: reason ?? "",
+    });
+    privateError = error;
+    numberTaken = !error && outcome === "taken";
+    missing = "el número de trabajador";
   }
 
   revalidatePath("/trabajadores");
   revalidatePath(`/trabajadores/${workerId}`);
 
-  if (privateError) {
+  if (numberTaken || privateError) {
+    const saved = phoneWritten ? "los datos generales y el teléfono" : "los datos generales";
     return {
       ok: false,
-      message: `Se guardaron los datos generales, pero no el número de trabajador ni el teléfono: ${friendlyDbError(privateError)}`,
+      message: `Se guardaron ${saved}, pero no ${missing}: ${numberTaken ? EMPLOYEE_NUMBER_TAKEN : friendlyDbError(privateError)}`,
+      ...(numberTaken ? { fieldErrors: { employee_number: EMPLOYEE_NUMBER_TAKEN } } : {}),
     };
   }
   redirect(`/trabajadores/${workerId}?guardado=1`);
@@ -232,7 +258,8 @@ export async function deleteWorker(_prev: ActionResult | null, formData: FormDat
   if (!worker) return { ok: false, message: "El trabajador no existe o ya fue eliminado." };
 
   const countOf = async (table: "shift_assignments" | "attendance_sessions" | "correction_requests" | "profiles", column: string) => {
-    const { count, error: countError } = await supabase.from(table).select("*", { count: "exact", head: true }).eq(column, worker_id);
+    // Solo la columna filtrada: profiles no concede SELECT de todas sus columnas (change_reason).
+    const { count, error: countError } = await supabase.from(table).select(column, { count: "exact", head: true }).eq(column, worker_id);
     if (countError) throw new Error(countError.message);
     return count ?? 0;
   };
