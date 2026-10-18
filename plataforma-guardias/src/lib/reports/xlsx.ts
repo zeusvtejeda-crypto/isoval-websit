@@ -1,7 +1,7 @@
 import "server-only";
 import ExcelJS from "exceljs";
 import { minutesToHours } from "@/lib/time";
-import { DETAIL_COLUMNS, EXPORT_NOTICES, GAP_LABEL, GROUP_COLUMNS, headerLines, totalsEntries, xlsxCell, type ReportDocument } from "./document";
+import { DETAIL_COLUMNS, EXPORT_NOTICES, GAP_LABEL, GROUP_COLUMNS, headerLines, totalsEntries, xlsxCell, xmlSafeText, type ReportDocument } from "./document";
 import type { GroupSummary } from "./rows";
 
 const BRAND = "FF14532D"; // verde oscuro
@@ -108,6 +108,14 @@ export async function renderXlsx(doc: ReportDocument): Promise<Uint8Array<ArrayB
     "Orden alfabético por nombre. No es una clasificación ni un ranking de personas.",
   );
 
+  // Ningún texto (notas, nombres, motivos) puede llevar caracteres que XML no admite.
+  wb.eachSheet((sheet) =>
+    sheet.eachRow((row) =>
+      row.eachCell((cell) => {
+        if (typeof cell.value === "string") cell.value = xmlSafeText(cell.value);
+      }),
+    ),
+  );
   const buffer = await wb.xlsx.writeBuffer();
   return new Uint8Array(buffer as ArrayBuffer);
 }

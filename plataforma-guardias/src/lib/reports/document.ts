@@ -300,6 +300,16 @@ export function contentDisposition(fileName: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
+/**
+ * Caracteres que XML 1.0 no admite (controles salvo tabulador y saltos de línea,
+ * U+FFFE/U+FFFF y sustitutos sueltos): un solo carácter así en una nota dejaría
+ * el Excel exportado ilegible para muchas herramientas.
+ */
+const XML_INVALID = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+export function xmlSafeText(text: string): string {
+  return text.replace(XML_INVALID, "");
+}
+
 const WIN_ANSI_EXTRA = new Set("€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ");
 
 /**

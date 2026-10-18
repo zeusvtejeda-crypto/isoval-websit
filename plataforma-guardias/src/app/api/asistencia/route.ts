@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getSessionUser } from "@/lib/auth";
+import { xmlSafeText } from "@/lib/reports/document";
 import { friendlyDbError } from "@/lib/actions";
+
+/** Sin caracteres de control ni invisibles que dañen reportes y exportaciones. */
+const cleanText = (value: string) => xmlSafeText(value).trim();
 
 /**
  * Registro de entrada/salida. La hora es SIEMPRE la del servidor (función
@@ -13,8 +17,8 @@ const bodySchema = z.object({
   action: z.enum(["entrada", "salida"]),
   assignmentId: z.string().uuid(),
   requestId: z.string().uuid(),
-  notes: z.string().trim().max(500).optional().nullable(),
-  reason: z.string().trim().max(500).optional().nullable(),
+  notes: z.string().max(500).transform(cleanText).optional().nullable(),
+  reason: z.string().max(500).transform(cleanText).optional().nullable(),
   /** Código QR temporal (opcional). Si viene, el registro es con método «qr». */
   qrToken: z
     .string()

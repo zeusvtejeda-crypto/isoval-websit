@@ -20,6 +20,7 @@ import {
   DETAIL_COLUMNS,
   GAP_LABEL,
   buildReportDocument,
+  xmlSafeText,
   contentDisposition,
   describeFilters,
   exportFileName,
@@ -31,6 +32,7 @@ import {
   type ReportMeta,
 } from "@/lib/reports/document";
 import { renderXlsx } from "@/lib/reports/xlsx";
+import JSZip from "jszip";
 import { renderPdf } from "@/lib/reports/pdf";
 import type { IncidentFilter, ReportFilters } from "@/lib/reports/params";
 
@@ -635,6 +637,21 @@ describe("render de Excel y PDF", () => {
     const summaryTexts: string[] = [];
     summary.eachRow((row) => row.eachCell((cell) => summaryTexts.push(String(cell.value ?? ""))));
     expect(summaryTexts.join("\n")).toContain("Resumen por trabajador");
+  });
+
+  it("quita del Excel los caracteres que XML no admite (una nota no puede dañar el archivo)", async () => {
+    const dirty = buildReportDocument(
+      meta,
+      attachIncidentNotes(buildReportRows([shift], { now: NOW }), [
+        { assignment_id: "x1", incident_type: "llegada_tardia", note: "Retraso\uFFFF del\u0007 transporte\uFFFE", justified: true },
+      ]),
+    );
+    const bytes = await renderXlsx(dirty);
+    const zip = await JSZip.loadAsync(bytes);
+    const strings = await zip.file("xl/sharedStrings.xml")!.async("string");
+    expect(strings).not.toMatch(/[\uFFFE\uFFFF\u0007]/);
+    expect(strings).toContain("Llegada tardía: Retraso del transporte");
+    expect(xmlSafeText("a\u0000b\uD800c\tz\n")).toBe("abc\tz\n");
   });
 
   it("genera un PDF horizontal con el mismo contenido", () => {
