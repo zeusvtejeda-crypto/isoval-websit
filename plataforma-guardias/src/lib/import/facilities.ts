@@ -134,7 +134,8 @@ const HEADER_ALIASES: Record<string, FacilityImportHeader> = {
 
 export function canonicalHeader(header: string): FacilityImportHeader | null {
   if ((FACILITY_IMPORT_HEADERS as readonly string[]).includes(header)) return header as FacilityImportHeader;
-  return HEADER_ALIASES[header] ?? null;
+  // Solo claves propias: un encabezado como «constructor» no debe resolver a Object.prototype.
+  return Object.hasOwn(HEADER_ALIASES, header) ? HEADER_ALIASES[header] : null;
 }
 
 export type HeaderCheck = { missing: FacilityImportHeader[]; unknown: string[]; duplicated: FacilityImportHeader[] };

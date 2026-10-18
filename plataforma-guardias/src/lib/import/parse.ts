@@ -11,6 +11,10 @@ export type ParsedFile = { headers: string[]; rows: RawRow[] };
 
 export const MAX_IMPORT_ROWS = 5000;
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+/** Ninguna plantilla llega a 40 columnas: un límite holgado evita filas enormes. */
+export const MAX_IMPORT_COLUMNS = 100;
+const TOO_MANY_ROWS = `El archivo tiene más de ${MAX_IMPORT_ROWS} filas. Divídelo en partes.`;
+const TOO_MANY_COLUMNS = `El archivo tiene más de ${MAX_IMPORT_COLUMNS} columnas. Usa la plantilla.`;
 
 export function normalizeHeader(h: string): string {
   return h
@@ -23,6 +27,7 @@ export function normalizeHeader(h: string): string {
 }
 
 function cleanRows(headers: string[], rows: string[][]): ParsedFile {
+  if (headers.length > MAX_IMPORT_COLUMNS || rows.some((r) => r.length > MAX_IMPORT_COLUMNS)) throw new Error(TOO_MANY_COLUMNS);
   const norm = headers.map(normalizeHeader);
   const out: RawRow[] = [];
   for (const r of rows) {
@@ -33,9 +38,7 @@ function cleanRows(headers: string[], rows: string[][]): ParsedFile {
     });
     out.push(row);
   }
-  if (out.length > MAX_IMPORT_ROWS) {
-    throw new Error(`El archivo tiene más de ${MAX_IMPORT_ROWS} filas. Divídelo en partes.`);
-  }
+  if (out.length > MAX_IMPORT_ROWS) throw new Error(TOO_MANY_ROWS);
   return { headers: norm.filter(Boolean), rows: out };
 }
 
@@ -62,7 +65,9 @@ export const MIXED_ENCODING_MESSAGE =
   "El archivo mezcla codificaciones (UTF-8 y otra): guárdalo completo como «CSV UTF-8» o .xlsx para no dañar los acentos.";
 
 export function parseCsv(text: string): ParsedFile {
-  const result = Papa.parse<string[]>(text.replace(/^﻿/, ""), { skipEmptyLines: "greedy" });
+  // Se deja de leer al pasar el límite (encabezado + filas + 1 para saber que sobra).
+  const result = Papa.parse<string[]>(text.replace(/^﻿/, ""), { skipEmptyLines: "greedy", preview: MAX_IMPORT_ROWS + 2 });
+  if (result.data.length > MAX_IMPORT_ROWS + 1) throw new Error(TOO_MANY_ROWS);
   if (result.errors.length && result.data.length === 0) {
     throw new Error("No se pudo leer el CSV: " + result.errors[0].message);
   }
@@ -181,14 +186,21 @@ export async function parseXlsx(buffer: ArrayBuffer): Promise<ParsedFile> {
   }
   await assertInflatedSizeWithin(buffer);
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch {
+    // Los mensajes de la biblioteca (en inglés y con detalles internos) no se muestran.
+    throw new Error("El archivo de Excel no es válido o está dañado.");
+  }
   const sheet = workbook.worksheets[0];
   if (!sheet) throw new Error("El archivo de Excel no tiene hojas.");
+  if (sheet.actualRowCount > MAX_IMPORT_ROWS + 1) throw new Error(TOO_MANY_ROWS);
+  if (sheet.actualColumnCount > MAX_IMPORT_COLUMNS) throw new Error(TOO_MANY_COLUMNS);
   const matrix: string[][] = [];
   sheet.eachRow({ includeEmpty: false }, (row) => {
     const values = row.values as ExcelJS.CellValue[];
     // row.values es base 1
-    matrix.push(values.slice(1).map(cellToString));
+    matrix.push(values.slice(1, MAX_IMPORT_COLUMNS + 2).map(cellToString));
   });
   const [headers = [], ...rows] = matrix;
   return cleanRows(headers, rows);

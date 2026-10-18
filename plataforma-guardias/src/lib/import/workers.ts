@@ -77,7 +77,8 @@ const HEADER_ALIASES: Record<string, WorkerImportHeader> = {
 
 export function canonicalHeader(header: string): WorkerImportHeader | null {
   if ((WORKER_IMPORT_HEADERS as readonly string[]).includes(header)) return header as WorkerImportHeader;
-  return HEADER_ALIASES[header] ?? null;
+  // Solo claves propias: un encabezado como «constructor» no debe resolver a Object.prototype.
+  return Object.hasOwn(HEADER_ALIASES, header) ? HEADER_ALIASES[header] : null;
 }
 
 export type HeaderCheck = { missing: WorkerImportHeader[]; unknown: string[]; duplicated: WorkerImportHeader[] };

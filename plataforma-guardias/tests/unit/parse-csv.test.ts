@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIXED_ENCODING_MESSAGE, decodeCsvBytes, parseCsv, parseImportFile } from "@/lib/import/parse";
+import { MAX_IMPORT_COLUMNS, MAX_IMPORT_ROWS, MIXED_ENCODING_MESSAGE, decodeCsvBytes, parseCsv, parseImportFile } from "@/lib/import/parse";
 
 /** Bytes en Windows-1252 (lo que guarda Excel con «CSV (delimitado por comas)»). */
 function windows1252(text: string): Uint8Array<ArrayBuffer> {
@@ -45,5 +45,20 @@ describe("codificación de CSV", () => {
     expect(() => decodeCsvBytes(mixed)).toThrow(MIXED_ENCODING_MESSAGE);
     // Un Windows-1252 completo con acentos y signos habituales sigue leyéndose.
     expect(decodeCsvBytes(windows1252("Ñuño «Ánimas» · Tepic, Bahía\r\n"))).toBe("Ñuño «Ánimas» · Tepic, Bahía\r\n");
+  });
+});
+
+describe("límites del archivo", () => {
+  it("rechaza más filas o columnas que el límite sin procesar todo el archivo", () => {
+    const many = "nombre_oficial,municipio\n" + "A,Tepic\n".repeat(MAX_IMPORT_ROWS + 50);
+    expect(() => parseCsv(many)).toThrow(/más de 5000 filas/);
+    expect(parseCsv("nombre_oficial,municipio\n" + "A,Tepic\n".repeat(MAX_IMPORT_ROWS)).rows).toHaveLength(MAX_IMPORT_ROWS); // justo en el límite
+    const wide = "nombre_oficial\n" + Array(MAX_IMPORT_COLUMNS + 1).fill("x").join(",") + "\n";
+    expect(() => parseCsv(wide)).toThrow(/columnas/);
+  });
+
+  it("un Excel dañado se rechaza con un mensaje propio, sin el error interno de la biblioteca", async () => {
+    const file = new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4, 5])], "dañado.xlsx");
+    await expect(parseImportFile(file)).rejects.toThrow("El archivo de Excel no es válido o está dañado.");
   });
 });
