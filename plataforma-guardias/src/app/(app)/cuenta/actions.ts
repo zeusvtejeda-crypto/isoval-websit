@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import type { ActionResult } from "@/lib/actions";
-import { passwordChangeWait, recordPasswordChangeFailure, recordPasswordChangeSuccess } from "@/lib/security/shared-limits";
+import { isAuthServiceError, recordPasswordChangeSuccess, refundPasswordChange, reservePasswordChange } from "@/lib/security/shared-limits";
 
 const schema = z
   .object({
@@ -33,7 +33,7 @@ export async function changePassword(_prev: ActionResult | null, formData: FormD
   }
   if (!user.email) return { ok: false, message: "Tu cuenta no tiene correo asociado. Contacta a administración." };
 
-  const wait = await passwordChangeWait(user.id);
+  const wait = await reservePasswordChange(user.id);
   if (wait > 0) {
     return { ok: false, message: `Demasiados intentos con la contraseña actual. Espera ${Math.ceil(wait / 60_000)} min e inténtalo de nuevo.` };
   }
@@ -41,8 +41,12 @@ export async function changePassword(_prev: ActionResult | null, formData: FormD
   const supabase = await createClient();
   // Confirma la contraseña actual antes de cambiarla.
   const { error: authError } = await supabase.auth.signInWithPassword({ email: user.email, password: parsed.data.current });
+  if (isAuthServiceError(authError)) {
+    await refundPasswordChange(user.id);
+    return { ok: false, message: "No se pudo conectar con el servicio de acceso. Inténtalo de nuevo en unos minutos." };
+  }
   if (authError) {
-    await recordPasswordChangeFailure(user.id);
+    // El intento ya quedó contado al reservarlo.
     return { ok: false, message: "La contraseña actual no es correcta.", fieldErrors: { current: "Contraseña incorrecta." } };
   }
   await recordPasswordChangeSuccess(user.id);

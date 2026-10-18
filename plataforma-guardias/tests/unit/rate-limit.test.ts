@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FailureLimiter, clientIp, loginKeys } from "@/lib/security/rate-limit";
+import { FailureLimiter, clientIp, ipSubject, loginKeys } from "@/lib/security/rate-limit";
 
 describe("FailureLimiter", () => {
   it("bloquea tras N fallos dentro de la ventana y se libera al vencer", () => {
@@ -30,6 +30,48 @@ describe("FailureLimiter", () => {
     for (let i = 0; i < 50; i++) l.fail(`basura-${i}`, 10 + i);
     expect(l.retryAfter("victima", 100)).toBeGreaterThan(0);
     expect(l.size).toBeLessThanOrEqual(3);
+  });
+});
+
+describe("FailureLimiter: reserva y reembolso", () => {
+  it("reserva antes de verificar: el intento N bloquea los siguientes; un reembolso lo libera", () => {
+    const l = new FailureLimiter(3, 60_000, 120_000);
+    expect([l.attempt("k", 0), l.attempt("k", 1), l.attempt("k", 2)]).toEqual([0, 0, 0]);
+    expect(l.attempt("k", 3)).toBeGreaterThan(0); // bloqueado: no cuenta más
+    l.refund("k", 4); // el tercer intento no llegó a verificarse
+    expect(l.retryAfter("k", 5)).toBe(0);
+    expect(l.attempt("k", 6)).toBe(0);
+    expect(l.attempt("k", 7)).toBeGreaterThan(0);
+  });
+
+  it("al vencer el bloqueo vuelve a contar desde cero y el éxito limpia", () => {
+    const l = new FailureLimiter(2, 60_000, 1_000);
+    l.attempt("k", 0);
+    l.attempt("k", 1);
+    expect(l.attempt("k", 500)).toBeGreaterThan(0);
+    expect(l.attempt("k", 1_002)).toBe(0);
+    expect(l.attempt("k", 1_003)).toBe(0);
+    expect(l.retryAfter("k", 1_004)).toBeGreaterThan(0);
+    l.succeed("k");
+    expect(l.attempt("k", 1_005)).toBe(0);
+  });
+});
+
+describe("ipSubject", () => {
+  it("IPv4 tal cual, IPv4 dentro de IPv6 como IPv4 e IPv6 agrupada por /64", () => {
+    expect(ipSubject("203.0.113.5")).toBe("203.0.113.5");
+    expect(ipSubject("::ffff:203.0.113.5")).toBe("203.0.113.5");
+    expect(ipSubject("2001:db8:1:2::1")).toBe("2001:db8:1:2::/64");
+    expect(ipSubject("2001:0DB8:0001:0002:ffff:eeee:dddd:cccc")).toBe("2001:db8:1:2::/64");
+    expect(ipSubject("[2001:db8::1]")).toBe("2001:db8:0:0::/64");
+    expect(ipSubject("fe80::1%eth0")).toBe("fe80:0:0:0::/64");
+  });
+
+  it("direcciones distintas de la misma red /64 comparten las claves de límite", () => {
+    const a = loginKeys("2001:db8:aa:bb::1", "a@b.mx");
+    const b = loginKeys("2001:db8:aa:bb:1234:5678:9abc:def0", "a@b.mx");
+    expect(a).toEqual(b);
+    expect(loginKeys("2001:db8:aa:bc::1", "a@b.mx").ip).not.toBe(a.ip);
   });
 });
 

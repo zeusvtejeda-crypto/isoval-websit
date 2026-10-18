@@ -1218,9 +1218,10 @@ export type Database = {
       log_password_reset: { Args: { p_reason: string; p_user_id: string }; Returns: number };
       purge_demo_data: { Args: Record<PropertyKey, never>; Returns: Json };
       qr_token_context: { Args: { p_token: string }; Returns: Json };
+      rate_limit_attempt: { Args: { p_items: Json }; Returns: number };
       rate_limit_clear: { Args: { p_items: Json }; Returns: undefined };
-      rate_limit_fail: { Args: { p_items: Json }; Returns: number };
-      rate_limit_retry_after: { Args: { p_items: Json }; Returns: number };
+      rate_limit_fail: { Args: { p_items: Json }; Returns: undefined };
+      rate_limit_refund: { Args: { p_items: Json }; Returns: undefined };
       request_correction: {
         Args: {
           p_assignment_id: string;
