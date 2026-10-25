@@ -398,3 +398,32 @@ con advertencia), importar respaldo, borrar datos de ejemplo, borrar todo, servi
 
 ## Extensiones
 (Agregar aquí cualquier API pública nueva que un módulo haya necesitado: archivo, nombre, firma, motivo.)
+
+### Base/datos (util, crypto, store, seed)
+
+- `js/core/store.js` — `guardar()` devuelve `Promise<boolean>` (true si persistió). Las escrituras se encolan y se
+  serializan: cada llamada toma una instantánea del estado, de modo que `agregar/actualizar/eliminar` pueden seguir
+  siendo síncronos y `bloquear()` justo después no pierde cambios. Motivo: AES-GCM es asíncrono.
+- `js/core/store.js` — evento adicional `'error'` (carga: `Error`) emitido cuando falla la persistencia (p. ej. cuota
+  de localStorage). La promesa de `guardar()` resuelve `false` en ese caso en vez de rechazar, para que las llamadas
+  internas sin `await` no generen rechazos no manejados.
+- `js/core/store.js` — códigos de error (mensaje del `Error`) además de los del contrato: `BLOQUEADO` (operar sin
+  desbloquear), `SIN_BOVEDA` (desbloquear/cambiar contraseña sin bóveda), `BOVEDA_EXISTE` (`crear` sobre una bóveda ya
+  existente; usar `borrarTodo()` antes), `DATOS_CORRUPTOS` (la contraseña abre el verificador pero no los datos),
+  `CONTRASENA_VACIA`, `CONTRASENA_REQUERIDA` (importar respaldo cifrado de otra bóveda sin contraseña),
+  `JSON_INVALIDO`, `FORMATO_DESCONOCIDO` (importar), `COLECCION_INVALIDA`, `AMBITO_INVALIDO` (registro de
+  cuentas/movimientos/prestamos/presupuestos/metas sin `ambito` 'empresa'|'personal'; metas asume 'personal'),
+  `REGISTRO_INVALIDO`, `ID_DUPLICADO`.
+- `js/core/store.js` — `borrarDatosEjemplo()` devuelve el número de registros eliminados; también limpia `pagos[]`
+  anidados con id `_demo`. `exportarJSON({cifrado:true})` devuelve la bóveda tal como está persistida (última escritura
+  completada); `importarJSON` requiere estar desbloqueado, acepta la contraseña del respaldo y re-cifra con la clave
+  actual (la contraseña de la bóveda no cambia). Si el respaldo cifrado tiene el mismo `salt` que la bóveda abierta, no
+  requiere contraseña. `actualizar()` ignora cambios a `id` y `creado`.
+- `js/core/seed.js` — las transferencias entre cuentas del MISMO ámbito usan la categoría `'Transferencia entre
+  cuentas'` (no está en las listas de ingreso/gasto porque las transferencias nunca cuentan en utilidad ni
+  presupuestos). Las cruzadas usan 'Retiro de socio' / 'Aportación de capital' según el contrato.
+- `js/core/util.js` — `fmtFecha`/`fmtFechaLarga` se construyen a mano (no con `Intl.DateTimeFormat`) para que Safari y
+  Chrome muestren exactamente '25 oct 2026' / 'sábado, 25 de octubre de 2026'. `agrupar(arr, fn)` acepta también el
+  nombre de un campo. `csv()` usa CRLF, acepta arreglos (unidos con '; ') y booleanos ('sí'/'no').
+- `tests/store.test.js` — `node tests/store.test.js`: pruebas de util, crypto, store y seed en Node (polyfill mínimo de
+  localStorage; WebCrypto nativo de Node 22). Salida `OK n pruebas` o lista de fallos y `process.exit(1)`.

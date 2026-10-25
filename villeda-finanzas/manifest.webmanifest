@@ -1,0 +1,26 @@
+{
+  "name": "VILLEDA Finanzas",
+  "short_name": "Finanzas",
+  "description": "Panel financiero privado de VILLEDA Inc y finanzas personales, con asistente local. Los datos se guardan cifrados en el dispositivo.",
+  "lang": "es-MX",
+  "dir": "ltr",
+  "id": "./index.html",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F3F5F9",
+  "theme_color": "#1D4ED8",
+  "categories": ["finance", "business", "productivity"],
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Panel", "url": "./index.html#/panel", "description": "Resumen financiero" },
+    { "name": "Asistente", "url": "./index.html#/asistente", "description": "Pregunta sobre tus finanzas" },
+    { "name": "Empresa", "url": "./index.html#/empresa", "description": "Cuentas y movimientos de VILLEDA Inc" },
+    { "name": "Personal", "url": "./index.html#/personal", "description": "Bancos, ahorro y deudas" }
+  ]
+}
