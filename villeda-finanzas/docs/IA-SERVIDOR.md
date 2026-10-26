@@ -337,8 +337,10 @@ Notas:
 - La URL debe ser `https://` cuando la PWA se abre por `https://` (el navegador bloquea contenido mixto).
 - Si abres la PWA desde `file://` en la Mac, el navegador envía `Origin: null` y el servidor lo rechaza. Es
   deliberado: permitir `null` abriría el servidor a cualquier archivo local. Usa la PWA servida por HTTP(S).
-- El comportamiento exacto del botón "Probar" lo define `js/modules/ajustes.js` **[por confirmar]**; el
-  servidor responde tanto al `GET` de salud como al `POST` de preguntas.
+- El botón **Probar** de Ajustes (`js/modules/ajustes.js`) envía `POST { pregunta: 'ping', contexto: {} }` a la URL,
+  espera 10 s como máximo y da por buena una respuesta JSON con `texto`; muestra el tiempo de respuesta o el error
+  (URL inválida, `http://` desde una página `https://`, sin respuesta, respuesta sin `texto`). El servidor responde
+  tanto al `GET` de salud como al `POST` de preguntas.
 
 ## 8. Lista de seguridad
 

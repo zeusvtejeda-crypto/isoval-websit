@@ -26,6 +26,10 @@ window.VF = window.VF || {};
     { ruta: 'ajustes', titulo: 'Ajustes', icono: 'ajustes', nav: 'mas' }
   ];
   var INFERIOR = ['panel', 'empresa', 'personal', 'asistente'];
+  /* Regla del ámbito en la cabecera (VF.ui.ambitoActivo): al entrar a CUALQUIER ruta el router fija primero el
+     ámbito implícito de la ruta (empresa/personal/facturas/cobros/proveedores) o lo limpia (null) para que nunca
+     quede el badge de la vista anterior. Los módulos con selector (panel, préstamos, presupuestos, reportes)
+     lo sobrescriben dentro de su render() con el segmento activo; asistente y ajustes quedan sin ámbito. */
   var AMBITO_POR_RUTA = { empresa: 'empresa', personal: 'personal', facturas: 'empresa', cobros: 'empresa', proveedores: 'empresa' };
 
   function esc(s) {

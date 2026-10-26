@@ -61,17 +61,28 @@ window.VF = window.VF || {};
     return { max: Math.ceil(maximo / paso) * paso, paso: paso };
   }
 
-  /* Registro de callbacks resueltos por delegación */
+  /* Registro de callbacks resueltos por delegación.
+     Se poda (a) al re-registrar, con un pequeño retardo para que el HTML recién construido ya esté en el
+     documento, y (b) en hashchange. Una entrada sólo se elimina si su elemento no está en el DOM y tiene más
+     de GRACIA_REGISTRO_MS: así un string construido y mostrado poco después (p. ej. el cuerpo de un modal)
+     conserva su callback. */
   var registro = {};
+  var GRACIA_REGISTRO_MS = 1500;
+  var temporizadorPoda = null;
   function registrar(tipo, fn) {
     var id = idInterno(tipo);
-    registro[id] = { tipo: tipo, fn: fn };
+    registro[id] = { tipo: tipo, fn: fn, creado: Date.now() };
+    clearTimeout(temporizadorPoda);
+    temporizadorPoda = setTimeout(podarRegistro, 250);
     return id;
   }
-  function podarRegistro() {
+  function podarRegistro(todo) {
+    var ahora = Date.now();
     Object.keys(registro).forEach(function (id) {
+      if (!todo && ahora - (registro[id].creado || 0) < GRACIA_REGISTRO_MS) return;
       if (!document.querySelector('[data-vf-id="' + id + '"]')) delete registro[id];
     });
+    return Object.keys(registro).length;
   }
 
   /* ---------- iconos ------------------------------------------------------ */
@@ -179,6 +190,12 @@ window.VF = window.VF || {};
       '<div class="tarjeta-cuerpo">' + (o.cuerpo || '') + '</div></section>';
   }
 
+  /**
+   * tabla({ columnas, filas, vacio, onFila })
+   * En < 720 px cada <td> se vuelve un contenedor flex (etiqueta ::before + contenido). Para que un `render`
+   * que devuelve varios nodos (strong + br + small…) no se fragmente en columnas, el contenido de cada celda
+   * se envuelve en un único <div class="td-contenido">; en escritorio ese div es un bloque transparente.
+   */
   function tabla(opciones) {
     var o = opciones || {};
     var columnas = o.columnas || [];
@@ -200,7 +217,7 @@ window.VF = window.VF || {};
           var valor = fila ? fila[c.clave] : '';
           var contenido = typeof c.render === 'function' ? c.render(valor, fila, i) : esc(valor == null ? '' : valor);
           html += '<td data-titulo="' + esc(c.titulo) + '" class="' + (c.alinear === 'derecha' ? 'num' : c.alinear === 'centro' ? 'centro' : '') + '">' +
-            (contenido == null ? '' : contenido) + '</td>';
+            '<div class="td-contenido">' + (contenido == null ? '' : contenido) + '</div></td>';
         });
         html += '</tr>';
       });
@@ -716,7 +733,7 @@ window.VF = window.VF || {};
     return '<div class="vacio">' +
       '<span class="vacio-ilustracion" aria-hidden="true">' + icono('vacio') + '</span>' +
       '<p>' + esc(mensaje || 'Sin movimientos') + '</p>' +
-      (accionTexto ? '<button type="button" class="btn btn-primario btn-chico"' + (id ? ' data-vf-id="' + id + '"' : '') + '>' + esc(accionTexto) + '</button>' : '') +
+      (accionTexto ? '<button type="button" class="btn btn-primario"' + (id ? ' data-vf-id="' + id + '"' : '') + '>' + esc(accionTexto) + '</button>' : '') +
       '</div>';
   }
 
@@ -810,7 +827,7 @@ window.VF = window.VF || {};
     var sig = botones[(i + (e.key === 'ArrowRight' ? 1 : botones.length - 1)) % botones.length];
     if (sig) { e.preventDefault(); sig.focus(); sig.click(); }
   });
-  window.addEventListener('hashchange', function () { cerrarModales(); setTimeout(podarRegistro, 100); });
+  window.addEventListener('hashchange', function () { cerrarModales(); setTimeout(function () { podarRegistro(true); }, 100); });
 
   VF.ui = {
     el: el,
@@ -834,6 +851,7 @@ window.VF = window.VF || {};
     segmentos: segmentos,
     vacio: vacio,
     fechaRelativa: fechaRelativa,
-    ambitoActivo: ambitoActivo
+    ambitoActivo: ambitoActivo,
+    podar: podarRegistro       // podar(todo?) → número de callbacks vivos (pruebas / depuración)
   };
 })(window.VF);

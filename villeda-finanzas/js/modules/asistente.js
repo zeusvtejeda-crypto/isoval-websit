@@ -1106,8 +1106,9 @@ window.VF = window.VF || {};
   var hayVista = typeof document !== 'undefined' && !!(VF.ui && VF.store && VF.router);
 
   /**
-   * Estilos propios del módulo. css/app.css sólo aporta .chat / .burbuja; lo demás (formulario pegajoso,
-   * tabla compacta, lista de respuesta) se inyecta aquí como auxiliar privado (pendiente: mover a app.css).
+   * Estilos propios del módulo. Desde la integración viven en css/app.css (sección "Asistente", que fija
+   * `--vf-asistente-css: 1` en :root como señal). Esta copia sólo se inyecta como respaldo si la hoja de
+   * estilos cargada no la trae (p. ej. una caché antigua del service worker).
    */
   var ESTILOS = [
     '.asistente-tarjeta{padding:14px}',
@@ -1159,6 +1160,9 @@ window.VF = window.VF || {};
 
   function asegurarEstilos() {
     if (document.getElementById('asistente-estilos')) return;
+    try {
+      if (String(getComputedStyle(document.documentElement).getPropertyValue('--vf-asistente-css') || '').trim()) return;
+    } catch (e) { /* sin getComputedStyle: se inyecta el respaldo */ }
     var s = document.createElement('style');
     s.id = 'asistente-estilos';
     s.textContent = ESTILOS;

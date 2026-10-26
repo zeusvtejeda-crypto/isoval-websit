@@ -130,18 +130,19 @@ pero la única garantía real es **exportar respaldos** (§7).
 
 **Hacer un respaldo** (recomendado cada semana y antes de cualquier cambio en el dispositivo):
 
-1. **Ajustes → Exportar respaldo**.
-2. Elige **Cifrado** (recomendado). El archivo `.json` sólo se puede leer con la contraseña que tenía la app
-   en ese momento. Si eliges **Plano**, el archivo es legible por cualquiera: guárdalo únicamente en un lugar
-   seguro (disco cifrado, bóveda del gestor de contraseñas).
+1. **Ajustes → Respaldo → Exportar**.
+2. Pulsa **Respaldo cifrado (.vf.json)** (recomendado). Ese archivo sólo se puede leer con la contraseña que tenía
+   la app en ese momento. El botón **Sin cifrar (.json)** pide confirmar en un aviso (**Exportar sin cifrar**) porque
+   el archivo es legible por cualquiera: guárdalo únicamente en un lugar seguro (disco cifrado, bóveda del gestor de
+   contraseñas).
 3. Guarda el archivo en iCloud Drive, un USB o una carpeta respaldada. Pon la fecha en el nombre.
 
 **Restaurar un respaldo:**
 
 1. Abre la app (si es un dispositivo nuevo, primero crea una contraseña; puede ser distinta a la del respaldo).
-2. **Ajustes → Importar respaldo** y elige el archivo.
-3. Si el respaldo está cifrado con otra contraseña, la app te la pedirá. Después, los datos se guardan con la
-   contraseña actual del dispositivo.
+2. **Ajustes → Respaldo → Elegir archivo de respaldo…**, elige el archivo y confirma con **Reemplazar e importar**.
+3. Si el respaldo está cifrado con otra contraseña, escríbela en el campo **Contraseña del respaldo** del mismo aviso
+   (déjalo vacío si es tu contraseña actual). Después, los datos se guardan con la contraseña actual del dispositivo.
 4. La importación **reemplaza** todo lo que hubiera en la app. Si el dispositivo tenía capturas recientes,
    expórtalas antes.
 
@@ -154,8 +155,8 @@ Mientras la app tenga datos ficticios verás un banner amarillo arriba. Para emp
 
 1. **Ajustes → Borrar datos de ejemplo**. Se eliminan únicamente los registros ficticios (cuentas, movimientos,
    clientes, facturas, etc.); lo que tú hayas capturado se conserva.
-2. Si prefieres partir de cero, **Ajustes → Borrar todo** elimina la bóveda completa y vuelve a la pantalla
-   "Crear contraseña" (pide doble confirmación).
+2. Si prefieres partir de cero, **Ajustes → Zona de peligro → Borrar todo** elimina la bóveda completa y vuelve a la
+   pantalla "Crear contraseña" (pide confirmar y, después, escribir **BORRAR**).
 
 Los datos de ejemplo son inventados: clientes, proveedores, RFC y montos no corresponden a nadie real.
 
@@ -235,12 +236,13 @@ puedes gastar sin dejar a VILLEDA sin fondos para nómina, proveedores o impuest
   node tests/store.test.js    # util, crypto, store y seed con localStorage simulado
   node tests/smoke.js         # E2E con Playwright (chromium) sobre un servidor http local
   ```
-  Para `smoke.js` hace falta Playwright: `npm i -D playwright && npx playwright install chromium`.
+  Para `smoke.js` hace falta Playwright: `npm i -D playwright && npx playwright install chromium`. `VF_SMOKE=B,C`
+  limita los escenarios de navegador (A móvil claro, B escritorio oscuro, C `file://`, D móvil oscuro / olvidé).
   Las capturas quedan en `tests/capturas/` (ignoradas por git).
 - **Publicación:** copiar la carpeta tal cual a la ruta `/villeda-finanzas/` del sitio. El `robots.txt` raíz
-  ya contiene `Disallow: /villeda-finanzas/` y el sitemap no la incluye. Sugerencia adicional: añadir
-  `<meta name="robots" content="noindex, nofollow">` en `index.html` y la cabecera `X-Robots-Tag: noindex`
-  si el hosting lo permite.
+  ya contiene `Disallow: /villeda-finanzas/` y el sitemap no la incluye; `index.html` lleva además
+  `<meta name="robots" content="noindex, nofollow">`. Si el hosting lo permite, añade la cabecera
+  `X-Robots-Tag: noindex`. Al publicar una versión nueva sube `VF_VERSION` en `sw.js`.
 - **Hoja de ruta** (importador de estados de cuenta, backend con sincronización, IA, bancos, CFDI, app
   nativa): `docs/HOJA-DE-RUTA.md`. Investigación bancaria: `docs/CONEXION-BANCOS.md`. Servidor de IA:
   `docs/IA-SERVIDOR.md`.

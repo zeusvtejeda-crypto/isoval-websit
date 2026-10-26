@@ -585,7 +585,7 @@ window.VF = window.VF || {};
       var fecha = dia >= 1 && dia <= 31 ? proximaFechaDia(h, dia) : h;
       items.push({
         fecha: fecha, tipo: 'pago', ambito: c.ambito,
-        concepto: 'Tarjeta ' + (c.nombre || '') + ' · pago de saldo',
+        concepto: (/^\s*tarjeta\b/i.test(c.nombre || '') ? '' : 'Tarjeta ') + (c.nombre || '') + ' · pago de saldo',
         monto: r2(-saldo), origen: { coleccion: 'cuentas', id: c.id }
       });
     });

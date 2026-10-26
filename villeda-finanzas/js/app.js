@@ -275,7 +275,8 @@ window.VF = window.VF || {};
     if (vista) vista.innerHTML = '';
     var toasts = $('#toasts');
     if (toasts) toasts.innerHTML = '';
-    mostrarBloqueo('desbloquear');
+    // Sin modo: "Desbloquear" si la bóveda sigue existiendo, "Crear contraseña" si se borró (borrarTodo).
+    mostrarBloqueo();
   }
 
   function bloquearAhora() {
@@ -392,5 +393,9 @@ window.VF = window.VF || {};
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
   else iniciar();
 
-  VF.app = { version: '1.0.0', bloquear: bloquearAhora, aplicarTema: aplicarTema };
+  /**
+   * VF.app.mostrarBloqueo(modo?) — muestra la pantalla de bloqueo. modo: 'crear' | 'desbloquear' | omitido
+   * (elige 'crear' si no existe bóveda). Útil para módulos que borran la bóveda desde dentro de la app.
+   */
+  VF.app = { version: '1.0.1', bloquear: bloquearAhora, aplicarTema: aplicarTema, mostrarBloqueo: mostrarBloqueo };
 })(window.VF);

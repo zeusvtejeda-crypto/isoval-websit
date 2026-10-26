@@ -12,8 +12,10 @@
  *
  * abrir(viewport, opciones):
  *   viewport: 'movil' (390×844, isMobile, táctil) | 'escritorio' (1280×800) | { width, height, isMobile, hasTouch }
- *   opciones: { url (por defecto la del servidor), colorScheme: 'light'|'dark', navegar: true }
+ *   opciones: { url (por defecto la del servidor), colorScheme: 'light'|'dark', navegar: true, reducedMotion: true }
  *   La página devuelta lleva page.vf = { errores, viewport, colorScheme, context }.
+ * Además: esperarModal(page, { titulo? }) (espera el modal y los ~80 ms del foco automático), esperarSinModal(page),
+ *   llenarCampo(page, nombre, valor) (campo [data-campo] del último modal), descarga(page, accion) → { nombre, texto, bytes }.
  */
 const path = require('path');
 const { chromium } = require('playwright');
@@ -43,36 +45,76 @@ async function obtenerNavegador() {
 }
 
 /**
- * Filtro de ruido: los módulos de js/modules/ aún no existen (llegan en la siguiente fase), así que el
- * navegador reporta un 404 / ERR_FILE_NOT_FOUND por cada <script>. Esos avisos no son defectos del shell.
- * TODO módulos: eliminar este filtro cuando existan los diez archivos de js/modules/.
- */
-function esRuidoDeModuloAusente(mensaje) {
-  const texto = String(mensaje.texto || '');
-  const url = String(mensaje.url || '');
-  const esCargaFallida = /Failed to load resource|ERR_FILE_NOT_FOUND|404/.test(texto);
-  return esCargaFallida && /\/js\/modules\/[a-z]+\.js/.test(url + ' ' + texto);
-}
-
-/**
  * Engancha (una vez) los oyentes de pageerror y console.error y devuelve el arreglo vivo de errores.
- * Cada entrada: { tipo: 'pageerror'|'console', texto, url }.
+ * Cada entrada: { tipo: 'pageerror'|'console', texto, url }. No se filtra nada: los diez módulos existen y
+ * cualquier error de consola cuenta (un fetch a un servidor de IA inalcanzable sí produce un console.error del
+ * navegador; la prueba que lo provoque debe descartarlo explícitamente).
  */
 function recogerErrores(page) {
   if (page.vf && page.vf.errores) return page.vf.errores;
   const errores = [];
-  page.vf = Object.assign({}, page.vf, { errores: errores, ignorados: [] });
+  page.vf = Object.assign({}, page.vf, { errores: errores });
   page.on('pageerror', function (err) {
     errores.push({ tipo: 'pageerror', texto: err && err.message ? err.message : String(err), url: page.url() });
   });
   page.on('console', function (msg) {
     if (msg.type() !== 'error') return;
     const loc = msg.location ? msg.location() : null;
-    const entrada = { tipo: 'console', texto: msg.text(), url: loc && loc.url ? loc.url : '' };
-    if (esRuidoDeModuloAusente(entrada)) { page.vf.ignorados.push(entrada); return; }
-    errores.push(entrada);
+    errores.push({ tipo: 'console', texto: msg.text(), url: loc && loc.url ? loc.url : '' });
   });
   return errores;
+}
+
+/**
+ * Tiempos que conviene respetar en E2E:
+ *  - VF.ui.modal() enfoca el primer campo con setTimeout(20 ms): esperar ~80 ms tras abrir un modal antes de
+ *    escribir en él (si no, un page.fill puede ganarle al foco automático y el valor se pierde al enfocar).
+ *    esperarModal() ya incluye esa espera.
+ *  - Los módulos repintan con VF.store.on('cambio') tras 30 ms: tras guardar, esperar ≥ 80 ms antes de leer el DOM.
+ *  - Tras importar un respaldo, el repintado sustituye el <input type=file>: esperar ~150 ms antes de otro setInputFiles.
+ */
+const ESPERA_MODAL_MS = 80;
+const ESPERA_REPINTADO_MS = 120;
+
+/** Espera a que haya un modal visible (el último abierto) y a que su foco automático haya ocurrido. → Locator del .modal */
+async function esperarModal(page, opciones) {
+  const o = opciones || {};
+  await page.waitForSelector('.modal-fondo .modal', { state: 'visible', timeout: o.timeout || 15000 });
+  if (o.titulo) {
+    await page.waitForFunction(function (t) {
+      var modales = document.querySelectorAll('.modal-fondo .modal');
+      var ultimo = modales[modales.length - 1];
+      return ultimo && new RegExp(t, 'i').test((ultimo.querySelector('.modal-cabecera h2') || {}).textContent || '');
+    }, o.titulo);
+  }
+  await page.waitForTimeout(ESPERA_MODAL_MS);
+  return page.locator('.modal-fondo .modal').last();
+}
+
+/** Espera a que no quede ningún modal abierto. */
+async function esperarSinModal(page, timeout) {
+  await page.waitForSelector('.modal-fondo', { state: 'detached', timeout: timeout || 15000 });
+  await page.waitForTimeout(ESPERA_REPINTADO_MS);
+}
+
+/** Rellena un campo de VF.ui.formulario dentro del último modal: [data-campo="nombre"] (input, select o textarea). */
+async function llenarCampo(page, nombre, valor) {
+  const modal = page.locator('.modal-fondo .modal').last();
+  const campo = modal.locator('[data-campo="' + nombre + '"]');
+  const etiqueta = await campo.evaluate(function (n) { return n.tagName.toLowerCase(); });
+  if (etiqueta === 'select') await campo.selectOption(String(valor));
+  else { await campo.fill(''); await campo.fill(String(valor)); }
+  await campo.dispatchEvent('change');
+}
+
+/** Pulsa `accion` (función o selector) y devuelve la descarga leída: { nombre, ruta, texto, bytes }. */
+async function descarga(page, accion, timeout) {
+  const esperando = page.waitForEvent('download', { timeout: timeout || 20000 });
+  if (typeof accion === 'function') await accion(); else await page.click(accion);
+  const d = await esperando;
+  const ruta = await d.path();
+  const bytes = require('fs').readFileSync(ruta);
+  return { nombre: d.suggestedFilename(), ruta: ruta, bytes: bytes, texto: bytes.toString('utf8') };
 }
 
 /** Abre un contexto nuevo (almacenamiento limpio) con el viewport indicado y navega a la app. */
@@ -96,6 +138,9 @@ async function abrir(viewport, opciones) {
   page.setDefaultTimeout(15000);
   page.vf = { viewport: typeof viewport === 'string' ? viewport : 'personalizado', colorScheme: o.colorScheme || 'light', context: context };
   recogerErrores(page);
+  // html { scroll-behavior: smooth } hace que los clics de Playwright sobre elementos bajo el pliegue fallen por
+  // intercepción mientras anima el scroll; con reducedMotion la app desactiva animaciones y scroll suave.
+  if (o.reducedMotion !== false) await page.emulateMedia({ reducedMotion: 'reduce' });
   if (o.navegar !== false) {
     let url = o.url;
     if (!url) {
@@ -198,6 +243,12 @@ module.exports = {
   hayScrollHorizontal: hayScrollHorizontal,
   quitarToasts: quitarToasts,
   captura: captura,
+  esperarModal: esperarModal,
+  esperarSinModal: esperarSinModal,
+  llenarCampo: llenarCampo,
+  descarga: descarga,
+  ESPERA_MODAL_MS: ESPERA_MODAL_MS,
+  ESPERA_REPINTADO_MS: ESPERA_REPINTADO_MS,
   cerrar: cerrar,
   VIEWPORTS: VIEWPORTS,
   URL_FILE: URL_FILE,

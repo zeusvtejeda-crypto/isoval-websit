@@ -311,7 +311,7 @@ window.VF = window.VF || {};
           (f.vencido > 0 ? '<br><span class="badge badge-negativo">Vencido ' + esc(fmt(f.vencido)) + '</span>' : '<br><small class="texto-3">' + esc(plural(f.cuentas, 'cuenta')) + '</small>') + '</span>';
       } },
       { clave: 'id', titulo: 'Acciones', alinear: 'derecha', render: function (id) {
-        return '<span class="fila" style="justify-content:flex-end;gap:2px;flex-wrap:nowrap">' +
+        return '<span class="celda-acciones">' +
           btnIcono('prov-nueva-cxp', 'pago', null, 'Nueva cuenta por pagar', ' data-proveedor="' + esc(id) + '"') +
           btnIcono('prov-editar-proveedor', 'editar', id, 'Editar proveedor') +
           btnIcono('prov-eliminar-proveedor', 'eliminar', id, 'Eliminar proveedor') + '</span>';
@@ -550,7 +550,7 @@ window.VF = window.VF || {};
       { clave: 'estado', titulo: 'Estado', render: function (v) { return badgeEstadoCxP(v); } },
       { clave: 'id', titulo: 'Acciones', alinear: 'derecha', render: function (id, fila) {
         var puedePagar = fila.pendiente > 0 && fila.estado !== 'cancelada';
-        return '<span class="fila" style="justify-content:flex-end;gap:2px;flex-wrap:nowrap">' +
+        return '<span class="celda-acciones">' +
           (puedePagar ? '<button type="button" class="btn btn-secundario btn-chico" data-accion="prov-pagar-cxp" data-id="' + esc(id) + '">' + VF.ui.icono('pago') + 'Pagar</button>' : '') +
           btnIcono('prov-editar-cxp', 'editar', id, 'Editar cuenta por pagar') +
           btnIcono('prov-eliminar-cxp', 'eliminar', id, 'Eliminar cuenta por pagar') + '</span>';
@@ -917,7 +917,7 @@ window.VF = window.VF || {};
       { clave: 'monto', titulo: 'Monto', alinear: 'derecha', render: function (v) { return '<strong class="cifra">' + esc(fmt(v)) + '</strong>'; } },
       { clave: 'estado', titulo: 'Estado', render: function (v, fila) { return badgeEstadoComision(fila); } },
       { clave: 'id', titulo: 'Acciones', alinear: 'derecha', render: function (id, fila) {
-        return '<span class="fila" style="justify-content:flex-end;gap:2px;flex-wrap:nowrap">' +
+        return '<span class="celda-acciones">' +
           (fila.estado === 'pendiente' ? '<button type="button" class="btn btn-secundario btn-chico" data-accion="prov-pagar-comision" data-id="' + esc(id) + '">' + VF.ui.icono('pago') + 'Pagar</button>' : '') +
           (fila.estado === 'pendiente' ? btnIcono('prov-editar-comision', 'editar', id, 'Editar comisión') : '') +
           btnIcono('prov-eliminar-comision', 'eliminar', id, 'Eliminar comisión') + '</span>';

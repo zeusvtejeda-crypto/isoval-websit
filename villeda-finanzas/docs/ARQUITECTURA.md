@@ -620,8 +620,8 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
 - Layout (defecto corregido): dentro de `.rejilla-2` las columnas con tarjetas apiladas van envueltas en
   `<div class="tarjeta-cuerpo">`. Un elemento de rejilla tiene `min-width:auto`, y las listas con `.lista-titulo`
   (`white-space:nowrap`) ensanchaban la pista hasta ~900 px → scroll horizontal en 390 px. `.tarjeta-cuerpo` es la única
-  clase de css/app.css cuyo único efecto es `min-width:0`. **Pendiente para css/app.css**: `.rejilla-2 > *, .rejilla-3 > *,
-  .rejilla-4 > * { min-width: 0 }` (o una utilidad `.columna`); entonces el panel puede volver a `<div>` simples. Los badges
+  clase de css/app.css cuyo único efecto es `min-width:0`. **Resuelto en «Integración total»**: css/app.css aplica
+  `.rejilla > *, .rejilla-2 > *, .rejilla-3 > *, .rejilla-4 > * { min-width: 0 }`, así que el panel puede volver a `<div>` simples. Los badges
   de ámbito/estado van al INICIO de `.lista-sub` porque la línea se trunca con elipsis en móvil.
 - Pruebas E2E del panel (Playwright + `tests/ayuda.js`; capturas `tests/capturas/panel-*.png` en 390×844 y 1280×800, claro
   y oscuro): KPIs = VF.calc en los tres ámbitos, próximos 7 días (tonos), gráfica (tabla gemela = serieMensual), por cobrar
@@ -703,9 +703,9 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   revisar/confirmar, eliminar con confirmación, vinculados sólo lectura, reactividad a 'cambio', metas (crear/editar/
   eliminar, progreso), deudas, `?cuenta=`, estados vacíos, sin scroll horizontal (vista y modales), botones ≥ 44 px.
   Capturas: `tests/capturas/empresa-*.png` y `personal-*.png`.
-- **Pendientes detectados en núcleo/CSS (no corregidos aquí)**: ver el informe de entrega del módulo; en resumen
-  `.segmento` (38 px), `.chip` (40 px), `.btn-chico` (36 px) y el botón de `VF.ui.vacio()` (usa `btn-chico`) quedan por
-  debajo del área táctil mínima de §5; el registro de callbacks de `VF.ui` sólo se poda en `hashchange`.
+- **Pendientes detectados en núcleo/CSS** (resueltos en «Integración total»): `.segmento`, `.chip` y `.btn-chico` miden
+  44 px con puntero grueso (se compactan sólo con `(hover: hover) and (pointer: fine)`), el botón de `VF.ui.vacio()` ya no
+  usa `btn-chico` y el registro de callbacks de `VF.ui` se poda al re-registrar.
 
 ### Módulo Ajustes (js/modules/ajustes.js)
 
@@ -741,12 +741,11 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   no repintar en bucle ni perder lo que el usuario está escribiendo; importar y borrar ejemplo sí repintan (y muestran toast).
 - Contraseñas: se leen sin `trim` (leerFormulario recorta los textos); los campos `tipo:'contrasena'` reciben el botón
   `.btn-ver[data-ver]` que ya gestiona app.js globalmente. El cambio exige nueva ≥ 8, confirmación igual y distinta de la actual.
-- Borrar todo: `VF.store.borrarTodo()` emite 'bloqueado' y app.js muestra la pantalla de bloqueo en modo "Desbloquear"
-  aunque ya no exista bóveda (`alBloquear` → `mostrarBloqueo('desbloquear')`). ajustes.js lo corrige con un auxiliar privado
-  que muestra `#form-crear`, oculta `#form-desbloquear` y enfoca `#crear-contrasena`. **Pendiente app.js**: en `alBloquear`
-  llamar `mostrarBloqueo()` sin modo (elige "crear" si `!existeBoveda()`), o exponer `VF.app.mostrarBloqueo(modo)`.
-- Pendientes menores: `docs/IA-SERVIDOR.md` (listado en §1) no existe todavía; la "Zona de peligro" usa `.aviso.aviso-error`
-  dentro de una tarjeta normal (opcional en css/app.css: `.tarjeta-peligro` con borde `--negativo`).
+- Borrar todo: `VF.store.borrarTodo()` emite 'bloqueado' y app.js (desde «Integración total») muestra la pantalla de
+  bloqueo sin modo fijo: "Crear contraseña" si ya no existe bóveda, "Desbloquear" si existe. El auxiliar privado que
+  ajustes.js usaba para corregirlo se retiró; también existe `VF.app.mostrarBloqueo(modo)`.
+- La "Zona de peligro" usa `VF.ui.tarjeta({ clase: 'tarjeta-peligro' })` (borde `--negativo`, definido en css/app.css desde
+  «Integración total») con `.aviso.aviso-error` dentro.
 - Pruebas E2E (Playwright + `tests/ayuda.js`, 76 comprobaciones; capturas `tests/capturas/ajustes-*.png` en 390×844 y
   1280×800, claro y oscuro): guardar ajustes y persistencia tras recarga, tema inmediato sin repintado, escape de HTML en
   nombres, cambio de contraseña (errores en línea; la vieja deja de abrir), exportar cifrado y plano (descargas leídas y
@@ -790,8 +789,8 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   curso y devuelve el foco al control equivalente (teclado).
 - Estilos: el módulo no añade CSS; los ajustes de layout (ancho del input dentro de la celda, acciones alineadas a la derecha,
   ancho mínimo del nombre del mes, `flex-wrap` del `.lista-item` en edición) van como atributos `style` sobre clases existentes.
-  **Pendiente opcional para css/app.css**: utilidades `.celda-acciones { display:flex; justify-content:flex-end; gap:4px }` y
-  `.lista-item.envolver { flex-wrap: wrap }` para retirar esos estilos en línea.
+  **Resuelto en «Integración total»**: css/app.css define `.celda-acciones` y `.lista-item.envolver`, y el módulo las usa
+  (quedan en línea sólo `margin-left:auto`, `flex:none` y anchos de inputs).
 - Pruebas E2E (Playwright + `tests/ayuda.js`; capturas `tests/capturas/presupuestos-*.png` en 390×844 y 1280×800, claro y oscuro):
   KPIs, filas, totales, tonos/aria-valuenow de las barras y "Sin presupuesto" iguales a `VF.calc.presupuestoVsReal` en ambos ámbitos y
   tres meses; alta válida/inválida; edición (Enter, Esc, inválida); eliminación con confirmación; asignar desde "Sin presupuesto";
@@ -904,9 +903,9 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   `reportes-rango` / `reportes-fecha`; nada actúa con la bóveda bloqueada. `VF.store.on('cambio')` repinta `#reportes-cuerpo`
   (retardo 30 ms) sólo si `VF.router.actual().ruta === 'reportes'`.
 - Layout: en empresa, "Gastos por categoría" y "Resumen de IVA" van a ancho completo porque en media columna de `.rejilla-2` la
-  leyenda de `graficaDona` (`overflow-wrap: anywhere`) parte palabras ("Proveedo / res"). **Pendiente opcional para css/app.css**:
-  `.leyenda-dona .leyenda-etq { overflow-wrap: normal; hyphens: manual }` o dejar que la leyenda pase bajo la dona cuando la
-  tarjeta mide menos de ~520 px; con eso la dona podría volver a media columna.
+  leyenda de `graficaDona` partía palabras ("Proveedo / res"). Desde «Integración total» `.leyenda-etq` usa
+  `overflow-wrap: break-word; hyphens: manual` (sólo parte una palabra si ella sola no cabe); la dona sigue a ancho completo
+  en empresa (volver a media columna es opcional).
 - Pruebas E2E ejecutadas con Playwright y `tests/ayuda.js` (script temporal borrado; capturas `tests/capturas/reportes-*.png` en
   390×844 y 1280×800, claro, oscuro y vista de impresión): KPIs, estado de resultados, flujo, categorías, antigüedad e IVA = VF.calc
   evaluado en la página; los tres CSV leídos del disco (BOM UTF-8, encabezados, 2 decimales, sólo registros del ámbito y rango,
@@ -966,9 +965,10 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
 - Rutas que el asistente ENVÍA (los módulos destino deberían honrarlas): `cobros`, `proveedores?pestana=cxp|comisiones`,
   `prestamos`, `reportes`, `panel?ambito=…`, `empresa?cuenta=<id>` / `personal?cuenta=<id>` y
   `presupuestos?ambito=<ambito>&periodo=YYYY-MM` (parámetros nuevos; presupuestos.js debería preseleccionar ámbito y mes).
-- **Estilos**: css/app.css sólo tiene `.chat` y `.burbuja`; el módulo inyecta `<style id="asistente-estilos">` con sus clases
-  `asistente-*` (barra de entrada pegajosa sobre la barra inferior, tabla compacta, lista de respuesta, chips en fila
-  desplazable en móvil y envueltos en escritorio). **Pendiente para css/app.css**: mover ahí ese bloque.
+- **Estilos**: las clases `asistente-*` (barra de entrada pegajosa sobre la barra inferior, tabla compacta, lista de
+  respuesta, chips en fila desplazable en móvil y envueltos en escritorio) viven en css/app.css desde «Integración total»,
+  que fija `--vf-asistente-css: 1` en `:root`. El módulo conserva una copia y sólo la inyecta como `<style
+  id="asistente-estilos">` si esa variable no existe (hoja de estilos antigua en caché).
 - Pruebas: motor en Node con el seed (≥55 formulaciones con/sin acentos, mayúsculas y coloquiales; cifras de las 5 preguntas
   del brief contra `VF.calc`; separación de ámbitos; escape de nombres; estado vacío) y E2E con Playwright (chips, Enter,
   `?pregunta=`, `'cambio'`, endpoint caído → respaldo local, bloqueo borra historial, `file://`, 390×844 y 1280×800, claro y
@@ -1085,9 +1085,9 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   `<div>` (auxiliar `celda`) y los botones de icono de acciones en `<span></span><span class="truncar">…</span>` (auxiliar
   `celdaAcciones`: el span vacío los empuja a la derecha con `justify-content: space-between`). Las tablas dentro de un modal
   de 560 px usan la variante `compacta` (sin columna "Fechas"; el vencimiento va bajo el folio) para no desbordar.
-  **Pendiente para css/app.css**: una regla `.tabla.tabla-responsiva td > *` que agrupe el contenido (o documentar en
-  `VF.ui.tabla` que los `render` multilínea deben devolver un solo elemento), y un estilo para `.btn[aria-pressed="true"]`
-  (hoy el botón "Agrupar por cliente" alterna `btn-primario`/`btn-secundario`).
+  **Resuelto en «Integración total»**: `VF.ui.tabla` envuelve el contenido de cada celda en `<div class="td-contenido">`
+  (un solo hijo flex en móvil), por lo que los `render` multilínea ya no se fragmentan, y css/app.css estiliza
+  `.btn[aria-pressed="true"]` (el botón sigue alternando `btn-primario`/`btn-secundario`, compatible).
 - Pruebas E2E ejecutadas con Playwright + `tests/ayuda.js` (script temporal ya borrado): sin `pageerror` ni `console.error`
   propios; filtros = `porCobrar`; crear cliente; crear factura con folio F-0009, IVA $1,600 / total $11,600 y casilla
   "sin IVA" → $0 / $10,000; folio duplicado rechazado; pago > pendiente rechazado; pago parcial (estado `parcial`,
@@ -1098,3 +1098,41 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   `?cliente=`, desagrupar; estado vacío. Capturas `tests/capturas/facturas-*.png` y `cobros-*.png` en 390×844 y
   1280×800, claro y oscuro. Nota: durante la fase paralela, los `pageerror` "Unexpected end of input" provienen de otros
   módulos a medio escribir (se verificó con `node --check`), no de facturas.js.
+
+### Integración total (núcleo, CSS, pruebas E2E completas)
+
+- **app.js** — `alBloquear()` llama `mostrarBloqueo()` sin modo: "Desbloquear" si existe bóveda, "Crear contraseña" si
+  `borrarTodo()` la eliminó. API nueva `VF.app.mostrarBloqueo(modo?)` ('crear' | 'desbloquear' | omitido). `VF.app.version`
+  = '1.0.1' y `sw.js` `VF_VERSION = '1.0.1'` (el SHELL del SW ya listaba los 27 archivos; smoke.js lo verifica).
+- **js/core/ui.js** — el registro de callbacks (`tabla.onFila`, `segmentos`, `vacio`) se poda al re-registrar (250 ms
+  después, sólo entradas sin elemento en el DOM y con más de 1.5 s de vida) y en `hashchange` (todas las huérfanas).
+  `VF.ui.podar(todo?)` → número de callbacks vivos. `VF.ui.tabla` envuelve cada celda en `<div class="td-contenido">`
+  (en < 720 px es el único hijo flex del `td`; en escritorio es un bloque transparente), así un `render` que devuelve varios
+  nodos no se fragmenta. `VF.ui.vacio()` usa un `.btn.btn-primario` normal (44 px).
+- **js/core/calc.js** — `vencimientos()` no antepone "Tarjeta " si el nombre de la cuenta ya empieza con "Tarjeta".
+- **js/core/router.js** — regla del ámbito en la cabecera (documentada en el archivo): al entrar a cualquier ruta el router
+  fija el ámbito implícito (empresa/personal/facturas/cobros/proveedores) o lo limpia; los módulos con selector (panel,
+  préstamos, presupuestos, reportes) lo sobrescriben en su `render()`; asistente y ajustes quedan sin badge. Nunca queda
+  el ámbito de la vista anterior.
+- **css/app.css** — área táctil ≥ 44 px en `.btn-chico`, `.chip` y `.segmento` (se compactan con
+  `@media (hover: hover) and (pointer: fine)`); `.rejilla* > * { min-width: 0 }`; `.leyenda-dona .leyenda-etq` con
+  `overflow-wrap: break-word`; `.btn[aria-pressed="true"]` (salvo primario/peligro/`.btn-ver`); `.btn-icono.btn-primario`
+  conserva el fondo de acento (botón "Enviar" del asistente); `.pestana` compacta en < 480 px; `.segmentos` envuelve líneas
+  (`flex-wrap: wrap`, sin scroll interno); utilidades `.celda-acciones` y `.lista-item.envolver`; `.tarjeta-peligro`;
+  `.td-contenido`; bloque "Asistente" con todas las clases `asistente-*` y la señal `--vf-asistente-css: 1`. Con
+  `prefers-reduced-motion: reduce` ahora `transition: none` (la duración 0.01 ms convertía cualquier cambio de propiedad
+  en una transición y el valor calculado tardaba un cuadro en reflejarse).
+- **index.html** — `<meta name="robots" content="noindex, nofollow">`.
+- **Módulos** — ajustes.js: sin parche de pantalla de bloqueo y "Zona de peligro" con `clase: 'tarjeta-peligro'`;
+  asistente.js: inyecta sus estilos sólo si falta `--vf-asistente-css`; presupuestos.js y proveedores.js: usan
+  `.celda-acciones` / `.lista-item.envolver` en lugar de estilos en línea.
+- **tests/ayuda.js** — sin filtro de módulos ausentes (todo error de consola cuenta); `abrir()` emula
+  `reducedMotion: 'reduce'` (opción `reducedMotion: false`); helpers `esperarModal(page, { titulo? })` (espera el modal y
+  los ~80 ms del foco automático de `VF.ui.modal`), `esperarSinModal`, `llenarCampo(page, nombre, valor)` (campo
+  `[data-campo]` del último modal), `descarga(page, accion)` → `{ nombre, ruta, texto, bytes }`; constantes
+  `ESPERA_MODAL_MS` (80) y `ESPERA_REPINTADO_MS` (120). Los tiempos a respetar están documentados en el archivo.
+- **tests/smoke.js** — cubre §6 completo con los diez módulos (ver cabecera del archivo): escenario 0 (`node --check` de
+  todos los .js, SW/manifest/index completos), A móvil claro, B escritorio oscuro, C `file://` escritorio claro, D móvil
+  oscuro + "Olvidé mi contraseña". `VF_SMOKE=B,C` limita escenarios. Expectativas de `data-ambito` según la regla del
+  router (los módulos con selector fijan el suyo). Capturas `tests/capturas/smoke-<ruta>-<viewport>-<tema>.png` de panel,
+  empresa, facturas y asistente en los cuatro combos, más bloqueo, hoja "Más", ajustes y "olvidé". Guardia de 8 minutos.

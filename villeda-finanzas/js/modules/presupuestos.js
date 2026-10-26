@@ -350,7 +350,7 @@ window.VF = window.VF || {};
       } },
       { clave: 'porcentaje', titulo: 'Avance', render: function (p, f) { return celdaAvance(f); } },
       { clave: 'acciones', titulo: '', render: function (x, f) {
-        return '<div class="fila" style="justify-content:flex-end;flex-wrap:nowrap;gap:4px;margin-left:auto">' +
+        return '<div class="celda-acciones" style="margin-left:auto">' +
           (enEdicion(f.categoria) ? botonesEdicion(f.categoria) : botonesFila(f.categoria)) + '</div>';
       } }
     ];
@@ -586,14 +586,14 @@ window.VF = window.VF || {};
     var total = U.suma(sinPpto, function (f) { return f.real; });
     var items = sinPpto.map(function (f) {
       var editando = enEdicion(f.categoria);
-      return '<li class="lista-item" data-ppto-sin="' + esc(f.categoria) + '" style="flex-wrap:wrap">' +
+      return '<li class="lista-item envolver" data-ppto-sin="' + esc(f.categoria) + '">' +
         '<span class="lista-icono">' + VF.ui.icono('gasto') + '</span>' +
         '<div class="lista-texto"><p class="lista-titulo">' + esc(f.categoria) + '</p>' +
         '<p class="lista-sub">Gasto real en ' + esc(mesLargo(periodo)) + '</p></div>' +
         '<span class="lista-valor negativo">' + esc(fmt(f.real)) + '</span>' +
         (editando
           ? '<div class="fila" style="flex:1 1 100%;justify-content:flex-end">' + inputMonto(f.categoria, edicion.valor, 120) +
-            '<span class="fila" style="flex:none;flex-wrap:nowrap;gap:4px">' + botonesEdicion(f.categoria) + '</span></div>'
+            '<span class="celda-acciones" style="flex:none">' + botonesEdicion(f.categoria) + '</span></div>'
           : '<button type="button" class="btn btn-secundario btn-chico" data-accion="ppto-asignar" data-categoria="' + esc(f.categoria) + '" aria-label="Asignar presupuesto a ' + esc(f.categoria) + '">Asignar</button>') +
         '</li>';
     }).join('');

@@ -5,7 +5,7 @@
  * con actualización en segundo plano. No hay peticiones a terceros: todo es local.
  * Cambia VF_VERSION en cada publicación para invalidar la caché anterior.
  */
-var VF_VERSION = '1.0.0';
+var VF_VERSION = '1.0.1';
 var CACHE = 'vf-shell-' + VF_VERSION;
 
 var SHELL = [

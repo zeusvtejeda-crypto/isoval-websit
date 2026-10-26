@@ -319,6 +319,7 @@ window.VF = window.VF || {};
   function tarjetaPeligro() {
     return VF.ui.tarjeta({
       titulo: 'Zona de peligro',
+      clase: 'tarjeta-peligro',
       cuerpo: '<p class="aviso aviso-error"><strong>Borrar todo</strong> elimina la bóveda cifrada de este dispositivo: cuentas, ' +
         'movimientos, facturas, préstamos, ajustes y contraseña. No se puede deshacer. Exporta un respaldo antes si quieres conservar algo.</p>' +
         '<button type="button" class="btn btn-peligro" data-accion="ajustes-borrar-todo">' + VF.ui.icono('eliminar') +
@@ -754,28 +755,6 @@ window.VF = window.VF || {};
     });
   }
 
-  /**
-   * Tras borrar la bóveda desde dentro de la app, app.js muestra la pantalla de bloqueo en modo
-   * "Desbloquear" (reacciona al evento 'bloqueado'); como ya no hay bóveda, cambiamos al formulario
-   * "Crear contraseña". Auxiliar privado: app.js no expone mostrarBloqueo().
-   */
-  function asegurarPantallaCrear() {
-    if (VF.store.existeBoveda()) return;
-    var formCrear = document.getElementById('form-crear');
-    var formDesbloquear = document.getElementById('form-desbloquear');
-    if (!formCrear || !formDesbloquear) return;
-    formDesbloquear.hidden = true;
-    formCrear.hidden = false;
-    ['crear-contrasena', 'crear-confirmar'].forEach(function (id) {
-      var c = document.getElementById(id);
-      if (c) c.value = '';
-    });
-    var error = document.getElementById('crear-error');
-    if (error) { error.textContent = ''; error.hidden = true; }
-    var campo = document.getElementById('crear-contrasena');
-    if (campo) setTimeout(function () { campo.focus(); }, 60);
-  }
-
   function borrarTodo() {
     if (!VF.store.estaDesbloqueado()) return Promise.resolve(false);
     return VF.ui.confirmar(
@@ -807,13 +786,12 @@ window.VF = window.VF || {};
           }
           decidido = true;
           try {
-            VF.store.borrarTodo();   // emite 'bloqueado' → app.js muestra la pantalla de bloqueo
+            VF.store.borrarTodo();   // emite 'bloqueado' → app.js muestra la pantalla de bloqueo en modo "Crear contraseña"
           } catch (e) {
             toast('No se pudo borrar: ' + textoError(e), 'error');
             resolver(false);
             return true;
           }
-          asegurarPantallaCrear();
           toast('Se borraron todos los datos de este dispositivo. Crea una contraseña nueva para empezar.', 'alerta');
           resolver(true);
           return true;
