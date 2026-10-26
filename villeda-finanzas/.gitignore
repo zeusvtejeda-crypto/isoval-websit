@@ -1,0 +1,4 @@
+# Capturas y temporales de pruebas E2E
+tests/capturas/
+tests/tmp-*
+*.zip
