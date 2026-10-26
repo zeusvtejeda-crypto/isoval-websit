@@ -630,3 +630,53 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   navegación al origen, reactividad a 'cambio' dentro y fuera de la ruta, sessionStorage y `?ambito=`, estados vacíos,
   `file://`. Nota para quien escriba E2E: con `html { scroll-behavior: smooth }` los clics de Playwright sobre elementos
   bajo el pliegue fallan por intercepción (el scroll anima); usar `page.emulateMedia({ reducedMotion: 'reduce' })`.
+
+### Módulo Ajustes (js/modules/ajustes.js)
+
+- Registro: `VF.router.registrar('ajustes', { titulo:'Ajustes', icono:'ajustes', nav:'mas', render })`. Dos columnas
+  (`.rejilla-2` con columnas `.tarjeta-cuerpo`, misma solución que el panel): Preferencias · Cambiar contraseña · Servidor
+  de IA | Respaldo · Datos de ejemplo · Zona de peligro · Acerca de. Toda cifra/texto de usuario pasa por `VF.util.esc`.
+- **API pública `VF.ajustes`** (para otros módulos y pruebas):
+  ```js
+  render(contenedor, params)
+  exportarRespaldo({ cifrado })          // → Promise<bool>. cifrado:true espera VF.store.guardar() y descarga la bóveda persistida como
+                                         //   villeda-finanzas-respaldo-YYYY-MM-DD.vf.json; cifrado:false descarga el estado plano como
+                                         //   villeda-finanzas-datos-YYYY-MM-DD.json (el botón pasa antes por un modal de advertencia).
+  importarArchivo(file)                  // → Promise<bool>. Lee el File (file.text() o FileReader) y llama a abrirImportar.
+  abrirImportar(texto, nombre, tamano)   // → Promise<bool>. Detecta formato (bóveda cifrada {salt,iv,datos} | estado plano), muestra resumen
+                                         //   y modal de confirmación "Reemplazar e importar"; si está cifrado pide la contraseña del respaldo
+                                         //   (vacía = la actual; CONTRASENA_REQUERIDA / CONTRASENA_INCORRECTA / DATOS_CORRUPTOS se muestran en el modal).
+  borrarDatosEjemplo()                   // → Promise<bool>. VF.ui.confirmar + VF.store.borrarDatosEjemplo(); toast con el número eliminado.
+  borrarTodo()                           // → Promise<bool>. VF.ui.confirmar + modal donde hay que escribir BORRAR + VF.store.borrarTodo().
+  probarServidor(url, { timeoutMs })     // → Promise<{ ok, ms, texto? , error? }>, nunca rechaza. POST { pregunta:'ping', contexto:{} } con
+                                         //   AbortController (10 s por defecto); valida http(s) y bloquea http desde una página https.
+  aplicarTema(tema)                      // aplica y persiste ('auto'|'claro'|'oscuro').
+  TIMEOUT_IA_MS                          // 10000
+  ```
+- Tema: el `<select>` lo aplica y guarda al instante con el mismo mecanismo que el botón de la cabecera:
+  `VF.app.aplicarTema(tema)` + `VF.store.setAjustes({ tema })` + `localStorage['vf.tema']` (clave no sensible documentada
+  en app.js; ajustes.js la escribe para que la pantalla de bloqueo use el mismo tema antes de desbloquear).
+- Eventos: un oyente `click` en `document` para `[data-accion^="ajustes-"]` (`ajustes-exportar-cifrado`,
+  `ajustes-exportar-plano`, `ajustes-elegir-archivo`, `ajustes-borrar-ejemplo`, `ajustes-borrar-todo`, `ajustes-probar-ia`);
+  `submit` para los formularios dentro de `[data-ajustes-form="preferencias|contrasena|ia"]` (los botones Guardar son
+  `type="submit"`); `change` para `[data-ajustes-archivo]` (input file oculto) y para el select de tema. Nada actúa con la
+  bóveda bloqueada. `VF.store.on('cambio')` repinta `#ajustes-cuerpo` (30 ms) sólo si `VF.router.actual().ruta === 'ajustes'`;
+  los guardados síncronos propios (`setAjustes`, el `guardar()` previo a exportar) se silencian con una bandera interna para
+  no repintar en bucle ni perder lo que el usuario está escribiendo; importar y borrar ejemplo sí repintan (y muestran toast).
+- Contraseñas: se leen sin `trim` (leerFormulario recorta los textos); los campos `tipo:'contrasena'` reciben el botón
+  `.btn-ver[data-ver]` que ya gestiona app.js globalmente. El cambio exige nueva ≥ 8, confirmación igual y distinta de la actual.
+- Borrar todo: `VF.store.borrarTodo()` emite 'bloqueado' y app.js muestra la pantalla de bloqueo en modo "Desbloquear"
+  aunque ya no exista bóveda (`alBloquear` → `mostrarBloqueo('desbloquear')`). ajustes.js lo corrige con un auxiliar privado
+  que muestra `#form-crear`, oculta `#form-desbloquear` y enfoca `#crear-contrasena`. **Pendiente app.js**: en `alBloquear`
+  llamar `mostrarBloqueo()` sin modo (elige "crear" si `!existeBoveda()`), o exponer `VF.app.mostrarBloqueo(modo)`.
+- Pendientes menores: `docs/IA-SERVIDOR.md` (listado en §1) no existe todavía; la "Zona de peligro" usa `.aviso.aviso-error`
+  dentro de una tarjeta normal (opcional en css/app.css: `.tarjeta-peligro` con borde `--negativo`).
+- Pruebas E2E (Playwright + `tests/ayuda.js`, 76 comprobaciones; capturas `tests/capturas/ajustes-*.png` en 390×844 y
+  1280×800, claro y oscuro): guardar ajustes y persistencia tras recarga, tema inmediato sin repintado, escape de HTML en
+  nombres, cambio de contraseña (errores en línea; la vieja deja de abrir), exportar cifrado y plano (descargas leídas y
+  validadas), importar plano, cifrado con la clave actual y cifrado con una contraseña anterior (estado idéntico; errores de
+  contraseña en el modal), borrar datos de ejemplo (0 ids `_demo`, banner oculto), servidor de IA (ok, no JSON, sin `texto`,
+  URL inválida, inalcanzable, tiempo agotado, cuerpo del POST), borrar todo (pantalla "Crear contraseña", sin
+  `vf.boveda.v1`). Notas para E2E: tras importar, el repintado por 'cambio' sustituye el `<input type=file>` → esperar
+  ~150 ms antes de otro `setInputFiles`; un `fetch` a un servidor inalcanzable produce un `console.error` del navegador
+  ("Failed to load resource: net::ERR_CONNECTION_REFUSED") que no es defecto del código: filtrarlo en las pruebas.

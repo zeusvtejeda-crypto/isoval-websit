@@ -80,6 +80,13 @@ window.VF = window.VF || {};
     return (n / (1024 * 1024)).toFixed(2).replace(/\.?0+$/, '') + ' MB';
   }
 
+  function fmtSegundos(ms) {
+    var n = Number(ms) || 0;
+    if (n < 1000) return n + ' ms';
+    var s = n / 1000;
+    return (s === Math.floor(s) ? String(s) : s.toFixed(1)) + ' s';
+  }
+
   /** Guarda ajustes silenciando el repintado propio (el store emite 'cambio' de forma síncrona). */
   function guardarAjustesSilencioso(parcial) {
     silencio = true;
@@ -248,8 +255,7 @@ window.VF = window.VF || {};
   function tarjetaPreferencias() {
     return VF.ui.tarjeta({
       titulo: 'Preferencias',
-      cuerpo: '<div data-slot="preferencias"></div>' +
-        '<p class="campo-ayuda mb-0">Moneda: MXN (fija en esta versión). Fechas y cifras en formato de México.</p>'
+      cuerpo: '<div data-slot="preferencias"></div>'
     });
   }
 
@@ -337,7 +343,7 @@ window.VF = window.VF || {};
         '</ul>' +
         '<div class="fila-entre mb-1"><span class="texto-2">Registros guardados</span><strong class="cifra">' + resumen.total + '</strong></div>' +
         (detalle ? '<p class="campo-ayuda mt-0">' + esc(detalle) + '</p>' : '') +
-        '<div class="fila-entre mb-1"><span class="texto-2">Bóveda cifrada en este dispositivo</span><strong class="cifra">' + esc(fmtTamano(tamanoBoveda())) + '</strong></div>' +
+        '<div class="fila-entre mb-1"><span class="texto-2">Tamaño de la bóveda cifrada</span><strong class="cifra">' + esc(fmtTamano(tamanoBoveda())) + '</strong></div>' +
         '<div class="fila-entre mb-0"><span class="texto-2">Formato de datos</span><strong class="cifra">v' + esc(est.version || 1) + '</strong></div>'
     });
   }
@@ -387,6 +393,10 @@ window.VF = window.VF || {};
       '<button type="submit" class="btn btn-primario" data-accion="ajustes-guardar-preferencias">' + VF.ui.icono('guardar') + '<span>Guardar</span></button>');
     agruparCampos(form, ['nombreUsuario', 'nombreEmpresa']);
     agruparCampos(form, ['autobloqueoMin', 'reservaOperativaDias']);
+    var nota = document.createElement('p');
+    nota.className = 'campo-ayuda';
+    nota.textContent = 'Moneda: MXN (fija en esta versión). Fechas y cifras en formato de México.';
+    form.insertBefore(nota, form.querySelector('.form-acciones'));
     var envoltura = document.createElement('div');
     envoltura.setAttribute('data-ajustes-form', 'preferencias');
     envoltura.appendChild(form);
@@ -413,7 +423,7 @@ window.VF = window.VF || {};
   function formularioIA(a) {
     var campos = [
       { nombre: 'asistenteEndpoint', etiqueta: 'URL del servidor', tipo: 'url', placeholder: 'https://mi-servidor.ejemplo/api/asistente',
-        ayuda: 'Debe aceptar POST con JSON { pregunta, contexto } y responder { texto }. Ver docs/IA-SERVIDOR.md.' }
+        ayuda: 'Debe aceptar POST con JSON { pregunta, contexto } y responder { texto }. Si falla, el asistente usa el motor local.' }
     ];
     var form = construirFormulario(campos, { asistenteEndpoint: a.asistenteEndpoint || '' },
       '<button type="button" class="btn btn-secundario" data-accion="ajustes-probar-ia">' + VF.ui.icono('enviar') + '<span>Probar</span></button>' +
@@ -894,7 +904,7 @@ window.VF = window.VF || {};
       .catch(function (e) {
         var ms = Date.now() - inicio;
         var error;
-        if (expiro || (e && e.name === 'AbortError')) error = 'El servidor no respondió en ' + Math.round(timeoutMs / 1000) + ' s.';
+        if (expiro || (e && e.name === 'AbortError')) error = 'El servidor no respondió en ' + fmtSegundos(timeoutMs) + '.';
         else if (e && e.codigo === 'HTTP') error = 'El servidor respondió con un error HTTP ' + e.estado + '.';
         else if (e && e.codigo === 'JSON') error = 'La respuesta no es JSON válido.';
         else if (e && e.codigo === 'SIN_TEXTO') error = 'La respuesta no incluye el campo «texto».';
@@ -1020,6 +1030,15 @@ window.VF = window.VF || {};
       case 'ia': guardarIA(form); break;
       default: break;
     }
+  });
+
+  // Al editar un campo con error, el mensaje desaparece (no esperar al siguiente envío).
+  document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (!t || !t.matches || !t.matches('[data-ajustes-form] [data-campo]')) return;
+    var form = t.closest('form');
+    var cont = t.closest('[data-campo-cont]');
+    if (form && cont && cont.classList.contains('con-error')) marcarErrorCampo(form, t.getAttribute('data-campo'), '');
   });
 
   document.addEventListener('change', function (e) {

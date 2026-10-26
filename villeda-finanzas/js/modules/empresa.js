@@ -653,6 +653,9 @@ window.VF = window.VF || {};
     var cats = (est.categorias && est.categorias[ambito] && est.categorias[ambito][tipo === 'ingreso' ? 'ingreso' : 'gasto']) || [];
     var catActual = v.categoria || ini.categoria || '';
     if (esTransfer) catActual = '';
+    // Al cambiar de Ingreso a Gasto (o viceversa) la categoría anterior deja de ser válida; sólo se conserva
+    // una categoría fuera de la lista si es la que ya tenía el movimiento que se está editando.
+    if (catActual && cats.indexOf(catActual) < 0 && catActual !== ini.categoria) catActual = '';
     llenarSelect(form.querySelector('[data-campo="categoria"]'), cats.map(function (c) { return { valor: c, texto: c }; }), catActual, 'Elige una categoría');
 
     var contDestino = form.querySelector('[data-campo-cont="cuentaDestinoId"]');
@@ -771,7 +774,7 @@ window.VF = window.VF || {};
           toast('Movimiento actualizado', 'exito');
         } else {
           VF.store.agregar('movimientos', Object.assign({ facturaId: null, cxpId: null, prestamoId: null, comisionId: null, etiquetas: [] }, registro));
-          toast(TIPO_TEXTO[v.tipo] + ' guardado', 'exito');
+          toast(v.tipo === 'transferencia' ? 'Transferencia guardada' : TIPO_TEXTO[v.tipo] + ' guardado', 'exito');
         }
       } catch (e) {
         toast('No se pudo guardar: ' + (e && e.message ? e.message : e), 'error');
@@ -782,7 +785,7 @@ window.VF = window.VF || {};
 
     form.addEventListener('change', function (e) {
       var campo = e.target && e.target.getAttribute ? e.target.getAttribute('data-campo') : null;
-      if (['tipo', 'cuentaId', 'cuentaDestinoId'].indexOf(campo) >= 0) actualizarFormularioMovimiento(ambito, form, envoltura);
+      if (['tipo', 'cuentaId', 'cuentaDestinoId'].indexOf(campo) >= 0) actualizarFormularioMovimiento(ambito, form, envoltura, { categoria: valores.categoria });
     });
 
     var tituloTipo = existente ? 'Editar movimiento' : (valores.tipo === 'ingreso' ? 'Nuevo ingreso' : valores.tipo === 'transferencia' ? 'Nueva transferencia' : 'Nuevo gasto');
@@ -905,8 +908,17 @@ window.VF = window.VF || {};
     }
 
     var botones = [];
-    if (existente && !conMovs) {
+    var api = null;
+    if (existente) {
       botones.push({ texto: 'Eliminar', tono: 'peligro', accion: function () {
+        var estAhora = estado();
+        if (!estAhora) return false;
+        // Integridad (ARQUITECTURA.md 2.1): una cuenta con movimientos no se elimina. Se explica con amabilidad
+        // y se ofrece archivarla; el modal de edición permanece abierto detrás.
+        if (cuentaConMovimientos(estAhora, existente.id)) {
+          explicarNoEliminable(existente, api);
+          return false;
+        }
         return VF.ui.confirmar('¿Eliminar la cuenta «' + existente.nombre + '»? No tiene movimientos, así que no se pierde ningún registro.', { peligro: true, textoAceptar: 'Eliminar' })
           .then(function (ok) {
             if (!ok) return false;
@@ -915,13 +927,12 @@ window.VF = window.VF || {};
               toast('Cuenta eliminada', 'exito');
               return true;
             } catch (e) {
-              toast(e && e.message === 'CUENTA_CON_MOVIMIENTOS' ? 'La cuenta tiene movimientos: archívala en su lugar.' : 'No se pudo eliminar: ' + (e && e.message ? e.message : e), 'error');
+              if (e && e.message === 'CUENTA_CON_MOVIMIENTOS') { explicarNoEliminable(existente, api); return false; }
+              toast('No se pudo eliminar: ' + (e && e.message ? e.message : e), 'error');
               return false;
             }
           });
       } });
-    }
-    if (existente) {
       var archivada = existente.activa === false;
       botones.push({ texto: archivada ? 'Restaurar' : 'Archivar', tono: 'secundario', accion: function () {
         return cambiarArchivo(existente.id, !archivada);
@@ -930,7 +941,7 @@ window.VF = window.VF || {};
     botones.push({ texto: 'Cancelar', tono: 'secundario' });
     botones.push({ texto: existente ? 'Guardar cambios' : 'Crear cuenta', tono: 'primario', accion: guardar });
 
-    var api = VF.ui.modal({
+    api = VF.ui.modal({
       titulo: existente ? 'Editar cuenta' : 'Nueva cuenta · ' + NOMBRES[ambito],
       cuerpo: envoltura,
       botones: botones
@@ -942,8 +953,39 @@ window.VF = window.VF || {};
     return api;
   }
 
-  /** Archiva (activa:false) o restaura una cuenta. → true si se aplicó. */
-  function cambiarArchivo(id, archivar) {
+  function movimientosDeCuenta(est, id) {
+    return (est.movimientos || []).filter(function (m) { return m && (m.cuentaId === id || m.cuentaDestinoId === id); });
+  }
+
+  /**
+   * Modal amable: la cuenta tiene movimientos y no puede eliminarse (regla de integridad); ofrece archivarla.
+   * `apiEdicion` (opcional) es el modal de edición que se cierra si el usuario decide archivar.
+   */
+  function explicarNoEliminable(cuenta, apiEdicion) {
+    var est = estado();
+    if (!est || !cuenta) return null;
+    var n = movimientosDeCuenta(est, cuenta.id).length;
+    var botones = [{ texto: 'Entendido', tono: 'secundario' }];
+    if (cuenta.activa !== false) {
+      botones.push({ texto: 'Archivar cuenta', tono: 'primario', accion: function () {
+        var ok = aplicarArchivo(cuenta.id, true);
+        if (ok && apiEdicion && typeof apiEdicion.cerrar === 'function') apiEdicion.cerrar();
+        return ok;
+      } });
+    }
+    return VF.ui.modal({
+      titulo: 'Esta cuenta no se puede eliminar',
+      cuerpo: '<p class="aviso aviso-alerta">La cuenta «' + esc(cuenta.nombre) + '» tiene ' + esc(plural(n, 'movimiento registrado', 'movimientos registrados')) +
+        '. Para no perder tu historial ni descuadrar los saldos, las cuentas con movimientos no se eliminan.</p>' +
+        '<p class="texto-2 mb-0">' + (cuenta.activa !== false
+          ? 'Si ya no la usas, archívala: sus movimientos se conservan y dejará de contar en el líquido y los totales de ' + esc(NOMBRES[cuenta.ambito] || '') + '. Podrás restaurarla cuando quieras.'
+          : 'La cuenta ya está archivada: no suma en los totales, pero conserva su historial.') + '</p>',
+      botones: botones
+    });
+  }
+
+  /** Aplica el cambio activa:true/false sin preguntar. → true si se aplicó. */
+  function aplicarArchivo(id, archivar) {
     var est = estado();
     var c = est ? buscar(est.cuentas, id) : null;
     if (!c) { toast('La cuenta ya no existe.', 'alerta'); return false; }
@@ -955,6 +997,27 @@ window.VF = window.VF || {};
       toast('No se pudo actualizar: ' + (e && e.message ? e.message : e), 'error');
       return false;
     }
+  }
+
+  /**
+   * Archiva (activa:false) o restaura una cuenta. Restaurar es inmediato. Archivar una cuenta con movimientos
+   * o con saldo pide confirmación explicando que el historial se conserva pero deja de contar en los totales.
+   * → true | false | Promise<bool> (cuando hubo confirmación).
+   */
+  function cambiarArchivo(id, archivar) {
+    var est = estado();
+    var c = est ? buscar(est.cuentas, id) : null;
+    if (!c) { toast('La cuenta ya no existe.', 'alerta'); return false; }
+    if (!archivar) return aplicarArchivo(id, false);
+    var n = movimientosDeCuenta(est, id).length;
+    var saldo = VF.calc.saldoCuenta(est, id);
+    if (!n && saldo === 0) return aplicarArchivo(id, true);
+    var mensaje = '¿Archivar la cuenta «' + c.nombre + '»? ' +
+      (n ? 'Sus ' + plural(n, 'movimiento') + ' se conservan, pero la cuenta' : 'La cuenta') +
+      ' dejará de contar en el líquido y los totales de ' + NOMBRES[c.ambito] +
+      (saldo !== 0 ? ' (saldo actual ' + fmt(saldo) + ')' : '') + '. Podrás restaurarla cuando quieras.';
+    return VF.ui.confirmar(mensaje, { titulo: 'Archivar cuenta', textoAceptar: 'Archivar' })
+      .then(function (ok) { return ok ? aplicarArchivo(id, true) : false; });
   }
 
   /* ---------- API pública: VF.vistas.ambito -------------------------------- */
