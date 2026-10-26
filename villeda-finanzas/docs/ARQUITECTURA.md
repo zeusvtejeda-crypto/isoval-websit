@@ -631,6 +631,82 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   `file://`. Nota para quien escriba E2E: con `html { scroll-behavior: smooth }` los clics de Playwright sobre elementos
   bajo el pliegue fallan por intercepción (el scroll anima); usar `page.emulateMedia({ reducedMotion: 'reduce' })`.
 
+### Módulos Empresa y Personal (js/modules/empresa.js, js/modules/personal.js)
+
+- Registro: empresa.js registra `'empresa'` y personal.js `'personal'` (ambos `nav:'principal'`). Las dos rutas honran
+  `?cuenta=<cuentaId>` (filtran los movimientos por esa cuenta, hacen scroll a la sección y limpian el hash con
+  `history.replaceState`). personal.js requiere que empresa.js se haya cargado antes (orden de `<script>` del contrato).
+- **Componente reutilizable `VF.vistas.ambito(contenedor, ambito, { extras, params })`** — firma real del componente
+  que §4 cita como `VF.vistas.ambito(ambito)`; `contenedor` es el `<main id="vista">` (o un selector). Pinta: cabecera
+  (h1, subtítulo con líquido y botones "+ Ingreso", "+ Gasto", "+ Transferencia"), Cuentas (tarjetas `.kpi` con saldo de
+  `VF.calc.saldoCuenta`; tarjetas de crédito con deuda, límite, uso, corte y pago; resumen `saldosPorAmbito`; bloque
+  `<details id="ambito-archivadas">`), Movimientos (segmentos Hoy/Semana/Mes/Personalizado, filtros tipo/cuenta/categoría/
+  búsqueda, chips de filtros activos, resumen ingresos/gastos/balance/transferencias del periodo, `VF.ui.tabla` paginada de
+  20 en 20 con "Mostrar más"), Gastos por categoría (`VF.ui.graficaDona` sobre `gastosPorCategoria` del periodo
+  filtrado) y las tarjetas `extras` en `.rejilla-2|3|4` según su número. Llama a `VF.ui.ambitoActivo(ambito)`.
+  ```js
+  extras: [{ id, titulo, acciones?: string | fn(ctx) → string, render(el, ctx) }]  // el = .tarjeta-cuerpo de su tarjeta
+  ctx = { ambito, estado, hoy, repintar(), nuevoMovimiento({ tipo?, cuentaId?, id? }), verCuenta(id) }
+  // devuelve { ambito, repintar(), pintarMovimientos(), filtros() }
+  VF.vistas.formularioMovimiento(ambito, { tipo?, cuentaId?, id? })  // → api del modal { cerrar, elemento } | null
+  VF.vistas.formularioCuenta(ambito, { id? })                        // → api del modal | null
+  VF.vistas.detalleMovimiento(ambito, id)                            // → api del modal | null
+  VF.empresa  = { render(contenedor, params), nuevoMovimiento(o), nuevaCuenta() }
+  VF.personal = { render(contenedor, params), nuevaMeta(), editarMeta(id), nuevoMovimiento(o), nuevaCuenta() }
+  ```
+  `formularioMovimiento` devuelve `null` (con toast) si el movimiento no existe o está vinculado a factura/CxP/préstamo/
+  comisión: esos se editan/eliminan desde su sección (el detalle los muestra en sólo lectura con aviso).
+- Reglas: el ámbito del movimiento es SIEMPRE el de la cuenta origen; el select de cuenta sólo ofrece cuentas activas del
+  ámbito; el de cuenta destino ofrece las activas de ambos ámbitos (primero las del propio). Transferencia a otro ámbito →
+  categoría 'Retiro de socio' (empresa → personal) / 'Aportación de capital' (personal → empresa) con aviso en el
+  formulario; mismo ámbito → 'Transferencia entre cuentas'. Al cambiar el tipo (ingreso ↔ gasto) se descarta la categoría
+  que ya no pertenece a la lista (salvo la original del movimiento en edición). Toda cifra sale de `VF.calc`; sin cuentas
+  → `VF.ui.vacio` con "Crear cuenta"; sin movimientos en el periodo → "Sin movimientos · <periodo>" (sin ceros).
+- Cuentas: crear / editar / archivar (`activa:false`; conserva movimientos; deja de contar en `saldosPorAmbito`) /
+  restaurar / eliminar. Archivar una cuenta con movimientos o con saldo pide confirmación explicando que el historial se
+  conserva. Eliminar una cuenta con movimientos se impide con un modal amable ("Esta cuenta no se puede eliminar", n
+  movimientos, regla 2.1) que ofrece "Archivar cuenta"; sin movimientos pide confirmación de peligro. Para tarjetas de
+  crédito el formulario pide "Deuda inicial" y la guarda como `saldoInicial` negativo; límite, día de corte y día de pago
+  sólo aplican a 'credito'.
+- Filtros: se recuerdan por ámbito en memoria mientras la app esté abierta (no se persisten; la paginación se reinicia al
+  entrar); periodo por defecto "Mes"; "Personalizado" por defecto últimos 30 días; búsqueda local con `VF.util.normalizar`
+  sobre descripción, contraparte, categoría, monto, fecha, cuenta origen/destino y "revisar". El filtro de cuenta usa
+  `movimientosEn(... {cuentaId})` (incluye transferencias recibidas del mismo ámbito). Tabla: < 720 px una sola celda por
+  fila (concepto, fecha · categoría · cuenta, monto; la fila abre el detalle con Editar / Eliminar / Marcar por revisar);
+  ≥ 720 px columnas Fecha / Concepto / Categoría / Cuenta / Monto / acciones (revisar-confirmar, editar, eliminar; las dos
+  últimas deshabilitadas si el movimiento está vinculado).
+- Eventos: un oyente de `click` en `document` para `[data-accion^="ambito-"]` con `data-ambito` (+ `data-id`):
+  `ambito-nuevo-movimiento` (`data-tipo`, `data-cuenta`), `ambito-nueva-cuenta`, `ambito-editar-cuenta`,
+  `ambito-restaurar-cuenta`, `ambito-ver-cuenta` (filtra por cuenta; desde otra ruta navega con `?cuenta=`),
+  `ambito-ver-movimiento`, `ambito-editar-movimiento`, `ambito-eliminar-movimiento`, `ambito-alternar-estado`,
+  `ambito-mas-movimientos`, `ambito-quitar-filtro` (`data-filtro`), `ambito-limpiar-filtros`; `change`/`input` sobre
+  `[data-filtro]` (búsqueda con debounce 250 ms); Enter/Espacio sobre `[role="button"][data-accion^="ambito-|empresa-|personal-"]`.
+  personal.js: `[data-accion^="personal-"]` → `personal-nueva-meta`, `personal-editar-meta`. La vista se re-pinta completa
+  con `VF.store.on('cambio')` (retardo 30 ms) sólo si su ruta sigue activa y su raíz sigue en el documento; `'bloqueado'`
+  descarta la instancia. Al cruzar 720 px (`matchMedia`) se re-pinta la tabla con las columnas adecuadas.
+- Extras de Empresa (`EXTRAS_EMPRESA`): `facturas` (`VF.calc.porCobrar`: por cobrar, vencido, top 3 clientes; enlaces
+  `#/facturas`, `#/cobros`), `proveedores` (`VF.calc.porPagar`: por pagar, vencido, 3 CxP próximas; `#/proveedores`,
+  `#/proveedores?pestana=cxp`), `comisiones` (`VF.calc.comisionesPendientes` + pagadas; `#/proveedores?pestana=comisiones`).
+- Extras de Personal (`EXTRAS_PERSONAL`): `metas` (CRUD en modal: nombre, objetivo, cuenta personal no 'credito', fecha
+  meta, notas; progreso con `VF.calc.metaProgreso` y `VF.ui.barraProgreso`; sin cuenta asignada muestra "Sin cuenta", nunca
+  "$0.00"; `data-meta="<id>"` por elemento) y `deudas` (tarjetas de crédito personales activas: deuda = −`saldoCuenta`,
+  límite, uso, corte, pago y próximo pago tomado de `VF.calc.vencimientos` con `origen.coleccion === 'cuentas'`; préstamos
+  recibidos personales activos: `saldoPrestamo`, progreso, `proximoPagoPrestamo`, enlace `#/prestamos?id=`; "Deuda total
+  personal"). Nunca lee registros de empresa.
+- Área táctil: los dos módulos no usan `btn-chico` (36 px) en ninguna acción; el `summary` de cuentas archivadas mide 44 px.
+  Los controles del núcleo por debajo de 44 px (`.segmento`, `.chip`, botón de `VF.ui.vacio`) están en "Pendientes".
+- Pruebas E2E ejecutadas con Playwright + `tests/ayuda.js` (390×844 isMobile y 1280×800; claro, más una pasada en oscuro):
+  separación de ámbitos contra `VF.store.estado()` (tarjetas, filas, selects), saldos y resumen = `VF.calc`, CRUD de
+  cuentas (eliminar con movimientos impedido, archivar/restaurar), "+ Gasto"/"+ Ingreso"/"+ Transferencia" (cruzada:
+  categoría, saldos de ambas cuentas, `utilidadMes` e ingresos/gastos de ambos ámbitos intactos, no aparece en el otro
+  ámbito), validación en línea, filtros (periodo, tipo, cuenta, categoría, búsqueda, chips, paginación), detalle, editar,
+  revisar/confirmar, eliminar con confirmación, vinculados sólo lectura, reactividad a 'cambio', metas (crear/editar/
+  eliminar, progreso), deudas, `?cuenta=`, estados vacíos, sin scroll horizontal (vista y modales), botones ≥ 44 px.
+  Capturas: `tests/capturas/empresa-*.png` y `personal-*.png`.
+- **Pendientes detectados en núcleo/CSS (no corregidos aquí)**: ver el informe de entrega del módulo; en resumen
+  `.segmento` (38 px), `.chip` (40 px), `.btn-chico` (36 px) y el botón de `VF.ui.vacio()` (usa `btn-chico`) quedan por
+  debajo del área táctil mínima de §5; el registro de callbacks de `VF.ui` sólo se poda en `hashchange`.
+
 ### Módulo Ajustes (js/modules/ajustes.js)
 
 - Registro: `VF.router.registrar('ajustes', { titulo:'Ajustes', icono:'ajustes', nav:'mas', render })`. Dos columnas
@@ -721,5 +797,61 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   tres meses; alta válida/inválida; edición (Enter, Esc, inválida); eliminación con confirmación; asignar desde "Sin presupuesto";
   mes siguiente vacío → copiar (completa, repetida sin duplicar, parcial tras borrar una); mes anterior / "Mes actual"; cambio de ámbito
   sin categorías del otro ámbito; `?ambito=&periodo=`; reactividad a 'cambio' dentro y fuera de la ruta; bóveda sin ejemplo; sin scroll
-  horizontal en 390 px. Mientras `js/modules/asistente.js` no pase `node --check`, el navegador reporta un `pageerror` de sintaxis
+  horizontal en 390 px. Mientras otro módulo de `js/modules/` esté a medio escribir (no pasa `node --check`), el navegador reporta un `pageerror` de sintaxis
   ajeno a este módulo (la prueba lo identifica con `node --check` y lo descuenta de forma explícita).
+
+### Módulo Préstamos (js/modules/prestamos.js)
+
+- Registro: `VF.router.registrar('prestamos', { titulo:'Préstamos', icono:'prestamos', nav:'mas', render })`. Acepta
+  `#/prestamos?ambito=empresa|personal` (fija el segmento) y `#/prestamos?id=<prestamoId>` (abre el detalle y cambia al ámbito
+  del préstamo; es el parámetro que envían el Panel y Personal → Deudas). Tras abrir, el parámetro se limpia del hash con
+  `history.replaceState` para que recargar no reabra el modal. El segmento se recuerda en `sessionStorage['vf.prestamos.ambito']`
+  (por defecto 'empresa'). Al pintar y al cambiar de segmento llama a `VF.ui.ambitoActivo(ambito)`.
+- **API pública `VF.prestamos`** (los modales devuelven la api `{ cerrar, elemento }`):
+  ```js
+  render(contenedor, params)                 // la misma función registrada en el router
+  ambito() / fijarAmbito(ambito)             // segmento activo / cambiarlo (aria-selected) y repintar
+  nuevo({ ambito?, tipo?, id? })             // modal de alta (pago mensual e intereses totales en vivo); con `id` edita
+  ver(id)                                    // modal de detalle (saldo, progreso, pagos registrados, tabla de amortización)
+  pagar(id)                                  // modal "Registrar pago" (recibido) / "Registrar cobro" (otorgado)
+  registrarPago(id, { monto, fecha, cuentaId })  // → { pago, movimiento, liquidado }. Lanza Error('PRESTAMO_NO_EXISTE' |
+                                             //   'PRESTAMO_NO_ACTIVO' | 'CUENTA_INVALIDA' | 'CUENTA_DE_OTRO_AMBITO' |
+                                             //   'MONTO_INVALIDO' | 'MONTO_EXCEDE_SALDO' | 'FECHA_INVALIDA')
+  eliminarPago(id, pagoId)                   // → bool. Elimina también el movimiento vinculado; 'liquidado' → 'activo' si vuelve a haber saldo
+  dividirPago(prestamo, monto)               // puro → { pago, interes, capital, interesPeriodo, saldoAntes, saldoDespues, liquida, cubreInteres, maximo }
+  ```
+- Reglas de pago (sobre el saldo REAL `VF.calc.saldoPrestamo`): interés = round2(saldo × tasaAnual/100/12); capital = pago − interés;
+  si capital ≥ saldo (liquida) → capital = saldo e interés = pago − capital (nunca negativo); si el pago no cubre el interés del
+  periodo → capital 0 e interés = pago (se avisa en el formulario). Monto máximo aceptado = saldo + interés del periodo (`maximo`).
+  Monto por defecto = `VF.calc.proximoPagoPrestamo().monto`, que coincide con `pagoMensual()` salvo en el último pago (liquida).
+  Movimiento creado: `{ ambito: prestamo.ambito, cuentaId, tipo:'gasto'|'ingreso', categoria:'Préstamos'|'Otros ingresos',
+  descripcion:'Pago|Cobro de préstamo — pago n de N · contraparte', contraparte, prestamoId, estado:'confirmado', etiquetas:[] }`.
+  Sólo se admiten cuentas activas del MISMO ámbito (el selector no ofrece otras y `registrarPago` lo verifica). El préstamo pasa
+  a 'liquidado' automáticamente cuando `saldoPrestamo ≤ 0` (también al editar el principal); si falla `actualizar` tras crear el
+  movimiento, el movimiento se revierte.
+- Esquema: cada elemento de `prestamos[].pagos[]` lleva además `cuentaId` (la cuenta usada), redundante con el movimiento pero
+  útil si éste se elimina desde otra vista (el detalle lo marca "Sin movimiento"). `diaPago` vacío en el formulario se rellena con
+  el día de `fechaInicio` (misma regla que `VF.calc`). Con pagos registrados no se permite cambiar ámbito ni tipo (los pagos ya
+  generaron movimientos) ni reducir el principal por debajo del capital ya pagado. Eliminar un préstamo usa `VF.store.eliminar`
+  (que borra sus movimientos vinculados) tras confirmación con el número de movimientos afectados.
+- Detalle: tabla de `VF.calc.tablaAmortizacion` marcando las primeras `pagos.length` filas como "Pagado", la siguiente como
+  "Próximo" o "Vencido" (fecha < hoy) y el resto "Pendiente". Para caber en el modal (560 px) sin desplazamiento horizontal, la
+  amortización usa 5 columnas (estado bajo la fecha; capital / interés en una celda) y la tabla de pagos 4 columnas (n.º + fecha +
+  cuenta, monto, capital / interés, eliminar). El detalle abierto se refresca en sitio al recibir 'cambio' (conserva abierta la
+  tabla de amortización) y se cierra si el préstamo desaparece.
+- Cifras: KPIs Debo / Me deben / Mensualidad (debo) / Próximo vencimiento sólo con préstamos activos del ámbito; '—' cuando no hay
+  préstamos del tipo (nunca ceros falsos); sin préstamos en el ámbito → `VF.ui.vacio(..., 'Registrar préstamo')`. Lista "Activos"
+  ordenada por próximo pago y tarjeta aparte "Liquidados y cancelados". Etiquetas de tipo: "Debo" (recibido, saldo en rojo) y
+  "Me deben" (otorgado, saldo en verde).
+- Eventos: un oyente de `click` en `document` para `[data-accion^="prestamos-"]` (`prestamos-nuevo`, `prestamos-ver`,
+  `prestamos-pagar`, `prestamos-editar`, `prestamos-eliminar`, `prestamos-eliminar-pago` con `data-pago`); no actúa con la bóveda
+  bloqueada. `VF.store.on('cambio')` re-pinta `#prestamos-cuerpo` y el detalle (30 ms) sólo si `VF.router.actual().ruta === 'prestamos'`.
+- Pruebas E2E (Playwright + `tests/ayuda.js`, script temporal borrado al terminar; capturas `tests/capturas/prestamos-*.png` en
+  390×844 claro y 1280×800 oscuro): KPIs = VF.calc, Debo / Me deben, segmento + sessionStorage + `ambitoActivo`, alta por la interfaz
+  con pago mensual en vivo = fórmula independiente en Node (P·r/(1−(1+r)^−n) y P/n con tasa 0), escape de la contraparte, detalle con
+  24/48 filas de amortización y marcas Próximo/Pagado, registrar pago (monto por defecto, sólo cuentas del ámbito, desglose en vivo,
+  capital/interés/saldo, movimiento gasto 'Préstamos' con prestamoId y saldo de la cuenta), eliminar pago revierte el movimiento,
+  tasa 0 otorgado → ingreso 'Otros ingresos', cuenta de otro ámbito y sobrepago rechazados, liquidación automática y vuelta a 'activo',
+  `?id=` y `?ambito=`, reactividad a 'cambio', edición (estado cancelado) y eliminación, estado vacío, validación de plazo, sin scroll
+  horizontal en página ni en las tablas del modal. Mientras otros `js/modules/*.js` no pasen `node --check` (archivos ajenos a medio
+  escribir), la prueba los sirve vacíos vía `page.route` para que su `pageerror` no se atribuya a este módulo.

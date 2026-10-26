@@ -251,7 +251,8 @@ window.VF = window.VF || {};
   }
 
   function subtituloTexto(r) {
-    return NOMBRES[vista.ambito] + ' · ' + r.etiqueta + ' · ' + U.fmtFecha(r.desde) + ' – ' + U.fmtFecha(r.hasta);
+    // En personalizado la etiqueta ya contiene las dos fechas; no repetirlas.
+    return NOMBRES[vista.ambito] + ' · ' + r.etiqueta + (r.tipo === 'personalizado' ? '' : ' · ' + U.fmtFecha(r.desde) + ' – ' + U.fmtFecha(r.hasta));
   }
 
   function cabecera() {
@@ -260,8 +261,6 @@ window.VF = window.VF || {};
       '<div><h1>Reportes</h1><p class="texto-2 mb-0" id="reportes-subtitulo">' + esc(subtituloTexto(r)) + '</p></div>' +
       '<div class="vista-acciones">' +
       VF.ui.segmentos([{ valor: 'empresa', texto: 'Empresa' }, { valor: 'personal', texto: 'Personal' }], vista.ambito, alCambiarAmbito) +
-      '<button type="button" class="btn btn-secundario" data-accion="reportes-imprimir" title="Imprimir o guardar como PDF">' +
-      VF.ui.icono('imprimir') + '<span>Imprimir / PDF</span></button>' +
       '</div></div>';
   }
 
@@ -378,14 +377,13 @@ window.VF = window.VF || {};
     }
 
     if (esEmpresa) {
+      // Gastos por categoría e IVA van a ancho completo: en media columna la leyenda de la dona parte palabras.
       html += '<div class="rejilla-2">' +
         columna(tarjetaResultados(est, r)) +
-        columna(tarjetaFlujo(est, ambito, r) + tarjetaIVA(iva, r)) +
+        columna(tarjetaFlujo(est, ambito, r) + tarjetaAntiguedad(est, pc)) +
         '</div>';
-      html += '<div class="rejilla-2">' +
-        columna(tarjetaGastos(est, ambito, r)) +
-        columna(tarjetaAntiguedad(est, pc)) +
-        '</div>';
+      html += tarjetaGastos(est, ambito, r);
+      html += tarjetaIVA(iva, r);
     } else {
       html += '<div class="rejilla-2">' +
         columna(tarjetaResumenPersonal(est, r)) +
@@ -432,9 +430,13 @@ window.VF = window.VF || {};
   function filaGrupo(texto) {
     return '<tr><th scope="rowgroup" colspan="3">' + esc(texto) + '</th></tr>';
   }
+  /** Fila de total; `pctTexto` admite { cifra, nota } para partir la nota en una segunda línea (small). */
   function filaTotal(texto, valor, pctTexto, clase) {
+    var pctHtml = pctTexto && typeof pctTexto === 'object'
+      ? esc(pctTexto.cifra) + (pctTexto.nota ? '<br><small class="texto-3">' + esc(pctTexto.nota) + '</small>' : '')
+      : esc(pctTexto);
     return '<tr><td><strong>' + esc(texto) + '</strong></td><td class="num"><strong class="' + esc(clase || '') + '">' + esc(valor) + '</strong></td>' +
-      '<td class="num texto-2">' + esc(pctTexto) + '</td></tr>';
+      '<td class="num texto-2">' + pctHtml + '</td></tr>';
   }
 
   function tarjetaResultados(est, r) {
@@ -452,8 +454,8 @@ window.VF = window.VF || {};
       cuerpo += filaGrupo('Gastos');
       if (er.gastos.length) er.gastos.forEach(function (f) { cuerpo += filaCategoria(f, er.totalGastos); });
       else cuerpo += '<tr><td colspan="3" class="texto-2">Sin gastos en el periodo</td></tr>';
-      cuerpo += filaTotal('Total gastos', fmt(er.totalGastos), er.totalIngresos > 0 ? pct(er.totalGastos, er.totalIngresos) + ' de ingresos' : '—');
-      cuerpo += filaTotal('Utilidad', fmt(er.utilidad), er.margen === null ? 'Sin ingresos' : 'Margen ' + U.fmtNumero(er.margen, 1) + ' %', er.utilidad >= 0 ? 'positivo' : 'negativo');
+      cuerpo += filaTotal('Total gastos', fmt(er.totalGastos), er.totalIngresos > 0 ? { cifra: pct(er.totalGastos, er.totalIngresos), nota: 'de ingresos' } : '—');
+      cuerpo += filaTotal('Utilidad', fmt(er.utilidad), er.margen === null ? 'Sin ingresos' : { cifra: U.fmtNumero(er.margen, 1) + ' %', nota: 'margen' }, er.utilidad >= 0 ? 'positivo' : 'negativo');
       cuerpo += '</tbody></table></div>';
       cuerpo += '<p class="texto-3 mt-1 mb-0">Las transferencias (entre cuentas, retiros de socio y aportaciones) no cuentan como ingreso ni gasto.</p>';
     }
@@ -476,8 +478,8 @@ window.VF = window.VF || {};
       if (ing.length) ing.forEach(function (f) { cuerpo += filaCategoria(f, totalIng); });
       else cuerpo += '<tr><td colspan="3" class="texto-2">Sin ingresos en el periodo</td></tr>';
       cuerpo += filaTotal('Total ingresos', fmt(totalIng), totalIng > 0 ? '100 %' : '—');
-      cuerpo += filaTotal('Total gastos', fmt(totalGas), totalIng > 0 ? pct(totalGas, totalIng) + ' de ingresos' : '—');
-      cuerpo += filaTotal('Balance', fmt(bal), totalIng > 0 ? pct(bal, totalIng) + ' de ingresos' : '—', bal >= 0 ? 'positivo' : 'negativo');
+      cuerpo += filaTotal('Total gastos', fmt(totalGas), totalIng > 0 ? { cifra: pct(totalGas, totalIng), nota: 'de ingresos' } : '—');
+      cuerpo += filaTotal('Balance', fmt(bal), totalIng > 0 ? { cifra: pct(bal, totalIng), nota: 'de ingresos' } : '—', bal >= 0 ? 'positivo' : 'negativo');
       cuerpo += '</tbody></table></div>';
       cuerpo += '<p class="texto-3 mt-1 mb-0">Las transferencias (ahorro programado, pago de tarjeta, aportaciones) no cuentan como ingreso ni gasto.</p>';
     }

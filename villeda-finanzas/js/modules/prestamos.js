@@ -497,15 +497,17 @@ window.VF = window.VF || {};
     return VF.ui.tabla({
       columnas: [
         { clave: 'fecha', titulo: 'Pago', render: function (f, fila) {
-          return '<strong>' + fila.n + '</strong> · <span class="truncar">' + esc(U.fmtFecha(f)) + '</span><br><small class="texto-2">' + esc(fila.cuenta) + '</small>' +
-            (fila.sinMovimiento ? ' <span class="badge badge-alerta">Sin movimiento</span>' : '');
+          // Un solo hijo en la celda: en móvil la celda es flex y varios hijos se repartirían (y truncarían) el ancho.
+          return '<span><strong>' + fila.n + '</strong> · <span style="white-space:nowrap">' + esc(U.fmtFecha(f)) + '</span><br><small class="texto-2">' + esc(fila.cuenta) + '</small>' +
+            (fila.sinMovimiento ? ' <span class="badge badge-alerta">Sin movimiento</span>' : '') + '</span>';
         } },
         { clave: 'monto', titulo: 'Monto', alinear: 'derecha', render: function (v) { return '<strong>' + esc(fmt(v)) + '</strong>'; } },
         { clave: 'capital', titulo: 'Capital / interés', alinear: 'derecha', render: function (v, fila) {
           return esc(fmt(v)) + '<br><small class="texto-2" data-interes>' + esc(fmt(fila.interes)) + '</small>';
         } },
         { clave: 'id', titulo: '', alinear: 'derecha', render: function (id, fila) {
-          return '<button type="button" class="btn btn-icono" data-accion="prestamos-eliminar-pago" data-id="' + esc(p.id) + '" data-pago="' + esc(id) + '" aria-label="Eliminar pago ' + fila.n + '" title="Eliminar pago">' + VF.ui.icono('eliminar') + '</button>';
+          // margin-left:auto → en móvil (celda flex sin título) el botón queda a la derecha, como en escritorio.
+          return '<span style="display:inline-block;margin-left:auto"><button type="button" class="btn btn-icono" data-accion="prestamos-eliminar-pago" data-id="' + esc(p.id) + '" data-pago="' + esc(id) + '" aria-label="Eliminar pago ' + fila.n + '" title="Eliminar pago">' + VF.ui.icono('eliminar') + '</button></span>';
         } }
       ],
       filas: filas,
@@ -538,7 +540,7 @@ window.VF = window.VF || {};
         columnas: [
           { clave: 'n', titulo: 'N.º', alinear: 'centro' },
           { clave: 'fecha', titulo: 'Fecha', render: function (f, fila) {
-            return '<span class="truncar ' + (fila.estadoFila === 'pagado' ? 'texto-2' : '') + '">' + esc(U.fmtFecha(f)) + '</span><br>' + badgeEstado(fila.estadoFila);
+            return '<span class="' + (fila.estadoFila === 'pagado' ? 'texto-2' : '') + '" style="white-space:nowrap">' + esc(U.fmtFecha(f)) + '</span><br>' + badgeEstado(fila.estadoFila);
           } },
           { clave: 'pago', titulo: 'Pago', alinear: 'derecha', render: celda },
           { clave: 'capital', titulo: 'Capital / interés', alinear: 'derecha', render: function (v, fila) {

@@ -476,22 +476,31 @@ window.VF = window.VF || {};
     return lista;
   }
 
-  function columnasFacturas(est, sinCliente) {
+  /**
+   * Columnas de la tabla de facturas. opciones: { sinCliente (grupos por cliente), compacta (tablas dentro de un
+   * modal de 560 px: el vencimiento va bajo el folio y no hay columna "Fechas") }.
+   */
+  function columnasFacturas(est, opciones) {
+    var o = opciones || {};
     var cols = [
       { clave: 'folio', titulo: 'Folio', render: function (v, f) {
+        var venc = estaVencida(f);
         return '<strong>' + esc(v) + '</strong>' +
-          (f.concepto ? '<br><small class="texto-2">' + esc(recortar(f.concepto, MAX_CONCEPTO_TABLA)) + '</small>' : '');
+          (f.concepto ? '<br><small class="texto-2">' + esc(recortar(f.concepto, o.compacta ? 40 : MAX_CONCEPTO_TABLA)) + '</small>' : '') +
+          (o.compacta ? '<br><small class="' + (venc ? 'negativo' : 'texto-3') + '">Vence ' + esc(U.fmtFecha(f.fechaVencimiento)) + '</small>' : '');
       } }
     ];
-    if (!sinCliente) {
+    if (!o.sinCliente) {
       cols.push({ clave: 'clienteId', titulo: 'Cliente', render: function (v) { return esc(nombreCliente(est, v)); } });
     }
-    cols.push({ clave: 'fechaVencimiento', titulo: 'Fechas', render: function (v, f) {
-      var venc = estaVencida(f);
-      var rel = cobrable(f) && v ? ' · ' + capitalizar(VF.ui.fechaRelativa(v)) : '';
-      return '<span class="truncar">Emitida ' + esc(U.fmtFecha(f.fechaEmision)) + '</span><br>' +
-        '<small class="' + (venc ? 'negativo' : 'texto-2') + '">Vence ' + esc(U.fmtFecha(v)) + esc(rel) + '</small>';
-    } });
+    if (!o.compacta) {
+      cols.push({ clave: 'fechaVencimiento', titulo: 'Fechas', render: function (v, f) {
+        var venc = estaVencida(f);
+        var rel = cobrable(f) && v ? ' · ' + capitalizar(VF.ui.fechaRelativa(v)) : '';
+        return '<span class="truncar">Emitida ' + esc(U.fmtFecha(f.fechaEmision)) + '</span><br>' +
+          '<small class="' + (venc ? 'negativo' : 'texto-2') + '">Vence ' + esc(U.fmtFecha(v)) + esc(rel) + '</small>';
+      } });
+    }
     cols.push({ clave: 'total', titulo: 'Total', alinear: 'derecha', render: function (v) { return '<span class="cifra">' + esc(fmt(v)) + '</span>'; } });
     cols.push({ clave: 'id', titulo: 'Pendiente', alinear: 'derecha', render: function (v, f) {
       if (!cobrable(f)) return '<span class="texto-3">—</span>';
@@ -501,9 +510,9 @@ window.VF = window.VF || {};
     return cols;
   }
 
-  function tablaFacturas(est, lista, sinCliente, vacioTexto) {
+  function tablaFacturas(est, lista, opciones, vacioTexto) {
     return VF.ui.tabla({
-      columnas: columnasFacturas(est, sinCliente),
+      columnas: columnasFacturas(est, opciones),
       filas: lista,
       vacio: vacioTexto || 'Sin facturas',
       onFila: function (id, tr) {
@@ -550,7 +559,7 @@ window.VF = window.VF || {};
         '</div>';
     }
     if (vista.agrupar) return listaAgrupada(est, lista);
-    return VF.ui.tarjeta({ titulo: 'Facturas', acciones: resumenLista(lista), cuerpo: tablaFacturas(est, lista, false, textoVacioLista()) });
+    return VF.ui.tarjeta({ titulo: 'Facturas', acciones: resumenLista(lista), cuerpo: tablaFacturas(est, lista, {}, textoVacioLista()) });
   }
 
   /** Grupos por cliente: con filtro "pendientes" se toman de VF.calc.porCobrar().porCliente (orden por total). */
@@ -591,7 +600,7 @@ window.VF = window.VF || {};
       html += VF.ui.tarjeta({
         titulo: nombreCliente(est, g.clienteId),
         acciones: acciones,
-        cuerpo: '<p class="texto-3 mb-1">' + esc(plural(g.facturas.length, 'factura')) + '</p>' + tablaFacturas(est, g.facturas, true)
+        cuerpo: '<p class="texto-3 mb-1">' + esc(plural(g.facturas.length, 'factura')) + '</p>' + tablaFacturas(est, g.facturas, { sinCliente: true })
       });
     });
     return html;
@@ -631,8 +640,10 @@ window.VF = window.VF || {};
               (fila.vencido > 0 ? '<br><small class="negativo">Vencido ' + esc(fmt(fila.vencido)) + '</small>' : '');
           } },
           { clave: 'id', titulo: '', alinear: 'derecha', render: function (id, fila) {
-            return '<button type="button" class="btn btn-icono" aria-label="Editar cliente ' + esc(fila.nombre) + '" title="Editar" ' + accion('fac-editar-cliente', id) + '>' + VF.ui.icono('editar') + '</button> ' +
-              '<button type="button" class="btn btn-icono" aria-label="Eliminar cliente ' + esc(fila.nombre) + '" title="Eliminar" ' + accion('fac-eliminar-cliente', id) + '>' + VF.ui.icono('eliminar') + '</button>';
+            return '<span class="truncar">' +
+              '<button type="button" class="btn btn-icono" aria-label="Editar cliente ' + esc(fila.nombre) + '" title="Editar" ' + accion('fac-editar-cliente', id) + '>' + VF.ui.icono('editar') + '</button> ' +
+              '<button type="button" class="btn btn-icono" aria-label="Eliminar cliente ' + esc(fila.nombre) + '" title="Eliminar" ' + accion('fac-eliminar-cliente', id) + '>' + VF.ui.icono('eliminar') + '</button>' +
+              '</span>';
           } }
         ],
         filas: filas,
@@ -690,8 +701,11 @@ window.VF = window.VF || {};
           { clave: 'monto', titulo: 'Monto', alinear: 'derecha', render: function (v) { return '<strong class="cifra positivo">' + esc('+' + fmt(v)) + '</strong>'; } },
           { clave: 'id', titulo: '', alinear: 'derecha', render: function (id, p) {
             var mov = p.movimientoId ? buscar(est.movimientos, p.movimientoId) : null;
-            return (mov ? '<button type="button" class="btn btn-icono" aria-label="Ver movimiento del pago" title="Ver movimiento" ' + accion('fac-ver-movimiento', mov.id) + '>' + VF.ui.icono('ojo') + '</button> ' : '') +
-              '<button type="button" class="btn btn-icono" aria-label="Eliminar pago" title="Eliminar pago" ' + accion('fac-eliminar-pago', f.id, ' data-pago="' + esc(id) + '"') + '>' + VF.ui.icono('eliminar') + '</button>';
+            // .truncar (white-space: nowrap) evita que los dos botones se apilen en celdas angostas.
+            return '<span class="truncar">' +
+              (mov ? '<button type="button" class="btn btn-icono" aria-label="Ver movimiento del pago" title="Ver movimiento" ' + accion('fac-ver-movimiento', mov.id) + '>' + VF.ui.icono('ojo') + '</button> ' : '') +
+              '<button type="button" class="btn btn-icono" aria-label="Eliminar pago" title="Eliminar pago" ' + accion('fac-eliminar-pago', f.id, ' data-pago="' + esc(id) + '"') + '>' + VF.ui.icono('eliminar') + '</button>' +
+              '</span>';
           } }
         ],
         filas: pagos,
@@ -751,7 +765,7 @@ window.VF = window.VF || {};
       '</div>';
     html += '<h3 class="mt-2">Facturas</h3>';
     html += fs.length
-      ? '<p class="texto-3 mb-1">Toca una factura para ver su detalle.</p>' + tablaFacturas(est, fs, true, 'Sin facturas')
+      ? '<p class="texto-3 mb-1">Toca una factura para ver su detalle.</p>' + tablaFacturas(est, fs, { sinCliente: true, compacta: true }, 'Sin facturas')
       : '<p class="texto-2">Este cliente aún no tiene facturas.</p>';
     html += '<div class="fila mt-2">' +
       '<button type="button" class="btn btn-primario" ' + accion('fac-nueva-factura', null, ' data-cliente="' + esc(c.id) + '"') + '>' + VF.ui.icono('agregar') + '<span>Nueva factura</span></button>' +

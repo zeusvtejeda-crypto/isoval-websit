@@ -145,7 +145,7 @@ window.VF = window.VF || {};
     edicion = null;
     enfoquePendiente = null;
     VF.ui.ambitoActivo(ambitoActual);
-    contenedor.innerHTML = cabecera() + '<div id="ppto-cuerpo"></div>';
+    contenedor.innerHTML = cabecera() + barraMes() + '<div id="ppto-cuerpo"></div>';
     pintar();
   }
 
@@ -210,7 +210,8 @@ window.VF = window.VF || {};
 
     cuerpo.setAttribute('data-ambito', ambitoActual);
     cuerpo.setAttribute('data-periodo', periodo);
-    var html = barraMes(est, periodo);
+    actualizarBarraMes(est, periodo);
+    var html = '';
     if (!conPpto.length) {
       html += tarjetaVacia(est, periodo, sinPpto);
     } else {
@@ -229,28 +230,43 @@ window.VF = window.VF || {};
       if (objetivo) { objetivo.focus(); try { objetivo.select(); } catch (e) { /* sin selección */ } return; }
     }
     if (enfoquePendiente) {
-      objetivo = cuerpo.querySelector(enfoquePendiente);
+      objetivo = (document.getElementById('vista') || cuerpo).querySelector(enfoquePendiente);
       enfoquePendiente = null;
       if (objetivo && typeof objetivo.focus === 'function') { try { objetivo.focus({ preventScroll: true }); } catch (e2) { objetivo.focus(); } }
     }
   }
 
-  /* ---------- selector de mes + copiar ------------------------------------- */
-  function barraMes(est, periodo) {
-    var esActual = periodo === periodoHoy();
-    var anterior = sumarMeses(periodo, -1);
-    var hayAnterior = registrosDe(est, ambitoActual, anterior).length > 0;
+  /* ---------- selector de mes + copiar -------------------------------------
+   * Se pinta UNA vez en render() (fuera de #ppto-cuerpo): así la región aria-live anuncia el mes nuevo
+   * y los botones de mes conservan el foco al navegar con teclado. pintar() sólo actualiza sus textos. */
+  function barraMes() {
     return '<div class="fila-entre mb-2" id="ppto-mes">' +
       '<div class="fila" role="group" aria-label="Mes del presupuesto" style="gap:4px">' +
       '<button type="button" class="btn btn-icono" data-accion="ppto-mes-anterior" aria-label="Mes anterior" title="Mes anterior">' + VF.ui.icono('flecha-izq') + '</button>' +
-      '<strong id="ppto-mes-nombre" class="centro" aria-live="polite" style="min-width:9.5em;display:inline-block">' + esc(capitalizar(mesLargo(periodo))) + '</strong>' +
+      '<strong id="ppto-mes-nombre" class="centro" aria-live="polite" style="min-width:9.5em;display:inline-block"></strong>' +
       '<button type="button" class="btn btn-icono" data-accion="ppto-mes-siguiente" aria-label="Mes siguiente" title="Mes siguiente">' + VF.ui.icono('flecha') + '</button>' +
-      (esActual ? '' : '<button type="button" class="btn btn-fantasma btn-chico" data-accion="ppto-mes-actual">Mes actual</button>') +
+      '<button type="button" class="btn btn-fantasma btn-chico" data-accion="ppto-mes-actual" hidden>Mes actual</button>' +
       '</div>' +
-      '<button type="button" class="btn btn-secundario btn-chico" data-accion="ppto-copiar"' +
-      (hayAnterior ? '' : ' title="No hay presupuestos de ' + esc(NOMBRES[ambitoActual]) + ' en ' + esc(mesLargo(anterior)) + '"') + '>' +
+      '<button type="button" class="btn btn-secundario btn-chico" data-accion="ppto-copiar">' +
       VF.ui.icono('copiar') + '<span>Copiar del mes anterior</span></button>' +
       '</div>';
+  }
+  function actualizarBarraMes(est, periodo) {
+    var barra = document.getElementById('ppto-mes');
+    if (!barra) return;
+    var nombre = barra.querySelector('#ppto-mes-nombre');
+    var texto = capitalizar(mesLargo(periodo));
+    if (nombre && nombre.textContent !== texto) nombre.textContent = texto;
+    var btnActual = barra.querySelector('[data-accion="ppto-mes-actual"]');
+    if (btnActual) btnActual.hidden = periodo === periodoHoy();
+    var btnCopiar = barra.querySelector('[data-accion="ppto-copiar"]');
+    if (btnCopiar) {
+      var anterior = sumarMeses(periodo, -1);
+      var hayAnterior = registrosDe(est, ambitoActual, anterior).length > 0;
+      btnCopiar.title = hayAnterior
+        ? 'Copiar a ' + mesLargo(periodo) + ' los presupuestos de ' + mesLargo(anterior) + ' (' + NOMBRES[ambitoActual] + ')'
+        : 'No hay presupuestos de ' + NOMBRES[ambitoActual] + ' en ' + mesLargo(anterior);
+    }
   }
 
   /* ---------- KPIs --------------------------------------------------------- */
@@ -291,9 +307,9 @@ window.VF = window.VF || {};
   }
 
   /* ---------- tabla principal --------------------------------------------- */
-  function inputMonto(categoria, valor) {
+  function inputMonto(categoria, valor, base) {
     var v = valor == null || valor === '' ? '' : (typeof valor === 'number' ? valor.toFixed(2) : String(valor));
-    return '<div class="campo ppto-campo" style="margin:0;flex:1 1 140px;max-width:220px"><div class="campo-monto">' +
+    return '<div class="campo ppto-campo" style="margin:0;flex:1 1 ' + (Number(base) || 140) + 'px;max-width:220px"><div class="campo-monto">' +
       '<span class="prefijo" aria-hidden="true">$</span>' +
       '<input type="text" inputmode="decimal" data-tipo="monto" data-ppto-monto data-categoria="' + esc(categoria) + '" value="' + esc(v) + '"' +
       ' placeholder="0.00" autocomplete="off" aria-label="Presupuesto mensual para ' + esc(categoria) + '"></div></div>';
@@ -573,10 +589,11 @@ window.VF = window.VF || {};
       return '<li class="lista-item" data-ppto-sin="' + esc(f.categoria) + '" style="flex-wrap:wrap">' +
         '<span class="lista-icono">' + VF.ui.icono('gasto') + '</span>' +
         '<div class="lista-texto"><p class="lista-titulo">' + esc(f.categoria) + '</p>' +
-        '<p class="lista-sub">Gasto real sin presupuesto · ' + esc(mesLargo(periodo)) + '</p></div>' +
+        '<p class="lista-sub">Gasto real en ' + esc(mesLargo(periodo)) + '</p></div>' +
         '<span class="lista-valor negativo">' + esc(fmt(f.real)) + '</span>' +
         (editando
-          ? '<div class="fila" style="flex:1 1 100%;justify-content:flex-end">' + inputMonto(f.categoria, edicion.valor) + botonesEdicion(f.categoria) + '</div>'
+          ? '<div class="fila" style="flex:1 1 100%;justify-content:flex-end">' + inputMonto(f.categoria, edicion.valor, 120) +
+            '<span class="fila" style="flex:none;flex-wrap:nowrap;gap:4px">' + botonesEdicion(f.categoria) + '</span></div>'
           : '<button type="button" class="btn btn-secundario btn-chico" data-accion="ppto-asignar" data-categoria="' + esc(f.categoria) + '" aria-label="Asignar presupuesto a ' + esc(f.categoria) + '">Asignar</button>') +
         '</li>';
     }).join('');
@@ -600,13 +617,14 @@ window.VF = window.VF || {};
     var categoria = t.getAttribute('data-categoria');
     switch (accion) {
       case 'ppto-mes-anterior':
-        cambiarPeriodo(sumarMeses(periodoVigente(), -1), '[data-accion="ppto-mes-anterior"]');
+        cambiarPeriodo(sumarMeses(periodoVigente(), -1));
         break;
       case 'ppto-mes-siguiente':
-        cambiarPeriodo(sumarMeses(periodoVigente(), 1), '[data-accion="ppto-mes-siguiente"]');
+        cambiarPeriodo(sumarMeses(periodoVigente(), 1));
         break;
       case 'ppto-mes-actual':
-        cambiarPeriodo(periodoHoy(), '[data-accion="ppto-mes-anterior"]');
+        // El botón se oculta al volver al mes actual: el foco pasa a "Mes anterior".
+        cambiarPeriodo(periodoHoy(), '#ppto-mes [data-accion="ppto-mes-anterior"]');
         break;
       case 'ppto-copiar':
         copiarMesAnterior();

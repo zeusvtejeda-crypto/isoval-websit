@@ -1053,3 +1053,279 @@ window.VF = window.VF || {};
     });
     return peticion.then(function (r) { clearTimeout(temporizador); return r; }, function (e) { clearTimeout(temporizador); throw e; });
   }
+
+  /* ======================================================================
+   * Vista #/asistente (sólo si existe el DOM y el resto del núcleo)
+   * ==================================================================== */
+  var historial = [];          // [{ rol:'usuario', texto } | { rol:'asistente', respuesta, nota, remoto }]
+  var ocupado = false;
+  var temporizadorCambio = null;
+  var hayVista = typeof document !== 'undefined' && !!(VF.ui && VF.store && VF.router);
+
+  /**
+   * Estilos propios del módulo. css/app.css sólo aporta .chat / .burbuja; lo demás (formulario pegajoso,
+   * tabla compacta, lista de respuesta) se inyecta aquí como auxiliar privado (pendiente: mover a app.css).
+   */
+  var ESTILOS = [
+    '.asistente-tarjeta{padding:14px}',
+    '.asistente-chat{min-height:120px}',
+    '.asistente-chat .burbuja{max-width:100%;overflow-wrap:anywhere}',
+    '.asistente-chat .burbuja-usuario{max-width:92%;font-weight:500}',
+    '.asistente-chat .burbuja-asistente{width:100%;max-width:100%}',
+    '.burbuja-asistente .asistente-texto{margin:0 0 8px;line-height:1.5}',
+    '.asistente-seccion{margin:10px 0 0;padding-top:8px;border-top:1px dashed var(--borde)}',
+    '.asistente-seccion:first-child{border-top:0;padding-top:0;margin-top:0}',
+    '.asistente-subtitulo{font-size:0.9rem;margin:0 0 6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
+    '.asistente-kv{padding:4px 0;font-size:0.95rem}',
+    '.asistente-kv strong{white-space:nowrap}',
+    '.asistente-nota{font-size:0.8rem;margin:8px 0 0}',
+    '.asistente-tabla-env{margin-top:8px}',
+    '.asistente-tabla{font-size:0.86rem}',
+    '.asistente-tabla th,.asistente-tabla td{padding:7px 6px}',
+    '.asistente-tabla th:first-child,.asistente-tabla td:first-child{padding-left:0}',
+    '.asistente-tabla th:last-child,.asistente-tabla td:last-child{padding-right:0}',
+    '.asistente-lista{list-style:none;margin:6px 0 0;padding:0}',
+    '.asistente-item{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--borde)}',
+    '.asistente-item:last-child{border-bottom:0}',
+    '.asistente-item-texto{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}',
+    '.asistente-item-titulo{font-weight:600;font-size:0.92rem;overflow-wrap:anywhere}',
+    '.asistente-item-sub{font-size:0.8rem;color:var(--texto-2);overflow-wrap:anywhere}',
+    '.asistente-item-sub .badge{vertical-align:middle}',
+    '.asistente-item-valor{flex:none;white-space:nowrap;font-size:0.92rem}',
+    '.asistente-barra{display:block;margin-top:6px;max-width:260px}',
+    '.asistente-barra .barra-relleno{display:block}',
+    '.asistente-ayuda .asistente-item-titulo{font-weight:500}',
+    '.asistente-ejemplo{min-height:32px;padding:4px 0;font-weight:500;text-align:left;white-space:normal}',
+    '.asistente-enlaces{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}',
+    '.asistente-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;font-size:0.75rem;color:var(--texto-3)}',
+    '.asistente-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;margin-top:12px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}',
+    '.asistente-chips .chip{flex:none;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;line-height:22px}',
+    '.asistente-chips[data-vacio="true"]{flex-wrap:wrap;overflow:visible}',
+    '.asistente-chips[data-vacio="true"] .chip{white-space:normal;max-width:100%;line-height:1.3}',
+    '@media (min-width:900px){.asistente-chips{flex-wrap:wrap;overflow:visible}.asistente-chips .chip{white-space:normal;line-height:1.3}}',
+    '.asistente-form{display:flex;gap:8px;align-items:center;position:sticky;bottom:calc(var(--altura-nav-inferior) + var(--safe-bottom) + 8px);background:var(--superficie);padding:10px 0 2px;margin-top:4px;z-index:2}',
+    '@media (min-width:900px){.asistente-form{bottom:12px}}',
+    '.asistente-form .entrada{flex:1;min-width:0;min-height:48px;border:1px solid var(--borde-2);border-radius:12px;padding:11px 14px;background:var(--superficie);color:var(--texto);font:inherit;font-size:17px;-webkit-appearance:none;appearance:none}',
+    '.asistente-form .entrada:focus{border-color:var(--acento);box-shadow:var(--foco);outline:none}',
+    '.asistente-form .btn{flex:none;height:48px}',
+    '.asistente-pensando{display:inline-flex;align-items:center;gap:8px;color:var(--texto-2)}',
+    '.asistente-pensando::before{content:"";width:14px;height:14px;border-radius:50%;border:2px solid var(--borde-2);border-top-color:var(--acento);animation:asistente-giro 0.8s linear infinite}',
+    '@keyframes asistente-giro{to{transform:rotate(360deg)}}'
+  ].join('\n');
+
+  function asegurarEstilos() {
+    if (document.getElementById('asistente-estilos')) return;
+    var s = document.createElement('style');
+    s.id = 'asistente-estilos';
+    s.textContent = ESTILOS;
+    document.head.appendChild(s);
+  }
+
+  function estado() { return VF.store.estado(); }
+  function endpointConfigurado() {
+    var est = VF.store.estaDesbloqueado() ? estado() : null;
+    return !!(est && est.ajustes && String(est.ajustes.asistenteEndpoint || '').trim());
+  }
+
+  function render(contenedor, params) {
+    var p = params || {};
+    asegurarEstilos();
+    contenedor.innerHTML =
+      '<div class="vista-cabecera">' +
+      '<div><h1>Asistente</h1><p class="texto-2 mb-0">Responde con tus cifras reales, sin salir de este dispositivo. Empresa y personal siempre por separado.</p></div>' +
+      '<div class="vista-acciones">' +
+      '<button type="button" class="btn btn-fantasma btn-chico" data-accion="asistente-ayuda">' + VF.ui.icono('ayuda') + '<span>Qué puedo preguntar</span></button>' +
+      '<button type="button" class="btn btn-fantasma btn-chico" data-accion="asistente-limpiar"' + (historial.length ? '' : ' hidden') + '>' + VF.ui.icono('eliminar') + '<span>Limpiar</span></button>' +
+      '</div></div>' +
+      '<section class="tarjeta asistente-tarjeta" aria-labelledby="asistente-titulo-chat">' +
+      '<h2 id="asistente-titulo-chat" class="sr-solo">Conversación</h2>' +
+      '<div id="asistente-chat" class="chat asistente-chat" role="log" aria-live="polite" aria-relevant="additions"></div>' +
+      '<div id="asistente-chips" class="asistente-chips" role="group" aria-label="Preguntas sugeridas"></div>' +
+      '<form id="asistente-form" class="asistente-form" autocomplete="off">' +
+      '<label for="asistente-entrada" class="sr-solo">Escribe tu pregunta</label>' +
+      '<input id="asistente-entrada" class="entrada" type="text" placeholder="Escribe tu pregunta…" enterkeyhint="send" maxlength="300" autocapitalize="sentences">' +
+      '<button type="submit" class="btn btn-primario btn-icono" aria-label="Enviar pregunta" title="Enviar">' + VF.ui.icono('enviar') + '</button>' +
+      '</form>' +
+      '</section>';
+    pintarChat();
+    pintarChips();
+    if (p.pregunta) {
+      // Evita repetir la pregunta en cada re-render (p. ej. tras 'cambio'): se limpia el hash.
+      try { history.replaceState(null, '', '#/asistente'); } catch (e) { /* file:// en algunos navegadores */ }
+      preguntar(p.pregunta);
+    }
+  }
+
+  function burbujaUsuario(texto) {
+    return '<div class="burbuja burbuja-usuario" data-rol="usuario"><p class="mb-0">' + esc(texto) + '</p></div>';
+  }
+  function burbujaAsistente(entrada) {
+    var r = entrada.respuesta;
+    var html = '<article class="burbuja burbuja-asistente" data-rol="asistente" data-intent="' + esc(r.intent) + '"' + (r.ambito ? ' data-ambito="' + esc(r.ambito) + '"' : '') + '>';
+    if (entrada.remoto) html += parrafo(r.texto);
+    else html += r.html || parrafo(r.texto);
+    if (r.enlaces && r.enlaces.length) {
+      html += '<p class="asistente-enlaces mb-0">' + r.enlaces.map(function (e, i) {
+        return '<a class="btn ' + (i === 0 ? 'btn-secundario' : 'btn-fantasma') + ' btn-chico" href="#/' + esc(e.ruta) + '">' + esc(i === 0 ? 'Ver detalle · ' + e.texto : e.texto) + '</a>';
+      }).join('') + '</p>';
+    }
+    html += '<p class="asistente-meta mb-0">' +
+      (entrada.remoto ? badgeEstado('Servidor de IA', 'info') : badgeEstado('Motor local', 'neutro')) +
+      (r.ambito ? badge(r.ambito) : (r.intent !== 'ayuda' && r.intent !== 'desconocido' ? badgeEstado('Ambos ámbitos', 'combinado') : '')) +
+      (r.periodo ? '<span>' + esc(capitalizar(r.periodo.etiqueta)) + '</span>' : '') +
+      (entrada.nota ? '<span class="alerta">' + esc(entrada.nota) + '</span>' : '') +
+      '</p></article>';
+    return html;
+  }
+  function burbujaBienvenida() {
+    var est = VF.store.estaDesbloqueado() ? estado() : null;
+    var nombre = est && est.ajustes && est.ajustes.nombreUsuario ? est.ajustes.nombreUsuario : '';
+    return '<article class="burbuja burbuja-asistente" data-rol="bienvenida"><p class="mb-1">' +
+      esc('Hola' + (nombre ? ', ' + nombre : '') + '. Pregúntame sobre tus finanzas: te respondo con las cifras reales de ' + (est ? nombreEmpresa(est) : 'tu empresa') + ' y de tus cuentas personales, siempre por separado.') +
+      '</p><p class="texto-2 mb-0">Toca una pregunta sugerida o escribe la tuya y pulsa Enter.' +
+      (endpointConfigurado() ? ' Hay un servidor de IA configurado en Ajustes: se le enviará sólo un resumen numérico, sin descripciones ni contrapartes.' : '') + '</p></article>';
+  }
+
+  function pintarChat() {
+    var chat = document.getElementById('asistente-chat');
+    if (!chat) return;
+    var html = historial.length ? historial.map(function (h) { return h.rol === 'usuario' ? burbujaUsuario(h.texto) : burbujaAsistente(h); }).join('') : burbujaBienvenida();
+    chat.innerHTML = html;
+    var btn = document.querySelector('[data-accion="asistente-limpiar"]');
+    if (btn) btn.hidden = !historial.length;
+  }
+
+  function pintarChips() {
+    var cont = document.getElementById('asistente-chips');
+    if (!cont) return;
+    cont.setAttribute('data-vacio', historial.length ? 'false' : 'true');
+    cont.innerHTML = PREGUNTAS_SUGERIDAS.map(function (q) {
+      return '<button type="button" class="chip" data-accion="asistente-chip" data-pregunta="' + esc(q) + '" title="' + esc(q) + '">' + esc(q) + '</button>';
+    }).join('');
+  }
+
+  function agregarBurbuja(html) {
+    var chat = document.getElementById('asistente-chat');
+    if (!chat) return null;
+    if (chat.querySelector('[data-rol="bienvenida"]')) chat.innerHTML = '';
+    var nodo = VF.ui.el(html);
+    chat.appendChild(nodo);
+    return nodo;
+  }
+  function desplazarA(nodo) {
+    if (!nodo || typeof nodo.scrollIntoView !== 'function') return;
+    try { nodo.scrollIntoView({ block: 'nearest', behavior: 'auto' }); } catch (e) { nodo.scrollIntoView(); }
+  }
+
+  /**
+   * Procesa una pregunta: la añade al historial, consulta el servidor de IA si está configurado
+   * (con respaldo al motor local) y pinta la respuesta. Devuelve Promise<respuesta>.
+   */
+  function preguntar(texto) {
+    var pregunta = String(texto == null ? '' : texto).trim();
+    if (!pregunta || !VF.store.estaDesbloqueado()) return Promise.resolve(null);
+    var est = estado();
+    historial.push({ rol: 'usuario', texto: pregunta });
+    agregarBurbuja(burbujaUsuario(pregunta));
+    var chips = document.getElementById('asistente-chips');
+    if (chips) chips.setAttribute('data-vacio', 'false');
+    var btnLimpiar = document.querySelector('[data-accion="asistente-limpiar"]');
+    if (btnLimpiar) btnLimpiar.hidden = false;
+
+    var local = responder(pregunta, est);
+    function terminar(entrada) {
+      historial.push(entrada);
+      var pensando = document.getElementById('asistente-pensando');
+      if (pensando) pensando.remove();
+      var nodo = agregarBurbuja(burbujaAsistente(entrada));
+      desplazarA(nodo);
+      ocupado = false;
+      return entrada.respuesta;
+    }
+    if (!(est.ajustes && String(est.ajustes.asistenteEndpoint || '').trim())) {
+      return Promise.resolve(terminar({ rol: 'asistente', respuesta: local, remoto: false, nota: '' }));
+    }
+    ocupado = true;
+    var espera = agregarBurbuja('<article class="burbuja burbuja-asistente" id="asistente-pensando" aria-busy="true"><span class="asistente-pensando">Consultando al servidor de IA…</span></article>');
+    desplazarA(espera);
+    return responderRemoto(pregunta, est).then(function (rem) {
+      return terminar({ rol: 'asistente', remoto: true, nota: '', respuesta: { texto: rem.texto, html: parrafo(rem.texto), intent: local.intent, ambito: local.ambito, periodo: null, enlaces: local.enlaces, pregunta: pregunta } });
+    }, function (e) {
+      var motivo = e && e.message === 'TIEMPO_AGOTADO' ? 'no respondió en 15 s' : e && /^HTTP_/.test(e.message) ? 'devolvió error ' + e.message.slice(5) : 'no está disponible';
+      return terminar({ rol: 'asistente', respuesta: local, remoto: false, nota: 'El servidor de IA ' + motivo + '; esta respuesta la calculó el motor local.' });
+    });
+  }
+
+  function limpiarHistorial() {
+    historial = [];
+    ocupado = false;
+    pintarChat();
+    pintarChips();
+  }
+
+  /* ---------- eventos (delegación data-accion="asistente-…") -------------- */
+  if (hayVista) {
+    document.addEventListener('click', function (e) {
+      var t = e.target && e.target.closest ? e.target.closest('[data-accion^="asistente-"]') : null;
+      if (!t || !VF.store.estaDesbloqueado()) return;
+      var accion = t.getAttribute('data-accion');
+      if (accion === 'asistente-chip') {
+        e.preventDefault();
+        if (ocupado) return;
+        preguntar(t.getAttribute('data-pregunta') || t.textContent);
+        var entrada = document.getElementById('asistente-entrada');
+        if (entrada) entrada.focus({ preventScroll: true });
+      } else if (accion === 'asistente-limpiar') {
+        limpiarHistorial();
+      } else if (accion === 'asistente-ayuda') {
+        if (!ocupado) preguntar('¿Qué puedes hacer?');
+      }
+    });
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (!form || form.id !== 'asistente-form') return;
+      e.preventDefault();
+      if (ocupado) return;
+      var entrada = document.getElementById('asistente-entrada');
+      var texto = entrada ? entrada.value : '';
+      if (!String(texto).trim()) { if (entrada) entrada.focus(); return; }
+      if (entrada) entrada.value = '';
+      preguntar(texto);
+    });
+
+    VF.store.on('cambio', function () {
+      clearTimeout(temporizadorCambio);
+      temporizadorCambio = setTimeout(function () {
+        if (!VF.store.estaDesbloqueado()) return;
+        if (VF.router.actual().ruta !== 'asistente') return;
+        var vista = document.getElementById('vista');
+        var entrada = document.getElementById('asistente-entrada');
+        var borrador = entrada ? entrada.value : '';
+        if (vista) render(vista, {});
+        var nueva = document.getElementById('asistente-entrada');
+        if (nueva && borrador) nueva.value = borrador;
+      }, 30);
+    });
+    // Privacidad: al bloquear se olvida la conversación.
+    VF.store.on('bloqueado', function () { historial = []; ocupado = false; });
+
+    VF.router.registrar('asistente', { titulo: 'Asistente', icono: 'asistente', nav: 'principal', render: render });
+  }
+
+  VF.asistente = {
+    responder: responder,
+    intenciones: intenciones,
+    responderRemoto: responderRemoto,
+    preguntas: function () { return PREGUNTAS_SUGERIDAS.slice(); },
+    detectar: function (pregunta, estado) {
+      var n = limpiar(pregunta);
+      var ambito = detectarAmbito(n);
+      var periodo = detectarPeriodo(n);
+      return { normalizada: n, ambito: ambito, periodo: periodo, intent: detectarIntent(n, estado || {}, ambito, periodo).intent };
+    },
+    preguntar: hayVista ? preguntar : null,
+    historial: function () { return historial.slice(); },
+    limpiar: hayVista ? limpiarHistorial : function () { historial = []; },
+    render: hayVista ? render : null
+  };
+})(window.VF);
