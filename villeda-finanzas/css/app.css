@@ -250,7 +250,14 @@ img, svg { max-width: 100%; }
 .marca-texto { color: var(--texto); font-size: 1rem; letter-spacing: 0.02em; white-space: nowrap; }
 .marca-texto strong { font-weight: 700; }
 .cabecera-centro { flex: 1; display: flex; justify-content: center; min-width: 0; }
-.cabecera-acciones { display: flex; gap: 4px; }
+.cabecera-acciones { display: flex; gap: 4px; flex: none; }
+/* Pantallas angostas: cuando hay badge de ámbito, la marca se reduce a "VILLEDA" para que el badge quepa
+   entre la marca y los botones (en 390 px no hay sitio para "VILLEDA Finanzas" + badge + 2 botones). */
+@media (max-width: 479px) {
+  html[data-ambito] .marca-texto strong,
+  .cabecera:has(#badge-ambito .badge) .marca-texto strong { display: none; }   /* :has cubre el badge "Combinado" */
+  .cabecera { gap: 8px; }
+}
 
 .contenido {
   flex: 1;
@@ -424,7 +431,7 @@ html[data-tema="oscuro"] .btn-primario { color: #0B1120; }
   border-left: 4px solid var(--borde-2);
 }
 .kpi-titulo { font-size: 0.8rem; color: var(--texto-2); font-weight: 500; margin: 0 0 4px; }
-.kpi-valor { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; word-break: break-word; font-variant-numeric: normal; }
+.kpi-valor { font-size: clamp(1.05rem, 4.6vw, 1.45rem); font-weight: 700; letter-spacing: -0.02em; margin: 0; white-space: nowrap; font-variant-numeric: normal; }
 .kpi-sub { font-size: 0.78rem; color: var(--texto-3); margin: 4px 0 0; }
 .kpi-positivo { border-left-color: var(--positivo); }
 .kpi-positivo .kpi-valor { color: var(--positivo); }
@@ -576,12 +583,12 @@ html[data-tema="oscuro"] .btn-primario { color: #0B1120; }
 .campo-error { font-size: 0.82rem; color: var(--negativo); margin: 6px 0 0; font-weight: 500; }
 .campo.con-error input, .campo.con-error select, .campo.con-error textarea { border-color: var(--negativo); }
 .campo-monto { position: relative; }
-.campo-monto input { padding-left: 32px; font-variant-numeric: tabular-nums; }
+.campo .campo-monto input[data-tipo="monto"] { padding-left: 34px; font-variant-numeric: tabular-nums; }
 .campo-monto .prefijo { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--texto-3); font-weight: 600; pointer-events: none; }
 .campo-con-boton { position: relative; }
 .campo-con-boton input { padding-right: 54px; }
 .campo-con-boton .btn-ver { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); }
-.campo-checkbox { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 6px 0; cursor: pointer; font-weight: 500; margin-bottom: 10px; }
+.campo-checkbox, .campo label.campo-checkbox { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 6px 0; cursor: pointer; font-weight: 500; margin-bottom: 10px; }
 .campo-checkbox input { width: 22px; height: 22px; margin: 2px 0 0; flex: none; accent-color: var(--acento); }
 .campo-checkbox small { display: block; font-weight: 400; color: var(--texto-2); }
 .form-fila { display: grid; grid-template-columns: 1fr; gap: 0 12px; }
@@ -687,7 +694,7 @@ html[data-tema="oscuro"] .toast-exito svg, html[data-tema="oscuro"] .toast-error
 .leyenda-dona { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 0.88rem; }
 .leyenda-dona li { display: grid; grid-template-columns: 14px 1fr auto auto; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--borde); }
 .leyenda-dona li:last-child { border-bottom: 0; }
-.leyenda-dona .leyenda-etq { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leyenda-dona .leyenda-etq { min-width: 0; overflow-wrap: anywhere; }
 .leyenda-dona .leyenda-valor { font-weight: 600; font-variant-numeric: tabular-nums; }
 .leyenda-dona .leyenda-pct { color: var(--texto-3); font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
 .grafica-tabla { margin-top: 8px; font-size: 0.85rem; }

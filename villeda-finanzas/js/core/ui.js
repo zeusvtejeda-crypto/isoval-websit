@@ -235,16 +235,26 @@ window.VF = window.VF || {};
 
   /* ---------- gráficas (reglas dataviz: marcas finas, 2px de separación, leyenda si ≥2 series,
                  texto en tokens de texto, grid de línea fina, tabla gemela accesible) ----------- */
+  var graficas = {};   // id → opciones, para re-dibujar al ancho real del contenedor (el texto SVG no escala)
+
   function graficaBarras(opciones) {
     var o = opciones || {};
     var series = (o.series || []).slice(0, 6);
     var categorias = o.categorias || [];
-    var alto = o.alto || 220;
     var n = categorias.length;
     var hayDatos = series.some(function (s) { return (s.valores || []).some(function (v) { return Number(v) !== 0 && !isNaN(v); }); });
     if (!n || !series.length || !hayDatos) return vacio('Sin movimientos');
+    var id = idInterno('graf');
+    graficas[id] = o;
+    return '<figure class="grafica grafica-barras" data-vf-grafica="' + id + '" data-ancho="640">' + construirBarras(o, 640) + '</figure>';
+  }
 
-    var ancho = 640;
+  function construirBarras(o, anchoPx) {
+    var series = (o.series || []).slice(0, 6);
+    var categorias = o.categorias || [];
+    var alto = o.alto || 220;
+    var n = categorias.length;
+    var ancho = Math.max(260, Math.round(anchoPx || 640));
     var mIzq = 46, mDer = 10, mArr = 14, mAbajo = 30;
     var pw = ancho - mIzq - mDer;
     var ph = alto - mArr - mAbajo;
@@ -333,8 +343,41 @@ window.VF = window.VF || {};
     });
     tablaHtml += '</tbody></table></details>';
 
-    return '<figure class="grafica grafica-barras">' + svg + leyenda + tablaHtml + '</figure>';
+    return svg + leyenda + tablaHtml;
   }
+
+  function ajustarGrafica(fig) {
+    var id = fig.getAttribute('data-vf-grafica');
+    var o = graficas[id];
+    if (!o) return;
+    var w = fig.clientWidth;
+    if (!w) return;
+    var previo = Number(fig.getAttribute('data-ancho')) || 0;
+    if (Math.abs(w - previo) < 6) return;
+    var abierto = fig.querySelector('details') && fig.querySelector('details').open;
+    fig.setAttribute('data-ancho', String(w));
+    fig.innerHTML = construirBarras(o, w);
+    if (abierto && fig.querySelector('details')) fig.querySelector('details').open = true;
+  }
+  function ajustarGraficasEn(raiz) {
+    var nodos = raiz.querySelectorAll ? raiz.querySelectorAll('figure[data-vf-grafica]') : [];
+    Array.prototype.forEach.call(nodos, ajustarGrafica);
+    if (raiz.matches && raiz.matches('figure[data-vf-grafica]')) ajustarGrafica(raiz);
+  }
+  if (typeof MutationObserver !== 'undefined') {
+    new MutationObserver(function (cambios) {
+      cambios.forEach(function (c) {
+        Array.prototype.forEach.call(c.addedNodes, function (n) { if (n.nodeType === 1) ajustarGraficasEn(n); });
+      });
+      // limpieza de especificaciones huérfanas
+      Object.keys(graficas).forEach(function (id) { if (!document.querySelector('[data-vf-grafica="' + id + '"]')) delete graficas[id]; });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+  var temporizadorRedibujo = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(temporizadorRedibujo);
+    temporizadorRedibujo = setTimeout(function () { ajustarGraficasEn(document); }, 150);
+  });
 
   function graficaDona(opciones) {
     var o = opciones || {};

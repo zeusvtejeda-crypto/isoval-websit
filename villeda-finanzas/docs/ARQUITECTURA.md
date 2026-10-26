@@ -427,3 +427,159 @@ con advertencia), importar respaldo, borrar datos de ejemplo, borrar todo, servi
   nombre de un campo. `csv()` usa CRLF, acepta arreglos (unidos con '; ') y booleanos ('sí'/'no').
 - `tests/store.test.js` — `node tests/store.test.js`: pruebas de util, crypto, store y seed en Node (polyfill mínimo de
   localStorage; WebCrypto nativo de Node 22). Salida `OK n pruebas` o lista de fallos y `process.exit(1)`.
+
+### Base/interfaz (index.html, css/app.css, ui.js, router.js, app.js, sw.js) — v1.0
+
+**Convención de retorno de VF.ui.** Todos los componentes (`kpi`, `tarjeta`, `tabla`, `lista`, `barraProgreso`,
+`graficaBarras`, `graficaDona`, `formulario`, `segmentos`, `vacio`, `badgeAmbito`, `icono`) devuelven **string HTML**.
+Los callbacks se resuelven por **delegación global** con ids internos `data-vf-id`, así que el string puede insertarse
+con `innerHTML` o convertirse con `VF.ui.el()` y el callback funciona igual:
+- `tabla({ onFila })` → `onFila(id, trEl, evento)`; `id` es `fila.id` (o el índice si no hay id). Las filas reciben
+  `data-fila` y `tabindex="0"` (Enter/Espacio = clic). Un clic sobre `button/a/input` dentro de la fila NO dispara `onFila`.
+- `segmentos(opciones, activo, onCambio)` → `onCambio(valor, botonEl)`; actualiza `aria-selected` por sí solo; flechas ←/→ navegan.
+  `opciones` admite strings o `{valor, texto}`.
+- `vacio(mensaje, accionTexto, accion)` → `accion(evento)`.
+- `lista(items)`: items `{ icono?, titulo, sub?, valor?, tono?('positivo'|'negativo'|'alerta'), accion?, id? }`. Si hay `accion`,
+  el `<li>` lleva `data-accion`/`data-id` y `role="button"`; la delegación la hace el módulo (no VF.ui).
+- `kpi.valor` se escapa (pasar ya formateado). `tarjeta({ titulo, acciones, cuerpo, clase? })`: `acciones` y `cuerpo` son HTML ya construido.
+
+**VF.ui — API añadida / detalles de firma**
+```js
+icono(nombre, etiqueta?)        // SVG inline 24px trazo 1.75; con `etiqueta` → role="img" aria-label; sin ella aria-hidden.
+                                // nombres: panel empresa personal facturas cobros proveedores prestamos presupuestos reportes asistente
+                                // ajustes mas bloquear desbloquear cerrar agregar buscar editar eliminar exportar importar descargar guardar
+                                // alerta info exito error flecha flecha-izq ojo ojo-cerrado calendario transferencia ingreso gasto imprimir
+                                // copiar enviar luna sol tema cuenta meta revisar filtro refrescar ayuda archivo vacio chat pago
+ambitoActivo(ambito)            // 'empresa' | 'personal' | 'combinado' | null → fija <html data-ambito> (acento azul/verde) y el badge
+                                // de la cabecera (#badge-ambito). El router lo llama al entrar a cada ruta (empresa/facturas/cobros/
+                                // proveedores → empresa; personal → personal; resto → null). Los módulos con selector de ámbito
+                                // (panel, presupuestos, reportes, préstamos) deben llamarlo al cambiar de segmento.
+cerrarModales()                 // cierra todos los modales abiertos (se invoca automáticamente en hashchange y al bloquear).
+modal({ titulo, cuerpo, botones, alCerrar, hoja? })
+                                // cuerpo: string HTML o Element. botones: [{texto, tono:'primario'|'secundario'|'peligro'|'fantasma', accion}]
+                                // accion(api) → si devuelve `false` (o una promesa que resuelve `false`) el modal NO se cierra (útil para
+                                // validar formularios); en cualquier otro caso se cierra. Devuelve { cerrar(), elemento }.
+                                // hoja:true → variante "hoja inferior" (la usa el router para "Más").
+confirmar(mensaje, { peligro, titulo?, textoAceptar?, textoCancelar? })
+formulario(campos, valores)     // tipos extra admitidos: 'oculto', 'contrasena', 'email', 'tel', 'url'. Propiedades extra por campo:
+                                // placeholder, valor (default si no viene en `valores`), deshabilitado, autofoco, filas (textarea), maxlength.
+                                // Cada control lleva data-campo / data-tipo; el contenedor .campo lleva data-campo-cont.
+leerFormulario(formEl)          // monto → número (NaN si inválido o vacío); numero → número | null; checkbox → bool; resto → string trim.
+validar(formEl, reglas)         // reglas: { campo: fn(valor, valores) → string(error) | false | null } o [{campo, fn, mensaje}].
+                                // Valida solo requeridos, montos (NaN, min/max), números, fechas y email; enfoca el primer error.
+graficaBarras({ series, categorias, alto, titulo? })
+                                // Se re-dibuja al ancho real del contenedor (MutationObserver + resize) para que el texto no escale.
+                                // Incluye leyenda (≥2 series), <title> por barra (tooltip nativo) y <details> "Ver datos en tabla".
+graficaDona({ datos, titulo? }) // máx. 6 segmentos (el resto se agrupa en "Otros"); leyenda con monto y %.
+```
+
+**VF.router — API añadida**
+```js
+renderizar()                    // vuelve a pintar la ruta actual sin cambiar el hash (p. ej. tras guardar un registro).
+```
+Comportamiento: el router NO renderiza mientras `VF.store.estaDesbloqueado()` sea false. La navegación muestra siempre
+las 11 rutas del contrato (aunque el módulo no se haya registrado → "Módulo no disponible"). `registrar()` acepta
+`nav: 'principal' | 'mas' | false`; `nav` por defecto para rutas conocidas: panel/empresa/personal/asistente = principal,
+cobros = false, resto = mas. `ir()` con el mismo hash actual re-renderiza. Cada vista recibe `render(contenedor, params)` con
+`contenedor = <main id="vista">` ya vacío.
+
+**VF.app** (app.js) `{ version:'1.0.0', bloquear(), aplicarTema(tema) }`. app.js guarda la preferencia de tema del
+dispositivo en `localStorage['vf.tema']` (no sensible) para aplicarla antes de desbloquear; tras desbloquear manda
+`ajustes.tema`. Escucha `VF.store.on('cambio')` para re-aplicar tema y banner de ejemplo: ajustes.js solo necesita
+`VF.store.setAjustes({...})`.
+
+**Clases CSS disponibles para los módulos** (css/app.css): layout `vista-cabecera` (h1 + `vista-acciones`), `kpis`,
+`rejilla-2|3|4`, `fila`, `fila-entre`; botones `btn btn-primario|secundario|peligro|fantasma|enlace btn-chico|grande|icono|bloque`;
+`badge badge-empresa|personal|combinado|positivo|negativo|alerta|info`; `aviso aviso-alerta|error|exito`; `chips`/`chip`;
+`pestanas`/`pestana[aria-selected]`; `filtros` (contenedor de `.campo` en fila); `form-fila` (2 columnas ≥560px),
+`form-acciones`; `chat`, `burbuja burbuja-usuario|asistente`; texto `positivo|negativo|alerta|texto-2|texto-3|derecha|centro|truncar`;
+impresión `no-imprimir` / `solo-imprimir`. Las tablas de `VF.ui.tabla` se vuelven tarjetas < 720px usando `td[data-titulo]`.
+
+**sw.js**: constante `VF_VERSION` (cambiar al publicar). **tests/capturas/base-*.png**: capturas de la base (bloqueo, shell,
+modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
+
+### Base/cálculo (calc)
+
+- `js/core/calc.js` — `fijarHoy(iso)` fija la fecha que devuelve `VF.calc.hoy()` (sólo para pruebas);
+  `fijarHoy(null)` vuelve a la fecha real. Toda función que recibe `ambito` lanza `Error('AMBITO_REQUERIDO')`
+  si no es 'empresa' | 'personal'.
+- `saldosPorAmbito()` sólo considera cuentas con `activa !== false` (las archivadas no suman ni aparecen en
+  `cuentas`; usar `saldoCuenta()` directo para ellas). El resultado incluye `ambito`.
+  `combinado().combinadoInformativo` lleva `{ etiqueta, liquido, credito, total }`.
+- `movimientosEn()` devuelve la lista ordenada por `fecha` descendente (a igual fecha, `creado` descendente);
+  `desde`/`hasta` en `null` = sin límite; el filtro `cuentaId` también incluye transferencias RECIBIDAS por esa cuenta.
+- `utilidadMes()` incluye `periodo` y `margen` en % (`null` cuando no hubo ingresos). `periodo` omitido = mes de hoy().
+- `gastosPorCategoria()`/`ingresosPorCategoria()` añaden `cantidad`; los movimientos sin categoría se agrupan
+  como 'Sin categoría'.
+- `estadoFactura()`/`estadoCxP()`: una factura/CxP con pago parcial YA vencida se reporta 'parcial' (orden del
+  contrato), pero su pendiente sí cuenta en `porCobrar().vencido` / `porPagar().vencido`. Los elementos de
+  `porCobrar().facturas` y `porPagar().cuentas` llevan `{ pendiente, pagado, dias, vencida, estado, fecha }`
+  (`dias` = días desde el vencimiento, negativo si aún no vence) y se ordenan por vencimiento; `porCliente` /
+  `porProveedor` se ordenan por total descendente e incluyen `clienteId` / `proveedorId`.
+- `antiguedadCxC()` clasifica por días desde el vencimiento; lo que aún no vence cuenta en '0-30'. Los cuatro
+  tramos suman exactamente `porCobrar().total` (porVencer = total − vencido).
+- Amortización (`tablaAmortizacion`, `pagoMensual`, `proximoPagoPrestamo`): redondeo a 2 decimales en cada
+  paso (interés = round2(saldo × r), capital = round2(pago − interés)); la ÚLTIMA fila toma como capital el saldo
+  restante para cerrar en 0, por lo que su `pago` puede diferir unos centavos de `pagoMensual()`. Fecha del pago n =
+  fechaInicio + n meses el día `diaPago` (o el día de fechaInicio) ajustado al máximo del mes. `proximoPagoPrestamo()`
+  calcula sobre el saldo REAL (`saldoPrestamo`) y devuelve `{ fecha, monto, capital, interes, n, vencido }`; `null` si
+  el préstamo no está 'activo' o su saldo ≤ 0. El cálculo coincide con los pagos que genera `VF.seed`.
+- `vencimientos()` añade a cada elemento `vencido` (fecha < hoy) y `dias` (días desde hoy, negativo si ya pasó);
+  `desde`/`hasta` en `null` = sin límite. Tarjetas de crédito: una sola ocurrencia (el próximo `diaPago` ≥ hoy) por
+  la deuda completa (`origen.coleccion = 'cuentas'`). Comisiones pendientes usan su `fecha` como vencimiento.
+  Orden: fecha, luego cobros antes que pagos, luego monto descendente.
+- `presupuestoVsReal()` devuelve un ARREGLO con propiedades adicionales `totalPresupuesto`, `totalReal`,
+  `totalDiferencia`, `ambito`, `periodo` (usar `res.totalPresupuesto`, no `res.filas`). Cada fila:
+  `{ categoria, tipo, presupuestoId, presupuesto, real, diferencia, porcentaje, sinPresupuesto }`;
+  las categorías con gasto real pero sin presupuesto aparecen con `presupuesto: 0, sinPresupuesto: true`;
+  `diferencia = presupuesto − real` (positivo = por debajo); `porcentaje = null` si presupuesto 0. Una categoría que
+  sólo exista en la lista de ingresos se trata como presupuesto de ingreso; los totales sólo suman filas de gasto.
+- `disponiblePersonal()`/`disponibleEmpresa()`: los `compromisos` son los vencimientos tipo 'pago' del ámbito en
+  [hoy, hoy+dias] MÁS los ya vencidos y aún pendientes (siguen debiéndose). Resultado:
+  `{ ambito, dias, hasta, liquido, credito, compromisos, totalCompromisos, disponible }`. `disponibleEmpresa` sin
+  `dias` usa `ajustes.reservaOperativaDias` (30 si no existe).
+- `flujoProyectado()` devuelve una fila por día (dias + 1 filas, de hoy a hoy+dias); lo ya vencido se carga en la
+  fila de hoy. Parte del `liquido` del ámbito (no incluye tarjetas).
+- `movimientosARevisar()` añade `total` (conteo de hallazgos) y en `atipicos` el campo `veces` (monto / mediana).
+  Las transferencias no cuentan como `sinCategoria`. Sin `ambito` revisa ambos ámbitos por separado (los duplicados
+  y la mediana nunca cruzan ámbitos).
+- `metaProgreso()`: `ahorrado` se acota a ≥ 0 y `porcentaje` a ≤ 100; si `cuentaId` no existe, ahorrado = 0.
+- `resumenParaIA()` incluye además `generado`, `periodo`, `prestamos` (saldo y próximo pago, sin contraparte),
+  `empresa.cuentas`/`personal.cuentas` (`{ tipo, banco, saldo }`, sin nombre de cuenta), top 5 de
+  `gastosPorCategoria`, `presupuesto` (totales), `revisar` (conteos) y `metas` (sin nombre). Sin descripciones,
+  contrapartes, nombres de clientes/proveedores/metas ni conceptos.
+- `tests/calc.test.js` — fija hoy = 2026-10-25 con `fijarHoy`; estado de prueba propio (no usa el seed) y
+  propiedad de separación: ninguna instantánea de totales de un ámbito cambia al agregar registros del otro.
+
+### Integración base (shell de punta a punta, pruebas E2E)
+
+- `tests/servidor.js` — servidor `http` estático de Node sin dependencias que sirve la raíz del proyecto con
+  tipos MIME correctos (`.webmanifest` → `application/manifest+json`), `Cache-Control: no-store` y sin salir de
+  la raíz. `node tests/servidor.js [puerto]` imprime la URL; como módulo `iniciar(puerto?) → Promise<{ url,
+  puerto, raiz, cerrar() }>` (puerto 0/omitido = libre, sólo 127.0.0.1).
+- `tests/ayuda.js` — utilidades Playwright compartidas: `iniciarServidor()`, `abrir(viewport, { url,
+  colorScheme, navegar })` (viewport `'movil'` 390×844 isMobile/táctil, `'escritorio'` 1280×800 u objeto; cada
+  llamada crea un contexto NUEVO con almacenamiento limpio, locale es-MX, zona America/Mexico_City; la página
+  lleva `page.vf.errores`), `crearBoveda(page, contrasena, conEjemplo)`, `desbloquear(page, contrasena) →
+  true|false` (false = se mostró `#desbloquear-error`), `bloquear(page)`, `recogerErrores(page)` (arreglo vivo
+  de `pageerror` + `console.error`), `hayScrollHorizontal(page)`, `quitarToasts(page)`, `captura(page,
+  nombre)` (espera 320 ms a que terminen las animaciones y guarda `tests/capturas/<nombre>.png`), `cerrar()`,
+  más `URL_FILE` (index.html por `file://`) y `RAIZ`.
+  **TODO módulos:** mientras no existan los diez `js/modules/*.js`, `recogerErrores` ignora únicamente los
+  avisos "Failed to load resource" / `ERR_FILE_NOT_FOUND` cuya URL sea `/js/modules/<nombre>.js` (quedan en
+  `page.vf.ignorados`); cualquier otro error de consola sí cuenta. Quitar ese filtro cuando lleguen los módulos.
+- `tests/smoke.js` — `node tests/smoke.js` → `OK n comprobaciones` o lista de fallos y `process.exit(1)`
+  (guardia de 4 minutos). Escenarios actuales: (A) móvil claro por http: bloqueo, validaciones de crear
+  (longitud/coincidencia/medidor), crear con ejemplo, shell (cabecera, 5 pestañas, `<main>` con h1 y foco),
+  hoja "Más" (6 secciones), ámbito Personal (badge + `data-ambito` + badge cabe en 390 px), bloquear,
+  contraseña incorrecta, desbloquear, bóveda cifrada en localStorage, recarga → bloqueo → datos persisten;
+  (B) escritorio oscuro por http: bóveda sin ejemplo (sin banner), 10 enlaces laterales, las 11 rutas
+  (título, `data-ambito`, enlace activo, sin scroll horizontal), ruta desconocida, botón de tema y
+  `ajustes.tema`, evento `cambio` → banner/tema, `VF.store.bloquear()` desde código; (C) `file://`: carga sin
+  errores, 9 espacios de nombres, crear, recargar, desbloquear; (D) "Olvidé mi contraseña" con cancelaciones y
+  doble confirmación → bóveda borrada → crear de nuevo. Capturas `tests/capturas/smoke-*.png`. Los escenarios
+  de §6 que dependen de módulos (KPIs, movimientos, asistente, pago de factura, CSV) están marcados
+  `// TODO módulos`.
+- `css/app.css` — en pantallas < 480 px, cuando la cabecera muestra un badge de ámbito (`html[data-ambito]` o
+  `.cabecera:has(#badge-ambito .badge)`), la marca se abrevia a "VILLEDA" para que el badge quepa entre la
+  marca y los dos botones de la cabecera. `.cabecera-acciones` es `flex: none`.
