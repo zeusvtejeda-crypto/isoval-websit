@@ -838,7 +838,7 @@ window.VF = window.VF || {};
     });
   }
   function cerrarDetallesTrasImprimir() {
-    Array.prototype.forEach.call(document.querrySelectorAll ? [] : document.querySelectorAll('#vista details[data-reportes-abierto]'), function (d) {
+    Array.prototype.forEach.call(document.querySelectorAll('#vista details[data-reportes-abierto]'), function (d) {
       d.removeAttribute('open');
       d.removeAttribute('data-reportes-abierto');
     });

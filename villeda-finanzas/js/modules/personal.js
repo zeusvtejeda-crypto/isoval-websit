@@ -252,7 +252,7 @@ window.VF = window.VF || {};
       '<div class="mt-1 mb-1">' + VF.ui.barraProgreso(pct, 'positivo') + '</div>' +
       '<p class="lista-sub" style="white-space:normal">' + (prox && prox.vencido ? '<span class="badge badge-negativo">Vencido</span> ' : '') + esc(detalle) + '</p>' +
       '</div>' +
-      '<a class="btn btn-fantasma btn-chico" href="#/prestamos?id=' + encodeURIComponent(p.id) + '" aria-label="Ver préstamo ' + esc(p.contraparte || '') + '">Ver</a>' +
+      '<a class="btn btn-fantasma" href="#/prestamos?id=' + encodeURIComponent(p.id) + '" aria-label="Ver préstamo ' + esc(p.contraparte || '') + '">Ver</a>' +
       '</li>';
   }
 
@@ -288,10 +288,10 @@ window.VF = window.VF || {};
   /* ---------- registro ----------------------------------------------------- */
   var EXTRAS_PERSONAL = [
     { id: 'metas', titulo: 'Metas de ahorro',
-      acciones: '<button type="button" class="btn btn-secundario btn-chico" data-accion="personal-nueva-meta">' + VF.ui.icono('agregar') + '<span>Meta</span></button>',
+      acciones: '<button type="button" class="btn btn-secundario" data-accion="personal-nueva-meta">' + VF.ui.icono('agregar') + '<span>Meta</span></button>',
       render: renderMetas },
     { id: 'deudas', titulo: 'Deudas',
-      acciones: '<a class="btn btn-fantasma btn-chico" href="#/prestamos">Préstamos</a>',
+      acciones: '<a class="btn btn-fantasma" href="#/prestamos">Préstamos</a>',
       render: renderDeudas }
   ];
 

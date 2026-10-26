@@ -243,7 +243,7 @@ window.VF = window.VF || {};
       '<span class="lista-icono">' + VF.ui.icono('cuenta') + '</span>' +
       '<div class="lista-texto"><p class="lista-titulo">' + esc(c.nombre) + '</p>' +
       '<p class="lista-sub">' + esc((c.banco ? c.banco + ' · ' : '') + (TIPO_CUENTA[c.tipo] || c.tipo || '') + ' · saldo ' + fmt(saldo)) + '</p></div>' +
-      '<button type="button" class="btn btn-secundario btn-chico" ' + accion('ambito-restaurar-cuenta', ambito, c.id) + '>Restaurar</button>' +
+      '<button type="button" class="btn btn-secundario" ' + accion('ambito-restaurar-cuenta', ambito, c.id) + '>Restaurar</button>' +
       btnIcono('ambito-editar-cuenta', 'editar', ambito, c.id, 'Editar cuenta ' + c.nombre) +
       '</li>';
   }
@@ -252,7 +252,7 @@ window.VF = window.VF || {};
     var todas = cuentasDe(est, ambito, false);
     var activas = todas.filter(function (c) { return c.activa !== false; });
     var archivadas = todas.filter(function (c) { return c.activa === false; });
-    var acciones = '<button type="button" class="btn btn-secundario btn-chico" ' + accion('ambito-nueva-cuenta', ambito) + '>' +
+    var acciones = '<button type="button" class="btn btn-secundario" ' + accion('ambito-nueva-cuenta', ambito) + '>' +
       VF.ui.icono('agregar') + '<span>Cuenta</span></button>';
     var cuerpo;
     if (!todas.length) {
@@ -271,7 +271,7 @@ window.VF = window.VF || {};
         cuerpo = '<p class="texto-2">Todas las cuentas de ' + esc(NOMBRES[ambito]) + ' están archivadas.</p>';
       }
       if (archivadas.length) {
-        cuerpo += '<details class="mt-1" id="ambito-archivadas"><summary class="texto-2" style="cursor:pointer;min-height:32px;display:flex;align-items:center">' +
+        cuerpo += '<details class="mt-1" id="ambito-archivadas"><summary class="texto-2" style="cursor:pointer;min-height:44px;display:flex;align-items:center">' +
           esc(plural(archivadas.length, 'cuenta archivada', 'cuentas archivadas')) + '</summary><ul class="lista">' +
           archivadas.map(function (c) { return itemArchivada(est, ambito, c); }).join('') + '</ul></details>';
       }
@@ -385,7 +385,7 @@ window.VF = window.VF || {};
     if (!chips.length) return '';
     return '<div class="chips mb-1" id="ambito-chips">' + chips.map(function (ch) {
       return '<button type="button" class="chip" ' + accion('ambito-quitar-filtro', ambito) + ' data-filtro="' + esc(ch.filtro) + '" aria-label="Quitar filtro ' + esc(ch.texto) + '">' + esc(ch.texto) + ' ✕</button>';
-    }).join('') + '<button type="button" class="btn btn-enlace btn-chico" ' + accion('ambito-limpiar-filtros', ambito) + '>Limpiar filtros</button></div>';
+    }).join('') + '<button type="button" class="btn btn-enlace" ' + accion('ambito-limpiar-filtros', ambito) + '>Limpiar filtros</button></div>';
   }
 
   function resumenMovimientos(movs, r) {
@@ -1204,7 +1204,7 @@ window.VF = window.VF || {};
     if (params) {
       q = '?' + Object.keys(params).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
     }
-    return '<a class="btn btn-fantasma btn-chico" href="#/' + esc(ruta) + q + '">' + esc(texto) + '</a>';
+    return '<a class="btn btn-fantasma" href="#/' + esc(ruta) + q + '">' + esc(texto) + '</a>';
   }
   function bloqueCifra(titulo, valor, clase) {
     return '<div><p class="kpi-titulo">' + esc(titulo) + '</p><p class="kpi-valor ' + esc(clase || '') + '" style="font-size:1.25rem">' + esc(valor) + '</p></div>';
