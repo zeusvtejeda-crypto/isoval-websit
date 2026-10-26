@@ -370,3 +370,686 @@ window.VF = window.VF || {};
     if (tiene(n, RE.disponible)) return { intent: 'disponible_total' };
     return { intent: 'desconocido' };
   }
+
+  /* ======================================================================
+   * Manejadores de intención (todas las cifras salen de VF.calc)
+   * ==================================================================== */
+  function sinCuentas(estado) { return !listaDe(estado, 'cuentas').length; }
+  function cuentasActivas(estado, ambito) {
+    return listaDe(estado, 'cuentas').filter(function (c) { return c && c.ambito === ambito && c.activa !== false; });
+  }
+  function itemCuenta(estado, x) {
+    var c = x.cuenta;
+    return {
+      titulo: c.nombre || 'Cuenta',
+      sub: esc((c.banco ? c.banco + ' · ' : '') + (TIPO_CUENTA[c.tipo] || c.tipo || '')),
+      valor: fmt(x.saldo),
+      tono: x.saldo < 0 ? 'negativo' : ''
+    };
+  }
+
+  // ---- disponible_total ------------------------------------------------
+  function rDisponibleTotal(estado, ambito) {
+    if (sinCuentas(estado)) {
+      return respuesta('disponible_total', ambito, 'Aún no hay cuentas registradas, así que no puedo calcular tu disponible. Crea tus cuentas en Empresa y Personal.',
+        null, [enlace('Crear cuenta de empresa', 'empresa'), enlace('Crear cuenta personal', 'personal')]);
+    }
+    var ambitos = ambitosDe(ambito);
+    var html = '';
+    var partes = [];
+    var enlaces = [];
+    ambitos.forEach(function (a) {
+      var s = C.saldosPorAmbito(estado, a);
+      var d = a === 'empresa' ? C.disponibleEmpresa(estado) : C.disponiblePersonal(estado);
+      var cuerpo;
+      if (!s.cuentas.length) {
+        cuerpo = parrafo('Sin cuentas activas en ' + NOMBRES[a].toLowerCase() + '.');
+        partes.push(NOMBRES[a] + ': sin cuentas activas');
+      } else {
+        cuerpo = filaKV('Líquido en ' + plural(s.cuentas.filter(function (x) { return x.cuenta.tipo !== 'credito'; }).length, 'cuenta'), fmt(s.liquido)) +
+          (s.credito !== 0 ? filaKV('Tarjetas (deuda)', fmt(s.credito), 'negativo') : '') +
+          filaKV('Compromisos a ' + d.dias + ' días (' + d.compromisos.length + ')', fmt(d.totalCompromisos), d.totalCompromisos > 0 ? 'negativo' : '') +
+          filaKV('Disponible real', fmt(d.disponible), d.disponible < 0 ? 'negativo' : 'positivo') +
+          listaHtml(s.cuentas.map(function (x) { return itemCuenta(estado, x); }));
+        partes.push(NOMBRES[a] + ': líquido ' + fmt(s.liquido) + ' en ' + plural(s.cuentas.length, 'cuenta') +
+          (s.credito !== 0 ? ' (tarjetas ' + fmt(s.credito) + ')' : '') + '; disponible real ' + fmt(d.disponible) + ' tras ' + fmt(d.totalCompromisos) + ' de compromisos a ' + d.dias + ' días');
+      }
+      html += seccion(a, cuerpo);
+      enlaces.push(enlace('Ver ' + NOMBRES[a].toLowerCase(), a));
+    });
+    var texto;
+    if (ambitos.length === 2) {
+      var comb = C.combinado(estado).combinadoInformativo;
+      html += '<section class="asistente-seccion asistente-combinado">' + titulo(badgeEstado('Total combinado (solo informativo)', 'combinado')) +
+        filaKV('Líquido combinado', fmt(comb.liquido)) + (comb.credito !== 0 ? filaKV('Tarjetas (deuda)', fmt(comb.credito), 'negativo') : '') + filaKV('Total', fmt(comb.total)) +
+        nota('Empresa y personal se calculan por separado; esta suma es sólo una referencia y no se usa en ningún otro cálculo.') + '</section>';
+      texto = partes.join('. ') + '. Total combinado (solo informativo): líquido ' + fmt(comb.liquido) + ', total con tarjetas ' + fmt(comb.total) + '.';
+      enlaces.push(enlace('Panel combinado', 'panel?ambito=combinado'));
+    } else {
+      texto = partes.join('. ') + '.';
+    }
+    return respuesta('disponible_total', ambito, texto, html, enlaces);
+  }
+
+  // ---- gastos_periodo / ingresos_periodo -------------------------------
+  function rPeriodo(tipo, estado, ambito, periodo) {
+    var p = periodo || per('este_mes', 'este mes (' + mesLargo(U.periodo(hoy())) + ')', U.inicioMes(hoy()), U.finMes(hoy()), false);
+    var esGasto = tipo === 'gasto';
+    var intent = esGasto ? 'gastos_periodo' : 'ingresos_periodo';
+    if (sinCuentas(estado) && !listaDe(estado, 'movimientos').length) {
+      return respuesta(intent, ambito, 'Sin movimientos registrados todavía.', null, [enlace('Ir al panel', 'panel')], p);
+    }
+    var html = '';
+    var partes = [];
+    var enlaces = [];
+    ambitosDe(ambito).forEach(function (a) {
+      var movs = C.movimientosEn(estado, a, p.desde, p.hasta, { tipo: tipo });
+      var total = esGasto ? C.gastos(estado, a, p.desde, p.hasta) : C.ingresos(estado, a, p.desde, p.hasta);
+      var quien = a === 'empresa' ? nombreEmpresa(estado) : 'tú (personal)';
+      var cuerpo;
+      if (!movs.length) {
+        cuerpo = parrafo('Sin ' + (esGasto ? 'gastos' : 'ingresos') + ' de ' + NOMBRES[a].toLowerCase() + ' ' + p.etiqueta + ' (' + rangoTexto(p.desde, p.hasta) + ').');
+        partes.push(NOMBRES[a] + ': sin ' + (esGasto ? 'gastos' : 'ingresos') + ' ' + p.etiqueta);
+      } else {
+        var cats = (esGasto ? C.gastosPorCategoria : C.ingresosPorCategoria)(estado, a, p.desde, p.hasta);
+        cuerpo = filaKV((esGasto ? 'Gastos ' : 'Ingresos ') + p.etiqueta, fmt(total), esGasto ? 'negativo' : 'positivo') +
+          filaKV('Movimientos', String(movs.length)) +
+          tabla([
+            { titulo: 'Categoría', clave: 'categoria' },
+            { titulo: 'Monto', clave: 'monto', num: true, render: function (v) { return esc(fmt(v)); } },
+            { titulo: '%', clave: 'porcentaje', num: true, render: function (v) { return esc(U.fmtNumero(v, 0) + ' %'); } }
+          ], cats.slice(0, 5)) + mas(cats.length - 5, 'categorías más', 'categorías más');
+        partes.push(capitalizar(quien) + (esGasto ? ' gastó ' : ' ingresó ') + fmt(total) + ' ' + p.etiqueta + ' (' + rangoTexto(p.desde, p.hasta) + ', ' + plural(movs.length, 'movimiento') + ')' +
+          (cats.length ? '; principal: ' + cats[0].categoria + ' ' + fmt(cats[0].monto) : ''));
+      }
+      html += seccion(a, cuerpo);
+      enlaces.push(enlace('Ver movimientos de ' + NOMBRES[a].toLowerCase(), a));
+    });
+    if (!ambito) html += nota('Empresa y personal se muestran por separado; no se suman.');
+    enlaces.push(enlace('Reportes', 'reportes'));
+    return respuesta(intent, ambito, partes.join('. ') + '.', html, enlaces, p);
+  }
+
+  // ---- por_cobrar --------------------------------------------------------
+  function prestamosDe(estado, ambito, tipo) {
+    return listaDe(estado, 'prestamos').filter(function (p) {
+      return p && p.estado === 'activo' && p.ambito === ambito && (!tipo || p.tipo === tipo) && C.saldoPrestamo(p) > 0;
+    });
+  }
+  function itemPrestamo(p) {
+    var prox = C.proximoPagoPrestamo(p, hoy());
+    return {
+      titulo: (p.tipo === 'otorgado' ? 'Te debe: ' : 'Debes a: ') + (p.contraparte || 'Sin contraparte'),
+      sub: esc('Saldo ' + fmt(C.saldoPrestamo(p)) + ' · pago mensual ' + fmt(C.pagoMensual(p)) +
+        (prox ? ' · próximo ' + fechaRel(prox.fecha) + ' (' + fmt(prox.monto) + ')' : '')),
+      valor: fmt(C.saldoPrestamo(p)),
+      tono: p.tipo === 'otorgado' ? 'positivo' : 'negativo'
+    };
+  }
+  function rPorCobrar(estado, ambito, n) {
+    var html = '';
+    var partes = [];
+    var enlaces = [];
+    var soloVencidas = tiene(n || '', /\bvencid[oa]s?\b/);
+    if (ambito !== 'personal') {
+      var pc = C.porCobrar(estado);
+      var facturas = soloVencidas ? pc.facturas.filter(function (x) { return x.vencida; }) : pc.facturas;
+      var cuerpo;
+      if (!facturas.length) {
+        cuerpo = parrafo(soloVencidas ? 'No hay facturas vencidas por cobrar.' : 'No hay facturas pendientes de cobro.');
+        partes.push(soloVencidas ? 'Empresa: sin facturas vencidas' : 'Empresa: nadie te debe facturas pendientes');
+      } else {
+        var porCliente = pc.porCliente.map(function (c) {
+          var fs = soloVencidas ? c.facturas.filter(function (x) { return x.vencida; }) : c.facturas;
+          return { cliente: c.cliente ? c.cliente.nombre : 'Cliente eliminado', clienteId: c.clienteId, n: fs.length, vencido: U.suma(fs.filter(function (x) { return x.vencida; }), function (x) { return x.pendiente; }), total: U.suma(fs, function (x) { return x.pendiente; }) };
+        }).filter(function (c) { return c.n > 0; });
+        var totalMostrado = soloVencidas ? pc.vencido : pc.total;
+        cuerpo = filaKV(soloVencidas ? 'Vencido por cobrar' : 'Por cobrar', fmt(totalMostrado), 'positivo') +
+          (!soloVencidas ? filaKV('De eso, vencido', fmt(pc.vencido), pc.vencido > 0 ? 'negativo' : '') : '') +
+          tabla([
+            { titulo: 'Cliente', clave: 'cliente', render: function (v, f) { return esc(v) + (f.vencido > 0 ? ' ' + badgeEstado('Vencido ' + fmt(f.vencido), 'negativo') : ''); } },
+            { titulo: 'Facturas', clave: 'n', num: true },
+            { titulo: 'Pendiente', clave: 'total', num: true, render: function (v) { return esc(fmt(v)); } }
+          ], porCliente.slice(0, MAX_FILAS)) + mas(porCliente.length - MAX_FILAS, 'clientes más', 'clientes más');
+        partes.push('Te deben ' + fmt(totalMostrado) + ' en ' + plural(facturas.length, 'factura') + ' de ' + plural(porCliente.length, 'cliente') +
+          (pc.vencido > 0 ? '; ' + fmt(pc.vencido) + ' ya está vencido' : '; nada vencido') +
+          '. Principales: ' + porCliente.slice(0, 3).map(function (c) { return c.cliente + ' ' + fmt(c.total); }).join(', '));
+      }
+      html += seccion('empresa', cuerpo);
+      enlaces.push(enlace('Ver cobros', 'cobros'));
+    }
+    AMBITOS.forEach(function (a) {
+      if (ambito && ambito !== a) return;
+      var otorgados = prestamosDe(estado, a, 'otorgado');
+      if (!otorgados.length) {
+        if (a === 'personal' && ambito === 'personal') {
+          html += seccion('personal', parrafo('No tienes préstamos otorgados pendientes de cobro. Las facturas por cobrar pertenecen a la empresa.'));
+          partes.push('Personal: nadie te debe préstamos');
+        }
+        return;
+      }
+      var saldo = U.suma(otorgados, function (p) { return C.saldoPrestamo(p); });
+      html += seccion(a, titulo(esc('Préstamos otorgados')) + listaHtml(otorgados.map(itemPrestamo)));
+      partes.push(NOMBRES[a] + ': te deben ' + fmt(saldo) + ' por ' + plural(otorgados.length, 'préstamo otorgado', 'préstamos otorgados'));
+      enlaces.push(enlace('Ver préstamos', 'prestamos'));
+    });
+    return respuesta('por_cobrar', ambito, partes.join('. ') + '.', html, enlaces);
+  }
+
+  // ---- por_pagar ---------------------------------------------------------
+  function rPorPagar(estado, ambito, n) {
+    var html = '';
+    var partes = [];
+    var enlaces = [];
+    var soloVencidas = tiene(n || '', /\bvencid[oa]s?\b/);
+    if (ambito !== 'personal') {
+      var pp = C.porPagar(estado);
+      var com = C.comisionesPendientes(estado);
+      var cuentas = soloVencidas ? pp.cuentas.filter(function (x) { return x.vencida; }) : pp.cuentas;
+      var cuerpo;
+      if (!cuentas.length && !com.lista.length) {
+        cuerpo = parrafo(soloVencidas ? 'No hay cuentas por pagar vencidas.' : 'No hay cuentas por pagar ni comisiones pendientes.');
+        partes.push('Empresa: nada pendiente de pago a proveedores');
+      } else {
+        var porProv = pp.porProveedor.map(function (g) {
+          var cs = soloVencidas ? g.cuentas.filter(function (x) { return x.vencida; }) : g.cuentas;
+          return { proveedor: g.proveedor ? g.proveedor.nombre : 'Proveedor eliminado', n: cs.length, vencido: U.suma(cs.filter(function (x) { return x.vencida; }), function (x) { return x.pendiente; }), total: U.suma(cs, function (x) { return x.pendiente; }) };
+        }).filter(function (g) { return g.n > 0; });
+        var totalMostrado = soloVencidas ? pp.vencido : pp.total;
+        cuerpo = filaKV(soloVencidas ? 'Vencido por pagar' : 'Por pagar a proveedores', fmt(totalMostrado), 'negativo') +
+          (!soloVencidas ? filaKV('De eso, vencido', fmt(pp.vencido), pp.vencido > 0 ? 'negativo' : '') : '') +
+          (!soloVencidas && com.lista.length ? filaKV('Comisiones pendientes (' + com.lista.length + ')', fmt(com.total), 'negativo') : '') +
+          tabla([
+            { titulo: 'Proveedor', clave: 'proveedor', render: function (v, f) { return esc(v) + (f.vencido > 0 ? ' ' + badgeEstado('Vencido ' + fmt(f.vencido), 'negativo') : ''); } },
+            { titulo: 'Cuentas', clave: 'n', num: true },
+            { titulo: 'Pendiente', clave: 'total', num: true, render: function (v) { return esc(fmt(v)); } }
+          ], porProv.slice(0, MAX_FILAS)) + mas(porProv.length - MAX_FILAS, 'proveedores más', 'proveedores más');
+        partes.push('Debes ' + fmt(totalMostrado) + ' a ' + plural(porProv.length, 'proveedor', 'proveedores') + ' en ' + plural(cuentas.length, 'cuenta por pagar', 'cuentas por pagar') +
+          (pp.vencido > 0 ? '; ' + fmt(pp.vencido) + ' ya venció' : '') +
+          (com.lista.length ? '. Comisiones pendientes: ' + fmt(com.total) : ''));
+      }
+      html += seccion('empresa', cuerpo);
+      enlaces.push(enlace('Ver cuentas por pagar', 'proveedores?pestana=cxp'));
+    }
+    if (ambito === 'personal' || !ambito) {
+      var recibidos = prestamosDe(estado, 'personal', 'recibido');
+      var tarjetas = C.saldosPorAmbito(estado, 'personal').cuentas.filter(function (x) { return x.cuenta.tipo === 'credito' && x.saldo < 0; });
+      if (recibidos.length || tarjetas.length) {
+        var items = tarjetas.map(function (x) { return { titulo: 'Tarjeta ' + (x.cuenta.nombre || ''), sub: esc('Deuda al día de hoy' + (x.cuenta.diaPago ? ' · pago el día ' + x.cuenta.diaPago : '')), valor: fmt(-x.saldo), tono: 'negativo' }; })
+          .concat(recibidos.map(itemPrestamo));
+        var deudaTarjetas = U.suma(tarjetas, function (x) { return -x.saldo; });
+        var saldoPrest = U.suma(recibidos, function (p) { return C.saldoPrestamo(p); });
+        html += seccion('personal', (ambito === 'personal' ? parrafo('Las cuentas por pagar a proveedores son de la empresa. Tus deudas personales:') : '') + listaHtml(items));
+        partes.push('Personal: ' + (tarjetas.length ? 'tarjetas ' + fmt(deudaTarjetas) : '') + (tarjetas.length && recibidos.length ? ' y ' : '') + (recibidos.length ? 'préstamos ' + fmt(saldoPrest) : ''));
+        enlaces.push(enlace('Ver personal', 'personal'));
+      } else if (ambito === 'personal') {
+        html += seccion('personal', parrafo('No tienes deudas personales registradas. Las cuentas por pagar a proveedores son de la empresa.'));
+        partes.push('Personal: sin deudas registradas');
+      }
+    }
+    return respuesta('por_pagar', ambito, partes.join('. ') + '.', html, enlaces);
+  }
+
+  // ---- disponible_personal ---------------------------------------------
+  function rDisponiblePersonal(estado, periodo) {
+    if (!cuentasActivas(estado, 'personal').length) {
+      return respuesta('disponible_personal', 'personal', 'No tienes cuentas personales activas, así que no puedo calcular cuánto puedes gastar. Crea una cuenta en Personal.',
+        null, [enlace('Ir a personal', 'personal')]);
+    }
+    var dias = periodo && periodo.futuro && periodo.dias > 0 ? periodo.dias : 30;
+    var d = C.disponiblePersonal(estado, dias);
+    var e = C.disponibleEmpresa(estado);
+    var texto = (d.disponible >= 0
+      ? 'Puedes gastar hasta ' + fmt(d.disponible) + ' de tus cuentas personales sin tocar el negocio'
+      : 'Tus cuentas personales no alcanzan: te faltan ' + fmt(-d.disponible) + ' para cubrir tus compromisos') +
+      ': líquido personal ' + fmt(d.liquido) + ' menos ' + fmt(d.totalCompromisos) + ' en ' + plural(d.compromisos.length, 'compromiso') + ' hasta el ' + U.fmtFecha(d.hasta) + ' (' + dias + ' días). ' +
+      'Los pagos de ' + nombreEmpresa(estado) + ' se cubren con sus propias cuentas: disponible de empresa ' + fmt(e.disponible) + ' (líquido ' + fmt(e.liquido) + ' menos ' + fmt(e.totalCompromisos) + ' de compromisos a ' + e.dias + ' días).';
+    var html = seccion('personal',
+      filaKV('Líquido en cuentas personales', fmt(d.liquido)) +
+      filaKV('Compromisos personales a ' + dias + ' días (' + d.compromisos.length + ')', fmt(d.totalCompromisos), d.totalCompromisos > 0 ? 'negativo' : '') +
+      filaKV('Puedes gastar', fmt(d.disponible), d.disponible < 0 ? 'negativo' : 'positivo') +
+      (d.compromisos.length ? tabla([
+        { titulo: 'Compromiso', clave: 'concepto' },
+        { titulo: 'Fecha', clave: 'fecha', render: function (v, f) { return esc(fechaCorta(v)) + (f.vencido ? ' ' + badgeEstado('Vencido', 'negativo') : ''); } },
+        { titulo: 'Monto', clave: 'monto', num: true, render: function (v) { return esc(fmt(v)); } }
+      ], d.compromisos.slice(0, MAX_FILAS)) + mas(d.compromisos.length - MAX_FILAS, 'compromisos más', 'compromisos más') : nota('Sin compromisos personales en el periodo.'))) +
+      seccion('empresa',
+        parrafo('Los pagos del negocio no salen de tus cuentas personales. Disponible operativo de ' + nombreEmpresa(estado) + ':') +
+        filaKV('Líquido en cuentas de empresa', fmt(e.liquido)) +
+        filaKV('Compromisos a ' + e.dias + ' días (' + e.compromisos.length + ')', fmt(e.totalCompromisos), e.totalCompromisos > 0 ? 'negativo' : '') +
+        filaKV('Disponible de empresa', fmt(e.disponible), e.disponible < 0 ? 'negativo' : 'positivo')) +
+      nota('Las cifras personales y de empresa nunca se suman.');
+    return respuesta('disponible_personal', 'personal', texto, html, [enlace('Ver personal', 'personal'), enlace('Panel personal', 'panel?ambito=personal')], periodo);
+  }
+
+  // ---- vencimientos ------------------------------------------------------
+  function rVencimientos(estado, ambito, periodo, tipoVenc) {
+    var h = hoy();
+    var p = periodo && periodo.clave !== 'ayer' && periodo.clave !== 'dias_pasado' && periodo.clave !== 'semana_pasada' && periodo.clave !== 'mes_pasado' && periodo.clave !== 'anio'
+      ? periodo : per('dias_futuro', 'los próximos ' + DIAS_VENCIMIENTOS + ' días', h, U.sumarDias(h, DIAS_VENCIMIENTOS), true, DIAS_VENCIMIENTOS);
+    function filtro(v) {
+      return (!ambito || v.ambito === ambito) && (!tipoVenc || v.tipo === tipoVenc);
+    }
+    var lista = C.vencimientos(estado, p.desde, p.hasta).filter(filtro);
+    var vencidos = p.desde >= h ? C.vencimientos(estado, null, U.sumarDias(h, -1)).filter(filtro) : [];
+    var siguientes = C.vencimientos(estado, U.sumarDias(p.hasta, 1), null).filter(filtro).slice(0, 3);
+    var que = tipoVenc === 'pago' ? 'pagos' : tipoVenc === 'cobro' ? 'cobros' : 'pagos ni cobros';
+    var cuando = p.etiqueta + (p.desde === p.hasta ? ' (' + U.fmtFechaLarga(p.desde) + ')' : ' (' + rangoTexto(p.desde, p.hasta) + ')');
+    var html = '';
+    var texto;
+    var enlaces = [enlace('Ver todos los vencimientos', 'panel')];
+    if (!lista.length) {
+      texto = 'No tienes ' + que + ' programados para ' + cuando + '.';
+      html += parrafo(texto);
+    } else {
+      var porAmbito = [];
+      ambitosDe(ambito).forEach(function (a) {
+        var la = lista.filter(function (v) { return v.ambito === a; });
+        if (!la.length) return;
+        var pagos = U.suma(la.filter(function (v) { return v.tipo === 'pago'; }), function (v) { return v.monto; });
+        var cobros = U.suma(la.filter(function (v) { return v.tipo === 'cobro'; }), function (v) { return v.monto; });
+        porAmbito.push(NOMBRES[a] + ': ' + plural(la.length, 'vencimiento') + (pagos > 0 ? ', pagos ' + fmt(pagos) : '') + (cobros > 0 ? ', cobros ' + fmt(cobros) : ''));
+        html += seccion(a, (pagos > 0 ? filaKV('Pagos', fmt(pagos), 'negativo') : '') + (cobros > 0 ? filaKV('Cobros', fmt(cobros), 'positivo') : '') +
+          tabla([
+            { titulo: 'Fecha', clave: 'fecha', render: function (v, f) { return esc(fechaCorta(v)) + (f.vencido ? ' ' + badgeEstado('Vencido', 'negativo') : ''); } },
+            { titulo: 'Concepto', clave: 'concepto', render: function (v, f) { return badgeEstado(f.tipo === 'cobro' ? 'Cobro' : 'Pago', f.tipo === 'cobro' ? 'positivo' : 'negativo') + ' ' + esc(v); } },
+            { titulo: 'Monto', clave: 'monto', num: true, render: function (v, f) { return '<span class="' + (f.tipo === 'cobro' ? 'positivo' : 'negativo') + '">' + esc((f.tipo === 'cobro' ? '+' : '−') + fmt(v)) + '</span>'; } }
+          ], la.slice(0, MAX_FILAS)) + mas(la.length - MAX_FILAS, 'vencimientos más', 'vencimientos más'));
+      });
+      texto = 'Para ' + cuando + ' tienes ' + plural(lista.length, 'vencimiento') + '. ' + porAmbito.join('. ') + '.';
+    }
+    if (vencidos.length) {
+      var totalVencido = U.suma(vencidos, function (v) { return v.monto; });
+      var vp = vencidos.filter(function (v) { return v.tipo === 'pago'; });
+      var vc = vencidos.filter(function (v) { return v.tipo === 'cobro'; });
+      var textoV = 'Además hay ' + plural(vencidos.length, 'vencimiento atrasado', 'vencimientos atrasados') + ' que siguen pendientes' +
+        (vp.length ? ': por pagar ' + fmt(U.suma(vp, function (v) { return v.monto; })) : '') + (vc.length ? (vp.length ? ', ' : ': ') + 'por cobrar ' + fmt(U.suma(vc, function (v) { return v.monto; })) : '') + '.';
+      texto += ' ' + textoV;
+      html += '<section class="asistente-seccion">' + titulo(badgeEstado('Atrasados', 'negativo') + ' ' + esc(fmt(totalVencido))) +
+        listaHtml(vencidos.slice(0, 5).map(function (v) {
+          return { titulo: v.concepto, sub: badge(v.ambito) + ' ' + esc(U.fmtFecha(v.fecha) + ' · hace ' + plural(-v.dias, 'día')), valor: (v.tipo === 'cobro' ? '+' : '−') + fmt(v.monto), tono: v.tipo === 'cobro' ? 'positivo' : 'negativo' };
+        })) + mas(vencidos.length - 5, 'atrasados más', 'atrasados más') + '</section>';
+    }
+    if (!lista.length && siguientes.length) {
+      texto += ' Lo más próximo: ' + siguientes.slice(0, 2).map(function (v) { return v.concepto + ' ' + fechaRel(v.fecha) + ' (' + (v.tipo === 'cobro' ? 'cobro ' : 'pago ') + fmt(v.monto) + ')'; }).join('; ') + '.';
+      html += '<section class="asistente-seccion">' + titulo(esc('Lo más próximo')) + listaHtml(siguientes.map(function (v) {
+        return { titulo: v.concepto, sub: badge(v.ambito) + ' ' + esc(capitalizar(fechaRel(v.fecha)) + ' · ' + U.fmtFecha(v.fecha)), valor: (v.tipo === 'cobro' ? '+' : '−') + fmt(v.monto), tono: v.tipo === 'cobro' ? 'positivo' : 'negativo' };
+      })) + '</section>';
+    }
+    if (!ambito) html += nota('Los importes de empresa y personal se muestran por separado.');
+    if (!tipoVenc || tipoVenc === 'cobro') enlaces.push(enlace('Cobros', 'cobros'));
+    if (!tipoVenc || tipoVenc === 'pago') enlaces.push(enlace('Cuentas por pagar', 'proveedores?pestana=cxp'));
+    return respuesta('vencimientos', ambito, texto, html, enlaces, p);
+  }
+
+  // ---- utilidad ----------------------------------------------------------
+  function periodoMesActual() {
+    var h = hoy();
+    return per('este_mes', 'este mes (' + mesLargo(U.periodo(h)) + ')', U.inicioMes(h), U.finMes(h), false);
+  }
+  function rUtilidad(estado, ambito, periodo) {
+    var p = periodo || periodoMesActual();
+    if (ambito === 'personal') {
+      var movsP = C.movimientosEn(estado, 'personal', p.desde, p.hasta);
+      if (!movsP.length) return respuesta('utilidad', 'personal', 'Sin movimientos personales ' + p.etiqueta + '. La utilidad es un concepto de empresa; en lo personal se habla de balance (ingresos − gastos).', null, [enlace('Ver personal', 'personal')], p);
+      var ingP = C.ingresos(estado, 'personal', p.desde, p.hasta);
+      var gasP = C.gastos(estado, 'personal', p.desde, p.hasta);
+      var balP = C.balance(estado, 'personal', p.desde, p.hasta);
+      var textoP = 'La utilidad es un concepto de empresa. Tu balance personal ' + p.etiqueta + ' es ' + fmt(balP) + ': ingresos ' + fmt(ingP) + ' menos gastos ' + fmt(gasP) + '.';
+      return respuesta('utilidad', 'personal', textoP, seccion('personal', filaKV('Ingresos', fmt(ingP), 'positivo') + filaKV('Gastos', fmt(gasP), 'negativo') + filaKV('Balance', fmt(balP), balP >= 0 ? 'positivo' : 'negativo')) + nota('Las transferencias y los retiros de socio no cuentan como ingreso ni gasto.'),
+        [enlace('Ver personal', 'personal'), enlace('Reportes', 'reportes')], p);
+    }
+    var movs = C.movimientosEn(estado, 'empresa', p.desde, p.hasta);
+    if (!movs.length) {
+      return respuesta('utilidad', 'empresa', 'Sin movimientos de ' + nombreEmpresa(estado) + ' ' + p.etiqueta + ' (' + rangoTexto(p.desde, p.hasta) + '), así que no hay utilidad que calcular.', null, [enlace('Ver empresa', 'empresa')], p);
+    }
+    var u;
+    if (p.esMes) u = C.utilidadMes(estado, p.periodo);
+    else {
+      var ing = C.ingresos(estado, 'empresa', p.desde, p.hasta);
+      var gas = C.gastos(estado, 'empresa', p.desde, p.hasta);
+      u = { ingresos: ing, gastos: gas, utilidad: U.round2(ing - gas), margen: ing > 0 ? U.round2((ing - gas) / ing * 100) : null };
+    }
+    var cats = C.gastosPorCategoria(estado, 'empresa', p.desde, p.hasta).slice(0, 3);
+    var texto = (u.utilidad >= 0 ? 'La utilidad de ' : 'La pérdida de ') + nombreEmpresa(estado) + ' ' + p.etiqueta + ' es ' + fmt(Math.abs(u.utilidad)) +
+      ': ingresos ' + fmt(u.ingresos) + ' menos gastos ' + fmt(u.gastos) + (u.margen === null ? ' (sin ingresos en el periodo)' : ' (margen ' + U.fmtNumero(u.margen, 1) + ' %)') + '.' +
+      (cats.length ? ' Mayores gastos: ' + cats.map(function (c) { return c.categoria + ' ' + fmt(c.monto); }).join(', ') + '.' : '');
+    var html = seccion('empresa',
+      filaKV('Ingresos', fmt(u.ingresos), 'positivo') + filaKV('Gastos', fmt(u.gastos), 'negativo') +
+      filaKV(u.utilidad >= 0 ? 'Utilidad' : 'Pérdida', fmt(u.utilidad), u.utilidad >= 0 ? 'positivo' : 'negativo') +
+      filaKV('Margen', u.margen === null ? '—' : U.fmtNumero(u.margen, 1) + ' %') +
+      (cats.length ? titulo(esc('Mayores gastos')) + listaHtml(cats.map(function (c) { return { titulo: c.categoria, sub: esc(U.fmtNumero(c.porcentaje, 0) + ' % de los gastos · ' + plural(c.cantidad, 'movimiento')), valor: fmt(c.monto) }; })) : '')) +
+      nota('Las transferencias, los retiros de socio y las aportaciones de capital no cuentan como ingreso ni gasto.');
+    return respuesta('utilidad', 'empresa', texto, html, [enlace('Estado de resultados', 'reportes'), enlace('Ver empresa', 'empresa')], p);
+  }
+
+  // ---- presupuesto -------------------------------------------------------
+  function rPresupuesto(estado, ambito, periodo) {
+    var p = periodo && periodo.esMes ? periodo : (periodo ? per('este_mes', mesLargo(periodo.periodo), U.inicioMes(periodo.desde), U.finMes(periodo.desde), false) : periodoMesActual());
+    var html = '';
+    var partes = [];
+    var enlaces = [];
+    ambitosDe(ambito).forEach(function (a) {
+      var pr = C.presupuestoVsReal(estado, a, p.periodo);
+      var conPpto = pr.filter(function (f) { return f.tipo === 'gasto' && !f.sinPresupuesto; });
+      var cuerpo;
+      if (!conPpto.length) {
+        cuerpo = parrafo('Sin presupuesto definido para ' + NOMBRES[a].toLowerCase() + ' en ' + mesLargo(p.periodo) + '.' + (pr.totalReal > 0 ? ' Gasto real del mes: ' + fmt(pr.totalReal) + '.' : ''));
+        partes.push(NOMBRES[a] + ': sin presupuesto definido para ' + mesLargo(p.periodo));
+      } else {
+        var excedidas = conPpto.filter(function (f) { return f.real > f.presupuesto; });
+        var pct = pr.totalPresupuesto > 0 ? U.round2(pr.totalReal / pr.totalPresupuesto * 100) : null;
+        var filas = conPpto.slice().sort(function (x, y) { return (y.porcentaje || 0) - (x.porcentaje || 0); });
+        var sinPpto = pr.filter(function (f) { return f.sinPresupuesto && f.real > 0; });
+        cuerpo = filaKV('Presupuesto de gastos', fmt(pr.totalPresupuesto)) +
+          filaKV('Gastado', fmt(pr.totalReal), pr.totalReal > pr.totalPresupuesto ? 'negativo' : '') +
+          filaKV(pr.totalDiferencia >= 0 ? 'Te queda' : 'Excedido en', fmt(Math.abs(pr.totalDiferencia)), pr.totalDiferencia >= 0 ? 'positivo' : 'negativo') +
+          (pct !== null ? filaKV('Avance', U.fmtNumero(pct, 0) + ' %') : '') +
+          tabla([
+            { titulo: 'Categoría', clave: 'categoria', render: function (v, f) { return esc(v) + (f.real > f.presupuesto ? ' ' + badgeEstado('Excedida', 'negativo') : ''); } },
+            { titulo: 'Gastado', clave: 'real', num: true, render: function (v, f) { return esc(fmt(v)) + '<br><small class="texto-3">de ' + esc(fmt(f.presupuesto)) + '</small>'; } },
+            { titulo: '%', clave: 'porcentaje', num: true, render: function (v) { return esc(v === null ? '—' : U.fmtNumero(v, 0) + ' %'); } }
+          ], filas.slice(0, MAX_FILAS)) + mas(filas.length - MAX_FILAS, 'categorías más', 'categorías más') +
+          (sinPpto.length ? nota('Gasto sin presupuesto: ' + sinPpto.map(function (f) { return f.categoria + ' ' + fmt(f.real); }).join(', ') + '.') : '');
+        partes.push(NOMBRES[a] + ': gastado ' + fmt(pr.totalReal) + ' de ' + fmt(pr.totalPresupuesto) + ' presupuestados' + (pct !== null ? ' (' + U.fmtNumero(pct, 0) + ' %)' : '') +
+          (excedidas.length ? '; ' + plural(excedidas.length, 'categoría excedida', 'categorías excedidas') + ': ' + excedidas.map(function (f) { return f.categoria + ' (' + fmt(f.real) + ' de ' + fmt(f.presupuesto) + ')'; }).join(', ') : '; ninguna categoría excedida'));
+      }
+      html += seccion(a, cuerpo);
+      enlaces.push(enlace('Presupuesto ' + NOMBRES[a].toLowerCase(), 'presupuestos?ambito=' + a + '&periodo=' + p.periodo));
+    });
+    return respuesta('presupuesto', ambito, 'Presupuesto de ' + mesLargo(p.periodo) + '. ' + partes.join('. ') + '.', html, enlaces, p);
+  }
+
+  // ---- revisar -----------------------------------------------------------
+  function nombreCuenta(estado, id) { var c = buscar(estado.cuentas, id); return c ? c.nombre : 'Cuenta eliminada'; }
+  function itemMov(estado, m, extra) {
+    return {
+      titulo: m.descripcion || m.categoria || 'Movimiento',
+      sub: badge(m.ambito) + ' ' + esc(U.fmtFecha(m.fecha) + ' · ' + nombreCuenta(estado, m.cuentaId) + (m.categoria ? ' · ' + m.categoria : '') + (extra ? ' · ' + extra : '')),
+      valor: (m.tipo === 'ingreso' ? '+' : m.tipo === 'gasto' ? '−' : '') + fmt(m.monto),
+      tono: m.tipo === 'ingreso' ? 'positivo' : m.tipo === 'gasto' ? 'negativo' : ''
+    };
+  }
+  function rRevisar(estado, ambito) {
+    var rev = C.movimientosARevisar(estado, ambito || undefined);
+    var donde = ambito ? ' en ' + NOMBRES[ambito].toLowerCase() : '';
+    var enlaces = [enlace('Ver detalle en el panel', 'panel' + (ambito ? '?ambito=' + ambito : ''))];
+    if (!rev.total) return respuesta('revisar', ambito, 'Nada pendiente de revisar' + donde + ': no encontré duplicados, gastos atípicos, movimientos marcados ni movimientos sin categoría.', null, enlaces);
+    var partes = [];
+    var html = '';
+    function bloque(tituloTexto, ayuda, items) {
+      if (!items.length) return;
+      html += '<section class="asistente-seccion">' + titulo(esc(tituloTexto) + ' ' + badgeEstado(String(items.length), 'alerta')) + nota(ayuda) + listaHtml(items.slice(0, 5)) + mas(items.length - 5, 'más') + '</section>';
+    }
+    if (rev.duplicados.length) {
+      partes.push(plural(rev.duplicados.length, 'posible duplicado'));
+      var vistos = {};
+      var dup = [];
+      rev.duplicados.forEach(function (par) { par.forEach(function (m) { if (!vistos[m.id]) { vistos[m.id] = true; dup.push(itemMov(estado, m)); } }); });
+      bloque('Posibles duplicados', 'Misma cuenta, fecha, monto y tipo. Si uno sobra, elimínalo desde su detalle.', dup);
+    }
+    if (rev.atipicos.length) {
+      partes.push(plural(rev.atipicos.length, 'gasto atípico'));
+      bloque('Gastos atípicos', 'Más de 3 veces la mediana de su categoría.', rev.atipicos.map(function (a) { return itemMov(estado, a.mov, U.fmtNumero(a.veces, 1) + '× la mediana de ' + fmt(a.mediana)); }));
+    }
+    if (rev.marcados.length) {
+      partes.push(plural(rev.marcados.length, 'movimiento marcado', 'movimientos marcados') + ' para revisar');
+      bloque('Marcados para revisar', 'Guardados con estado “por revisar”.', rev.marcados.map(function (m) { return itemMov(estado, m); }));
+    }
+    if (rev.sinCategoria.length) {
+      partes.push(rev.sinCategoria.length + ' sin categoría');
+      bloque('Sin categoría', 'Asigna una categoría para que cuenten en presupuestos y reportes.', rev.sinCategoria.map(function (m) { return itemMov(estado, m); }));
+    }
+    var texto = 'Hay ' + plural(rev.total, 'movimiento que revisar', 'movimientos que revisar') + donde + ': ' + partes.join(', ') + '.';
+    if (!ambito) enlaces.push(enlace('Empresa', 'empresa'), enlace('Personal', 'personal'));
+    return respuesta('revisar', ambito, texto, html, enlaces);
+  }
+
+  // ---- flujo -------------------------------------------------------------
+  function rFlujo(estado, ambito, periodo) {
+    var dias = periodo && periodo.futuro && periodo.dias > 0 ? periodo.dias : DIAS_FLUJO;
+    var html = '';
+    var partes = [];
+    var enlaces = [];
+    ambitosDe(ambito).forEach(function (a) {
+      if (!cuentasActivas(estado, a).length) {
+        html += seccion(a, parrafo('Sin cuentas activas en ' + NOMBRES[a].toLowerCase() + '; no hay flujo que proyectar.'));
+        partes.push(NOMBRES[a] + ': sin cuentas activas');
+        return;
+      }
+      var serie = C.flujoProyectado(estado, a, dias);
+      var inicio = C.saldosPorAmbito(estado, a).liquido;
+      var fin = serie[serie.length - 1];
+      var entradas = U.suma(serie, function (d) { return d.entradas; });
+      var salidas = U.suma(serie, function (d) { return d.salidas; });
+      var minimo = serie.reduce(function (acc, d) { return d.saldo < acc.saldo ? d : acc; }, serie[0]);
+      var conMov = serie.filter(function (d) { return d.entradas > 0 || d.salidas > 0; });
+      var cuerpo = filaKV('Líquido hoy', fmt(inicio)) + filaKV('Entradas previstas', fmt(entradas), 'positivo') + filaKV('Salidas previstas', fmt(salidas), 'negativo') +
+        filaKV('Saldo proyectado el ' + fechaCorta(fin.fecha), fmt(fin.saldo), fin.saldo < 0 ? 'negativo' : 'positivo') +
+        filaKV('Punto más bajo (' + fechaCorta(minimo.fecha) + ')', fmt(minimo.saldo), minimo.saldo < 0 ? 'negativo' : '') +
+        (conMov.length ? tabla([
+          { titulo: 'Día', clave: 'fecha', render: function (v) { return esc(fechaCorta(v)); } },
+          { titulo: 'Entra', clave: 'entradas', num: true, render: function (v) { return v ? '<span class="positivo">' + esc('+' + fmt(v)) + '</span>' : '—'; } },
+          { titulo: 'Sale', clave: 'salidas', num: true, render: function (v) { return v ? '<span class="negativo">' + esc('−' + fmt(v)) + '</span>' : '—'; } },
+          { titulo: 'Saldo', clave: 'saldo', num: true, render: function (v) { return '<span class="' + (v < 0 ? 'negativo' : '') + '">' + esc(fmt(v)) + '</span>'; } }
+        ], conMov.slice(0, MAX_FILAS)) + mas(conMov.length - MAX_FILAS, 'días más con movimientos', 'días más con movimientos') : nota('Sin cobros ni pagos programados en el periodo.'));
+      html += seccion(a, cuerpo);
+      partes.push(NOMBRES[a] + ': de ' + fmt(inicio) + ' líquido hoy a ' + fmt(fin.saldo) + ' el ' + U.fmtFecha(fin.fecha) + ' (entran ' + fmt(entradas) + ', salen ' + fmt(salidas) + ')' +
+        (minimo.saldo < 0 ? '; ALERTA: el saldo se vuelve negativo el ' + U.fmtFecha(minimo.fecha) + ' (' + fmt(minimo.saldo) + ')' : '; punto más bajo ' + fmt(minimo.saldo)));
+      enlaces.push(enlace('Ver ' + NOMBRES[a].toLowerCase(), a));
+    });
+    enlaces.push(enlace('Flujo en reportes', 'reportes'));
+    if (!ambito) html += nota('Cada ámbito se proyecta con sus propias cuentas y compromisos; no se suman.');
+    return respuesta('flujo', ambito, 'Flujo proyectado a ' + dias + ' días. ' + partes.join('. ') + '.', html, enlaces, periodo);
+  }
+
+  // ---- saldo_cuenta ------------------------------------------------------
+  function rSaldoCuenta(estado, ambito, cuentas, esTarjeta) {
+    var lista = (cuentas || []).filter(function (c) { return !ambito || c.ambito === ambito; });
+    if (!lista.length) {
+      var nombres = listaDe(estado, 'cuentas').filter(function (c) { return c && c.activa !== false; }).map(function (c) { return c.nombre + ' (' + NOMBRES[c.ambito] + ')'; });
+      var texto0 = esTarjeta ? 'No hay tarjetas de crédito registradas' + (ambito ? ' en ' + NOMBRES[ambito].toLowerCase() : '') + '.' : 'No encontré esa cuenta.';
+      if (nombres.length) texto0 += ' Cuentas disponibles: ' + nombres.join(', ') + '.';
+      return respuesta('saldo_cuenta', ambito, texto0, null, [enlace('Empresa', 'empresa'), enlace('Personal', 'personal')]);
+    }
+    var html = '';
+    var partes = [];
+    var enlaces = [];
+    var ambitosVistos = {};
+    AMBITOS.forEach(function (a) {
+      var la = lista.filter(function (c) { return c.ambito === a; });
+      if (!la.length) return;
+      ambitosVistos[a] = true;
+      var items = la.map(function (c) {
+        var saldo = C.saldoCuenta(estado, c.id);
+        var sub = (c.banco ? c.banco + ' · ' : '') + (TIPO_CUENTA[c.tipo] || c.tipo || '') + (c.activa === false ? ' · archivada' : '');
+        var texto;
+        if (c.tipo === 'credito') {
+          var limite = Number(c.limiteCredito) || 0;
+          var deuda = saldo < 0 ? -saldo : 0;
+          sub += ' · deuda ' + fmt(deuda) + (limite ? ' · crédito disponible ' + fmt(Math.max(0, limite - deuda)) : '') + (c.diaPago ? ' · pago el día ' + c.diaPago : '');
+          texto = c.nombre + ' (' + NOMBRES[a] + ', tarjeta): deuda ' + fmt(deuda) + (limite ? ', crédito disponible ' + fmt(Math.max(0, limite - deuda)) : '');
+        } else {
+          texto = c.nombre + ' (' + NOMBRES[a] + '): ' + fmt(saldo);
+        }
+        partes.push(texto);
+        enlaces.push(enlace('Ver ' + c.nombre, a + '?cuenta=' + encodeURIComponent(c.id)));
+        return { titulo: c.nombre, sub: esc(sub), valor: fmt(saldo), tono: saldo < 0 ? 'negativo' : '' };
+      });
+      html += seccion(a, listaHtml(items));
+    });
+    if (Object.keys(ambitosVistos).length > 1) html += nota('Cuentas de ámbitos distintos: se muestran por separado, sin sumar.');
+    return respuesta('saldo_cuenta', ambito || (Object.keys(ambitosVistos).length === 1 ? Object.keys(ambitosVistos)[0] : null), partes.join('. ') + '.', html, enlaces);
+  }
+
+  // ---- prestamos ---------------------------------------------------------
+  function rPrestamos(estado, ambito, n) {
+    var html = '';
+    var partes = [];
+    var enlaces = [];
+    var conDeudas = tiene(n || '', /\bdeudas?\b|\bendeudad/);
+    ambitosDe(ambito).forEach(function (a) {
+      var recibidos = prestamosDe(estado, a, 'recibido');
+      var otorgados = prestamosDe(estado, a, 'otorgado');
+      var tarjetas = conDeudas ? C.saldosPorAmbito(estado, a).cuentas.filter(function (x) { return x.cuenta.tipo === 'credito' && x.saldo < 0; }) : [];
+      if (!recibidos.length && !otorgados.length && !tarjetas.length) {
+        html += seccion(a, parrafo('Sin préstamos activos' + (conDeudas ? ' ni deudas de tarjeta' : '') + ' en ' + NOMBRES[a].toLowerCase() + '.'));
+        partes.push(NOMBRES[a] + ': sin préstamos activos');
+        return;
+      }
+      var debes = U.suma(recibidos, function (p) { return C.saldoPrestamo(p); });
+      var teDeben = U.suma(otorgados, function (p) { return C.saldoPrestamo(p); });
+      var deudaTarjetas = U.suma(tarjetas, function (x) { return -x.saldo; });
+      var items = recibidos.concat(otorgados).map(itemPrestamo).concat(tarjetas.map(function (x) {
+        return { titulo: 'Tarjeta ' + x.cuenta.nombre, sub: esc('Deuda de tarjeta' + (x.cuenta.diaPago ? ' · pago el día ' + x.cuenta.diaPago : '')), valor: fmt(-x.saldo), tono: 'negativo' };
+      }));
+      var cuerpo = (recibidos.length ? filaKV('Debes (saldo insoluto de ' + plural(recibidos.length, 'préstamo') + ')', fmt(debes), 'negativo') : '') +
+        (tarjetas.length ? filaKV('Deuda de tarjetas', fmt(deudaTarjetas), 'negativo') : '') +
+        (otorgados.length ? filaKV('Te deben (' + plural(otorgados.length, 'préstamo otorgado', 'préstamos otorgados') + ')', fmt(teDeben), 'positivo') : '') +
+        listaHtml(items);
+      html += seccion(a, cuerpo);
+      var t = NOMBRES[a] + ': ';
+      var tp = [];
+      if (recibidos.length) tp.push('debes ' + fmt(debes) + ' en ' + plural(recibidos.length, 'préstamo') + recibidos.map(function (p) { var px = C.proximoPagoPrestamo(p, hoy()); return ' (' + (p.contraparte || 'préstamo') + ': pago mensual ' + fmt(C.pagoMensual(p)) + (px ? ', próximo ' + fechaRel(px.fecha) + ' por ' + fmt(px.monto) : '') + ')'; }).join(''));
+      if (tarjetas.length) tp.push('deuda de tarjetas ' + fmt(deudaTarjetas));
+      if (otorgados.length) tp.push('te deben ' + fmt(teDeben) + otorgados.map(function (p) { return ' (' + (p.contraparte || 'préstamo') + ')'; }).join(''));
+      partes.push(t + tp.join('; '));
+    });
+    enlaces.push(enlace('Ver préstamos', 'prestamos'));
+    if (!ambito) html += nota('Los préstamos de empresa y personales se muestran por separado.');
+    return respuesta('prestamos', ambito, partes.join('. ') + '.', html, enlaces);
+  }
+
+  // ---- comisiones --------------------------------------------------------
+  function rComisiones(estado, ambito) {
+    var com = C.comisionesPendientes(estado);
+    var enlaces = [enlace('Ver comisiones', 'proveedores?pestana=comisiones')];
+    var aviso = ambito === 'personal' ? 'Las comisiones son un concepto de la empresa. ' : '';
+    if (!com.lista.length) return respuesta('comisiones', 'empresa', aviso + 'No hay comisiones pendientes de pago.', null, enlaces);
+    var filas = com.lista.map(function (c) {
+      var f = buscar(estado.facturas, c.facturaId);
+      return { beneficiario: c.beneficiario || '', fecha: c.fecha, monto: c.monto, detalle: (f ? 'Factura ' + f.folio + ' · ' : '') + U.fmtNumero(c.porcentaje, 1) + ' % de ' + fmt(c.base), vencida: c.fecha && c.fecha < hoy() };
+    });
+    var texto = aviso + 'Comisiones pendientes: ' + fmt(com.total) + ' en ' + plural(com.lista.length, 'comisión', 'comisiones') + ': ' + filas.map(function (f) { return f.beneficiario + ' ' + fmt(f.monto) + ' (' + fechaRel(f.fecha) + ')'; }).join(', ') + '.';
+    var html = seccion('empresa', filaKV('Comisiones pendientes', fmt(com.total), 'negativo') + tabla([
+      { titulo: 'Beneficiario', clave: 'beneficiario', render: function (v, f) { return esc(v) + '<br><small class="texto-3">' + esc(f.detalle) + '</small>'; } },
+      { titulo: 'Fecha', clave: 'fecha', render: function (v, f) { return esc(fechaCorta(v)) + (f.vencida ? ' ' + badgeEstado('Vencida', 'negativo') : ''); } },
+      { titulo: 'Monto', clave: 'monto', num: true, render: function (v) { return esc(fmt(v)); } }
+    ], filas.slice(0, MAX_FILAS)) + mas(filas.length - MAX_FILAS, 'comisiones más', 'comisiones más'));
+    return respuesta('comisiones', 'empresa', texto, html, enlaces);
+  }
+
+  // ---- metas -------------------------------------------------------------
+  function rMetas(estado, ambito) {
+    var metas = listaDe(estado, 'metas').filter(Boolean);
+    var enlaces = [enlace('Ver metas en personal', 'personal')];
+    var aviso = ambito === 'empresa' ? 'Las metas de ahorro son personales. ' : '';
+    if (!metas.length) return respuesta('metas', 'personal', aviso + 'No tienes metas de ahorro registradas.', null, enlaces);
+    var items = [];
+    var partes = [];
+    metas.forEach(function (m) {
+      var pr = C.metaProgreso(estado, m);
+      var meses = m.fechaMeta ? Math.max(0, Math.round(U.diasEntre(hoy(), m.fechaMeta) / 30)) : null;
+      var porMes = meses && pr.faltante > 0 ? U.round2(pr.faltante / meses) : null;
+      var sub = fmt(pr.ahorrado) + ' de ' + fmt(pr.objetivo) + ' (' + U.fmtNumero(pr.porcentaje, 0) + ' %)' +
+        (m.fechaMeta ? ' · meta ' + U.fmtFecha(m.fechaMeta) : '') + (porMes ? ' · ' + fmt(porMes) + ' al mes para llegar' : '') + (!m.cuentaId ? ' · sin cuenta asignada' : '');
+      items.push({ titulo: m.nombre, sub: esc(sub) + '<span class="barra asistente-barra" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(pr.porcentaje) + '"><span class="barra-relleno" style="width:' + pr.porcentaje.toFixed(1) + '%"></span></span>', valor: pr.faltante > 0 ? 'faltan ' + fmt(pr.faltante) : 'cumplida', tono: pr.faltante > 0 ? '' : 'positivo' });
+      partes.push(m.nombre + ': ' + fmt(pr.ahorrado) + ' de ' + fmt(pr.objetivo) + ' (' + U.fmtNumero(pr.porcentaje, 0) + ' %' + (meses !== null ? ', ' + plural(meses, 'mes', 'meses') + ' restantes' : '') + (porMes ? ', necesitas ' + fmt(porMes) + ' al mes' : '') + ')');
+    });
+    return respuesta('metas', 'personal', aviso + 'Tienes ' + plural(metas.length, 'meta de ahorro', 'metas de ahorro') + '. ' + partes.join('. ') + '.', seccion('personal', listaHtml(items)), enlaces);
+  }
+
+  // ---- ayuda / desconocido ---------------------------------------------
+  function htmlAyuda() {
+    return '<ul class="asistente-lista asistente-ayuda">' + INTENCIONES.filter(function (i) { return i.id !== 'desconocido'; }).map(function (i) {
+      return '<li class="asistente-item"><div class="asistente-item-texto"><span class="asistente-item-titulo">' + esc(i.descripcion) + '</span>' +
+        '<span class="asistente-item-sub"><button type="button" class="btn btn-enlace btn-chico asistente-ejemplo" data-accion="asistente-chip" data-pregunta="' + esc(i.ejemplo) + '">' + esc(i.ejemplo) + '</button></span></div></li>';
+    }).join('') + '</ul>';
+  }
+  function rAyuda() {
+    return respuesta('ayuda', null, 'Puedo responder, con tus cifras reales y sin salir de este dispositivo, sobre: dinero disponible, gastos e ingresos por periodo, por cobrar, por pagar, cuánto puedes gastar, vencimientos, utilidad, presupuesto, movimientos a revisar, flujo proyectado, saldo de una cuenta, préstamos, comisiones y metas. Empresa y personal siempre por separado.',
+      parrafo('Puedo responder, con tus cifras reales, sobre estos temas. Toca un ejemplo para probarlo:') + htmlAyuda() + nota('Entiendo periodos como hoy, ayer, esta semana, semana pasada, este mes, mes pasado, mañana y próximos N días, y ámbitos como VILLEDA / la empresa o personal / yo.'), []);
+  }
+  function rDesconocido(pregunta) {
+    return respuesta('desconocido', null, 'No entendí la pregunta “' + pregunta + '”. Prueba con una de las sugerencias o pregunta, por ejemplo, “¿cuánto gastó VILLEDA esta semana?” o “¿cuánto hay en Nu?”.',
+      parrafo('No entendí la pregunta. Puedo ayudarte con estos temas:') + htmlAyuda(), []);
+  }
+
+  /* ======================================================================
+   * Motor principal
+   * ==================================================================== */
+  /**
+   * responder(pregunta, estado) → { texto, html, intent, ambito, periodo, enlaces:[{texto, ruta}] }.
+   * Puro: no toca el DOM ni el store.
+   */
+  function responder(pregunta, estado) {
+    var est = estado || {};
+    var original = String(pregunta == null ? '' : pregunta).trim();
+    var n = limpiar(original);
+    var ambito = detectarAmbito(n);
+    var periodo = detectarPeriodo(n);
+    var det = detectarIntent(n, est, ambito, periodo);
+    var r;
+    try {
+      switch (det.intent) {
+        case 'ayuda': r = rAyuda(); break;
+        case 'saldo_cuenta': r = rSaldoCuenta(est, ambito, det.cuentas, det.tarjetas); break;
+        case 'disponible_personal': r = rDisponiblePersonal(est, periodo); break;
+        case 'disponible_total': r = rDisponibleTotal(est, ambito); break;
+        case 'revisar': r = rRevisar(est, ambito); break;
+        case 'presupuesto': r = rPresupuesto(est, ambito, periodo); break;
+        case 'flujo': r = rFlujo(est, ambito, periodo); break;
+        case 'utilidad': r = rUtilidad(est, ambito, periodo); break;
+        case 'comisiones': r = rComisiones(est, ambito); break;
+        case 'metas': r = rMetas(est, ambito); break;
+        case 'prestamos': r = rPrestamos(est, ambito, n); break;
+        case 'por_cobrar': r = rPorCobrar(est, ambito, n); break;
+        case 'por_pagar': r = rPorPagar(est, ambito, n); break;
+        case 'vencimientos': r = rVencimientos(est, ambito, periodo, det.tipoVenc); break;
+        case 'gastos_periodo': r = rPeriodo('gasto', est, ambito, periodo); break;
+        case 'ingresos_periodo': r = rPeriodo('ingreso', est, ambito, periodo); break;
+        default: r = rDesconocido(original); break;
+      }
+    } catch (e) {
+      console.error('[VF.asistente] error al responder:', e);
+      r = respuesta('desconocido', ambito, 'Ocurrió un error al calcular la respuesta: ' + (e && e.message ? e.message : e), null, []);
+    }
+    r.pregunta = original;
+    r.periodo = r.periodo || periodo || null;
+    return r;
+  }
+
+  function intenciones() {
+    return INTENCIONES.map(function (i) { return { id: i.id, descripcion: i.descripcion, ejemplo: i.ejemplo }; });
+  }
+
+  /**
+   * Modo remoto: POST { pregunta, contexto: VF.calc.resumenParaIA(estado) } al endpoint configurado.
+   * Devuelve Promise<{ texto, remoto:true }>; rechaza si no hay endpoint, hay error de red, tiempo
+   * límite (15 s) o la respuesta no trae `texto`. Nunca envía descripciones, contrapartes ni contraseñas.
+   */
+  function responderRemoto(pregunta, estado) {
+    var url = estado && estado.ajustes && String(estado.ajustes.asistenteEndpoint || '').trim();
+    if (!url) return Promise.reject(new Error('SIN_ENDPOINT'));
+    if (typeof fetch !== 'function') return Promise.reject(new Error('SIN_FETCH'));
+    var cuerpo = JSON.stringify({ pregunta: String(pregunta || ''), contexto: C.resumenParaIA(estado) });
+    var controlador = typeof AbortController === 'function' ? new AbortController() : null;
+    var temporizador = null;
+    var peticion = new Promise(function (resolver, rechazar) {
+      temporizador = setTimeout(function () {
+        if (controlador) controlador.abort();
+        rechazar(new Error('TIEMPO_AGOTADO'));
+      }, TIEMPO_REMOTO_MS);
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpo, signal: controlador ? controlador.signal : undefined, credentials: 'omit', referrerPolicy: 'no-referrer' })
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP_' + res.status);
+          return res.json();
+        })
+        .then(function (datos) {
+          if (!datos || typeof datos.texto !== 'string' || !datos.texto.trim()) throw new Error('RESPUESTA_INVALIDA');
+          resolver({ texto: datos.texto.trim(), remoto: true });
+        })
+        .catch(function (e) { rechazar(e instanceof Error ? e : new Error(String(e))); });
+    });
+    return peticion.then(function (r) { clearTimeout(temporizador); return r; }, function (e) { clearTimeout(temporizador); throw e; });
+  }

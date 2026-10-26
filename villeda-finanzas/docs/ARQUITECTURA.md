@@ -680,3 +680,46 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   `vf.boveda.v1`). Notas para E2E: tras importar, el repintado por 'cambio' sustituye el `<input type=file>` → esperar
   ~150 ms antes de otro `setInputFiles`; un `fetch` a un servidor inalcanzable produce un `console.error` del navegador
   ("Failed to load resource: net::ERR_CONNECTION_REFUSED") que no es defecto del código: filtrarlo en las pruebas.
+
+### Módulo Presupuestos (js/modules/presupuestos.js)
+
+- Registro: `VF.router.registrar('presupuestos', { titulo:'Presupuestos', icono:'presupuestos', nav:'mas', render })`. Acepta
+  `#/presupuestos?ambito=empresa|personal&periodo=YYYY-MM`. El ámbito se recuerda en `sessionStorage['vf.presupuestos.ambito']`
+  (por pestaña, no sensible; por defecto 'empresa'); el mes vuelve al actual (`VF.calc.hoy()`) en cada entrada a la ruta. Al pintar
+  y al cambiar de segmento llama a `VF.ui.ambitoActivo(ambito)`. No usa ninguna API del núcleo fuera del contrato.
+- **API pública `VF.presupuestos`** (para el asistente y las pruebas):
+  ```js
+  render(contenedor, params)            // la misma función registrada en el router
+  ambito()                              // 'empresa' | 'personal' visible
+  periodo()                             // 'YYYY-MM' visible
+  fijarAmbito(ambito)                   // cambia el segmento (aria-selected) y repinta
+  fijarPeriodo('YYYY-MM')               // cambia el mes y repinta
+  asignar(categoria, monto, { ambito?, periodo? }) // crea o actualiza el presupuesto de la categoría → bool. Si existieran
+                                        //   registros duplicados de la misma categoría/mes conserva el primero y elimina el resto.
+  copiarMesAnterior()                   // → Promise<número copiado>. Pide confirmación; NUNCA duplica categorías que ya existen
+                                        //   en el mes visible; si el mes anterior no tiene presupuestos o no hay nada que copiar → toast.
+  ```
+- Cifras: todo sale de `VF.calc.presupuestoVsReal(estado, ambito, periodo)` (KPIs con `totalPresupuesto/totalReal/totalDiferencia`,
+  filas y porcentajes). Las filas `sinPresupuesto` se separan en la tarjeta "Sin presupuesto" (botón "Asignar" → edición en línea).
+  Tono de `VF.ui.barraProgreso`: `porcentaje > 100` → 'negativo', `> 90` → 'alerta', resto acento del ámbito; una categoría de tipo
+  'ingreso' invierte la lectura (≥ 100 % = meta cumplida). Sin filas con presupuesto → estado vacío (`VF.ui.vacio` con "Copiar del mes
+  anterior" si el mes anterior tiene presupuestos del MISMO ámbito; si no, "Agregar presupuesto" que enfoca el formulario de alta) +
+  formulario de alta. Sin gasto en el mes → "Gasto real" y "Diferencia" muestran "—" y la fila "Sin gasto" (nunca ceros falsos).
+- Alta en línea: `form[data-ppto-alta]` (select con las categorías de gasto del ámbito que aún no tienen presupuesto en el mes +
+  monto; Enter o botón "Agregar"). Edición en línea por fila (`input[data-ppto-monto]`: Enter guarda, Esc cancela; botones
+  Guardar/Cancelar). Eliminar con `VF.ui.confirmar`. Un solo oyente de `click` en `document` para `[data-accion^="ppto-"]`
+  (`ppto-mes-anterior`, `ppto-mes-siguiente`, `ppto-mes-actual`, `ppto-copiar`, `ppto-editar`, `ppto-asignar`, `ppto-guardar`,
+  `ppto-cancelar`, `ppto-eliminar`) más `submit` y `keydown` delegados; no actúa con la bóveda bloqueada. `VF.store.on('cambio')`
+  repinta sólo `#ppto-cuerpo` (retardo de 30 ms) y únicamente si `VF.router.actual().ruta === 'presupuestos'`; conserva la edición en
+  curso y devuelve el foco al control equivalente (teclado).
+- Estilos: el módulo no añade CSS; los ajustes de layout (ancho del input dentro de la celda, acciones alineadas a la derecha,
+  ancho mínimo del nombre del mes, `flex-wrap` del `.lista-item` en edición) van como atributos `style` sobre clases existentes.
+  **Pendiente opcional para css/app.css**: utilidades `.celda-acciones { display:flex; justify-content:flex-end; gap:4px }` y
+  `.lista-item.envolver { flex-wrap: wrap }` para retirar esos estilos en línea.
+- Pruebas E2E (Playwright + `tests/ayuda.js`; capturas `tests/capturas/presupuestos-*.png` en 390×844 y 1280×800, claro y oscuro):
+  KPIs, filas, totales, tonos/aria-valuenow de las barras y "Sin presupuesto" iguales a `VF.calc.presupuestoVsReal` en ambos ámbitos y
+  tres meses; alta válida/inválida; edición (Enter, Esc, inválida); eliminación con confirmación; asignar desde "Sin presupuesto";
+  mes siguiente vacío → copiar (completa, repetida sin duplicar, parcial tras borrar una); mes anterior / "Mes actual"; cambio de ámbito
+  sin categorías del otro ámbito; `?ambito=&periodo=`; reactividad a 'cambio' dentro y fuera de la ruta; bóveda sin ejemplo; sin scroll
+  horizontal en 390 px. Mientras `js/modules/asistente.js` no pase `node --check`, el navegador reporta un `pageerror` de sintaxis
+  ajeno a este módulo (la prueba lo identifica con `node --check` y lo descuenta de forma explícita).

@@ -468,8 +468,8 @@ window.VF = window.VF || {};
         ? '<strong class="cifra">' + esc(fmt(r.proximo.monto)) + '</strong> <span class="' + (r.proximo.vencido ? 'negativo' : 'texto-2') + '">' + esc(capitalizar(fechaConRelativa(r.proximo.fecha))) + (r.proximo.vencido ? ' · vencido' : '') + '</span>'
         : '<span class="texto-2">Sin pagos pendientes</span>']);
     }
-    if (p.notas) filas.push(['Notas', '<span style="white-space:pre-line">' + esc(p.notas) + '</span>']);
     html += filas.map(function (f) { return filaCifra(f[0], f[1]); }).join('');
+    if (p.notas) html += '<p class="texto-2 mb-0">Notas</p><p class="mb-1" style="white-space:pre-line;overflow-wrap:anywhere">' + esc(p.notas) + '</p>';
 
     html += '<div class="fila mt-2 mb-2">' +
       (activo && r.saldo > 0 ? '<button type="button" class="btn btn-primario" data-accion="prestamos-pagar" data-id="' + esc(p.id) + '">' + VF.ui.icono('pago') + '<span>Registrar ' + (p.tipo === 'otorgado' ? 'cobro' : 'pago') + '</span></button>' : '') +
@@ -490,17 +490,21 @@ window.VF = window.VF || {};
     var filas = pagos.map(function (x, i) {
       var mov = x.movimientoId ? buscar(est.movimientos, x.movimientoId) : null;
       var cuentaId = x.cuentaId || (mov ? mov.cuentaId : null);
-      return { id: x.id, n: i + 1, fecha: x.fecha, monto: x.monto, capital: x.capital, interes: x.interes, cuenta: cuentaId ? nombreCuenta(est, cuentaId) : (mov ? nombreCuenta(est, mov.cuentaId) : '—'), sinMovimiento: !mov };
+      return { id: x.id, n: i + 1, fecha: x.fecha, monto: x.monto, capital: x.capital, interes: x.interes, cuenta: cuentaId ? nombreCuenta(est, cuentaId) : '—', sinMovimiento: !mov };
     });
+    // Cuatro columnas para que quepa en el modal (560 px) sin desplazamiento horizontal:
+    // N.º + fecha (con la cuenta debajo), monto, capital / interés (dos líneas) y la acción de eliminar.
     return VF.ui.tabla({
       columnas: [
-        { clave: 'n', titulo: 'N.º', alinear: 'centro' },
-        { clave: 'fecha', titulo: 'Fecha', render: function (f) { return '<span class="truncar">' + esc(U.fmtFecha(f)) + '</span>'; } },
+        { clave: 'fecha', titulo: 'Pago', render: function (f, fila) {
+          return '<strong>' + fila.n + '</strong> · <span class="truncar">' + esc(U.fmtFecha(f)) + '</span><br><small class="texto-2">' + esc(fila.cuenta) + '</small>' +
+            (fila.sinMovimiento ? ' <span class="badge badge-alerta">Sin movimiento</span>' : '');
+        } },
         { clave: 'monto', titulo: 'Monto', alinear: 'derecha', render: function (v) { return '<strong>' + esc(fmt(v)) + '</strong>'; } },
-        { clave: 'capital', titulo: 'Capital', alinear: 'derecha', render: function (v) { return esc(fmt(v)); } },
-        { clave: 'interes', titulo: 'Interés', alinear: 'derecha', render: function (v) { return esc(fmt(v)); } },
-        { clave: 'cuenta', titulo: 'Cuenta', render: function (v, fila) { return esc(v) + (fila.sinMovimiento ? ' <span class="badge badge-alerta">Sin movimiento</span>' : ''); } },
-        { clave: 'id', titulo: '', render: function (id, fila) {
+        { clave: 'capital', titulo: 'Capital / interés', alinear: 'derecha', render: function (v, fila) {
+          return esc(fmt(v)) + '<br><small class="texto-2" data-interes>' + esc(fmt(fila.interes)) + '</small>';
+        } },
+        { clave: 'id', titulo: '', alinear: 'derecha', render: function (id, fila) {
           return '<button type="button" class="btn btn-icono" data-accion="prestamos-eliminar-pago" data-id="' + esc(p.id) + '" data-pago="' + esc(id) + '" aria-label="Eliminar pago ' + fila.n + '" title="Eliminar pago">' + VF.ui.icono('eliminar') + '</button>';
         } }
       ],
@@ -522,21 +526,25 @@ window.VF = window.VF || {};
     function celda(v, fila) {
       return '<span class="' + (fila.estadoFila === 'pagado' ? 'texto-2' : '') + '">' + esc(fmt(v)) + '</span>';
     }
+    function badgeEstado(s) {
+      if (s === 'pagado') return badge('Pagado', 'positivo');
+      if (s === 'proximo') return badge('Próximo', 'info');
+      if (s === 'vencido') return badge('Vencido', 'negativo');
+      return '<span class="texto-3">Pendiente</span>';
+    }
+    // Cinco columnas (el estado va bajo la fecha y capital / interés comparten celda) para caber en 560 px.
     return '<p class="texto-2 mt-1">' + esc('Total a pagar ' + fmt(total) + ' · intereses ' + fmt(intereses) + '. Las filas reflejan el plan teórico; los pagos reales pueden variar.') + '</p>' +
       VF.ui.tabla({
         columnas: [
           { clave: 'n', titulo: 'N.º', alinear: 'centro' },
-          { clave: 'fecha', titulo: 'Fecha', render: function (f, fila) { return '<span class="truncar ' + (fila.estadoFila === 'pagado' ? 'texto-2' : '') + '">' + esc(U.fmtFecha(f)) + '</span>'; } },
+          { clave: 'fecha', titulo: 'Fecha', render: function (f, fila) {
+            return '<span class="truncar ' + (fila.estadoFila === 'pagado' ? 'texto-2' : '') + '">' + esc(U.fmtFecha(f)) + '</span><br>' + badgeEstado(fila.estadoFila);
+          } },
           { clave: 'pago', titulo: 'Pago', alinear: 'derecha', render: celda },
-          { clave: 'capital', titulo: 'Capital', alinear: 'derecha', render: celda },
-          { clave: 'interes', titulo: 'Interés', alinear: 'derecha', render: celda },
-          { clave: 'saldo', titulo: 'Saldo', alinear: 'derecha', render: celda },
-          { clave: 'estadoFila', titulo: 'Estado', render: function (s) {
-            if (s === 'pagado') return badge('Pagado', 'positivo');
-            if (s === 'proximo') return badge('Próximo', 'info');
-            if (s === 'vencido') return badge('Vencido', 'negativo');
-            return '<span class="texto-3">Pendiente</span>';
-          } }
+          { clave: 'capital', titulo: 'Capital / interés', alinear: 'derecha', render: function (v, fila) {
+            return celda(v, fila) + '<br><small class="texto-2" data-interes>' + esc(fmt(fila.interes)) + '</small>';
+          } },
+          { clave: 'saldo', titulo: 'Saldo', alinear: 'derecha', render: celda }
         ],
         filas: filas,
         vacio: 'Sin filas'
