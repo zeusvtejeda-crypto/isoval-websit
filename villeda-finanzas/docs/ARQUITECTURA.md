@@ -855,3 +855,178 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   `?id=` y `?ambito=`, reactividad a 'cambio', edición (estado cancelado) y eliminación, estado vacío, validación de plazo, sin scroll
   horizontal en página ni en las tablas del modal. Mientras otros `js/modules/*.js` no pasen `node --check` (archivos ajenos a medio
   escribir), la prueba los sirve vacíos vía `page.route` para que su `pageerror` no se atribuya a este módulo.
+
+### Módulo Reportes (js/modules/reportes.js)
+
+- Registro: `VF.router.registrar('reportes', { titulo:'Reportes', icono:'reportes', nav:'mas', render })`. Acepta
+  `#/reportes?ambito=empresa|personal&rango=mes|mes-anterior|trimestre|anio|personalizado&desde=YYYY-MM-DD&hasta=YYYY-MM-DD`.
+  Ámbito y rango se recuerdan en `sessionStorage['vf.reportes']` (JSON, no sensible; por defecto empresa / mes). Al pintar y al
+  cambiar de segmento llama a `VF.ui.ambitoActivo(ambito)`. No existe "Combinado": los reportes nunca mezclan ámbitos.
+- Controles: segmentado Empresa | Personal; el rango es un `<select>` (cinco opciones no caben como segmentado en 390 px sin
+  scroll oculto) más dos `<input type="date">` visibles sólo en personalizado (fechas invertidas se normalizan; vacías → últimos
+  30 días). El subtítulo bajo el `<h1>` siempre dice ámbito y periodo (visible también al imprimir).
+- **API pública `VF.reportes`** (para pruebas y otros módulos):
+  ```js
+  render(contenedor, params)
+  ambito() / fijarAmbito(ambito)              // 'empresa' | 'personal' (cambia el segmento y repinta)
+  rango() / fijarRango(tipo, desde?, hasta?)  // → { tipo, desde, hasta, etiqueta, sufijo }
+  calcularRango(tipo, desde?, hasta?)         // puro. sufijo para archivos: '2026-10', '2026-09', '2026-T4', '2026', '2026-09-26_2026-10-26'
+  estadoResultados(estado, desde, hasta)      // SOLO empresa: { ingresos:[ingresosPorCategoria], gastos:[gastosPorCategoria], totalIngresos, totalGastos, utilidad, margen|null }
+  resumenIVA(estado, desde, hasta)            // SOLO empresa, estimado: { trasladado, facturas, subtotalFacturado, acreditable, gastosConIVA, baseGastos, neto, categorias, estimado:true }
+  serieFlujo(estado, ambito, desde, hasta)    // { serie:[...serieMensual], extendida, desdePeriodo, hastaPeriodo }
+  csvMovimientos() / csvFacturas() / csvCxP() // descargan el CSV del ámbito y rango actuales → { nombre, filas } (filas 0 = no se descargó)
+  paquete()                                   // CSV disponibles + resumen.txt, 450 ms entre descargas → bool
+  imprimir()                                  // abre los <details> y llama a window.print()
+  CATEGORIAS_IVA                              // copia de la lista de categorías con IVA
+  ```
+- Cálculos propios (sobre VF.calc; no tocan el store): IVA trasladado = Σ `iva` de facturas con `fechaEmision` en el rango cuyo
+  estado almacenado no sea cancelada ni borrador (incluye las derivadas emitida/pagada/parcial/vencida); acreditable =
+  round2(Σ gastos de empresa en Proveedores, Materiales, Servicios (luz, agua, internet), Software, Honorarios, Publicidad × 16/116),
+  aceptando también 'Servicios' por si se renombró la categoría; neto = trasladado − acreditable (≥ 0 "a cargo", < 0 "a favor");
+  siempre marcado "Estimado". Margen del rango = utilidad / ingresos × 100 (`utilidadMes` sólo cubre un mes). Flujo mensual:
+  `serieMensual` con n = meses del rango hasta el mes actual, mínimo 6 (se completa hacia atrás como contexto y la tarjeta lo
+  avisa); nunca pinta meses futuros con ceros. Antigüedad CxC y por pagar son "al día de hoy" (independientes del rango) y la
+  tarjeta lo indica. Sin movimientos ni facturas/gastos con IVA en el rango → KPIs con "—" y `VF.ui.vacio('Sin movimientos…')`.
+- CSV (`VF.util.csv` + `VF.util.descargar`, mime `text/csv;charset=utf-8`): nombres `villeda-<ambito>-<movimientos|facturas|cxp>-<sufijo>.csv`
+  y `villeda-<ambito>-resumen-<sufijo>.txt`. Movimientos: fecha, tipo, cuenta (transferencias: "Origen → Destino"), categoría,
+  descripción, contraparte, monto, estado; orden cronológico ascendente. Los montos se pasan como texto con dos decimales
+  (`toFixed(2)`) porque `csv()` escribe los números tal cual (41200 en vez de 41200.00). Facturas: por `fechaEmision` en el rango,
+  todos los estados (columna `estado` derivada con `estadoFactura`). CxP: por `fecha` en el rango (`estadoCxP`). En Personal sólo
+  existe el CSV de movimientos (facturas y CxP son colecciones de empresa); el paquete personal trae 2 archivos y el de empresa 4.
+  Sin registros → toast de aviso y no se descarga nada (en el paquete se omite ese archivo y resumen.txt lo indica).
+- Impresión: aprovecha `@media print` de css/app.css (oculta cabecera, navegación, botones, `.segmentos`, `.filtros`,
+  `.vista-acciones`, `.no-imprimir`; la tarjeta "Exportar y compartir" lleva `no-imprimir`). El módulo añade un bloque
+  `.solo-imprimir` (empresa, ámbito, periodo, fecha de generación, moneda) y abre los `<details>` en `beforeprint`
+  (un `<details>` cerrado no se imprime aunque el CSS marque su tabla `display:table`), cerrando en `afterprint` sólo los que abrió.
+  La tabla completa de categorías reutiliza `<details class="grafica-tabla">`.
+- Eventos: un oyente de `click` en `document` para `button[data-accion^="reportes-"]` (`reportes-csv-movimientos`,
+  `reportes-csv-facturas`, `reportes-csv-cxp`, `reportes-paquete`, `reportes-imprimir`) y uno de `change` para
+  `reportes-rango` / `reportes-fecha`; nada actúa con la bóveda bloqueada. `VF.store.on('cambio')` repinta `#reportes-cuerpo`
+  (retardo 30 ms) sólo si `VF.router.actual().ruta === 'reportes'`.
+- Layout: en empresa, "Gastos por categoría" y "Resumen de IVA" van a ancho completo porque en media columna de `.rejilla-2` la
+  leyenda de `graficaDona` (`overflow-wrap: anywhere`) parte palabras ("Proveedo / res"). **Pendiente opcional para css/app.css**:
+  `.leyenda-dona .leyenda-etq { overflow-wrap: normal; hyphens: manual }` o dejar que la leyenda pase bajo la dona cuando la
+  tarjeta mide menos de ~520 px; con eso la dona podría volver a media columna.
+- Pruebas E2E ejecutadas con Playwright y `tests/ayuda.js` (script temporal borrado; capturas `tests/capturas/reportes-*.png` en
+  390×844 y 1280×800, claro, oscuro y vista de impresión): KPIs, estado de resultados, flujo, categorías, antigüedad e IVA = VF.calc
+  evaluado en la página; los tres CSV leídos del disco (BOM UTF-8, encabezados, 2 decimales, sólo registros del ámbito y rango,
+  comillas `""` escapadas, orden); paquete (4 archivos en empresa, 2 en personal, resumen.txt con totales); rangos mes, mes
+  anterior, trimestre, año, personalizado e invertido; `emulateMedia('print')` sin navegación; reactividad dentro y fuera de la
+  ruta; `sessionStorage` y `?ambito=&rango=`; estado vacío (sin descarga, toast); `file://`; sin scroll horizontal en móvil.
+
+### Módulo Asistente (js/modules/asistente.js)
+
+- Registro: `VF.router.registrar('asistente', { titulo:'Asistente', icono:'asistente', nav:'principal', render })`. Acepta
+  `#/asistente?pregunta=<texto>` (la responde al entrar y limpia el hash con `history.replaceState` para no repetirla al
+  re-renderizar). El historial vive en memoria de la sesión y se borra en `VF.store 'bloqueado'`.
+- **API pública `VF.asistente`** (el motor sólo depende de `VF.util` y `VF.calc`, por eso corre en Node sin DOM):
+  ```js
+  responder(pregunta, estado)   // → { texto, html, intent, ambito:'empresa'|'personal'|null, periodo, enlaces:[{texto, ruta}], pregunta }
+                                //   `periodo` = { clave, etiqueta, desde, hasta, futuro, dias, periodo:'YYYY-MM', esMes } | null
+                                //   `ruta` va sin '#/' y puede llevar query ('proveedores?pestana=cxp', 'empresa?cuenta=<id>').
+  intenciones()                 // → [{ id, descripcion, ejemplo }] (17: las 16 del contrato + 'desconocido')
+  responderRemoto(pregunta, estado) // → Promise<{ texto, remoto:true }>; POST JSON { pregunta, contexto: VF.calc.resumenParaIA(estado) }
+                                //   a ajustes.asistenteEndpoint; rechaza con Error('SIN_ENDPOINT'|'TIEMPO_AGOTADO'|'HTTP_<n>'|'RESPUESTA_INVALIDA')
+  detectar(pregunta, estado)    // → { normalizada, ambito, periodo, intent } (para pruebas)
+  preguntas()                   // → las 9 preguntas sugeridas (chips)
+  preguntar(texto)              // vista: procesa una pregunta (remoto con respaldo local) y pinta la respuesta; → Promise<respuesta>
+  historial() / limpiar() / render(contenedor, params)
+  ```
+- Detección (sobre `VF.util.normalizar` sin signos): ámbito por palabras (`villeda|empresa|negocio|despacho|compania|firma|
+  oficina` → empresa; `personal(es|mente)|yo|mio|mia|propio|familia|casa|hogar|bolsillo` → personal; sin pista o con ambas →
+  `null` = se responde cada ámbito por separado). `mi`/`mis`/`me`/`tengo` NO son pista de ámbito ("mis cuentas"). Periodos:
+  hoy, ayer, mañana, pasado mañana, esta/próxima/pasada semana, este/próximo/pasado mes, mes nombrado (con o sin año),
+  este/pasado año, "próximos/en/dentro de/a N días|semanas", "últimos N días", quincena; N en cifra o en palabra
+  (`siete`, `quince`, `treinta`…). Orden de intenciones: ayuda → saldo_cuenta → disponible_personal → revisar → presupuesto →
+  flujo → utilidad → comisiones → metas → prestamos → por_cobrar → por_pagar (ambas sólo sin periodo futuro) → vencimientos
+  (palabras clave o periodo futuro + pago/cobro; filtra tipo si sólo se menciona uno) → gastos_periodo → ingresos_periodo →
+  disponible_total → desconocido.
+- `saldo_cuenta`: una cuenta se reconoce por nombre completo, por el "núcleo" del nombre (tokens no genéricos: "Nu Empresa"
+  → `nu`) o por `banco`. Un nombre completo con más tokens que el núcleo de otra la descarta ("nu empresa" ≠ "Nu Cuenta");
+  una mención ambigua ("mercado pago", "nu") devuelve todas las coincidencias agrupadas por ámbito, sin sumar. `tarjeta`
+  sin nombre → todas las tarjetas de crédito. Para tarjetas muestra deuda y crédito disponible (`limiteCredito − deuda`).
+- Reglas de cifras: todo sale de `VF.calc`; sin datos → "Sin cuentas…" / "Sin movimientos…" sin ceros. Cuando el periodo
+  pedido no tiene movimientos (p. ej. "esta semana" en lunes, "hoy"), la tarjeta lo dice y añade una **referencia
+  etiquetada** (últimos 7 días → últimos 30 días; para "este mes", el mes pasado) para no dejar al usuario sin cifra.
+  `utilidad` con ámbito personal responde el balance personal y aclara que la utilidad es de empresa; `comisiones`, `por_pagar`
+  (CxP) y `por_cobrar` (facturas) son de empresa; con ámbito personal responden deudas personales (tarjetas + préstamos
+  recibidos) o préstamos otorgados. `disponible_total` es la única respuesta que muestra el combinado informativo
+  (`VF.calc.combinado().combinadoInformativo`) además de los dos ámbitos. `disponible_personal` = `disponiblePersonal(estado,
+  N)` (N = días del periodo futuro mencionado o 30) y muestra como contexto `disponibleEmpresa()`. `vencimientos` sin periodo
+  = próximos 7 días; si el rango empieza hoy o después añade los atrasados pendientes (por ámbito y tipo) y, si no hay nada
+  en el rango, "lo más próximo".
+- Vista: `#asistente-chat` (`role="log" aria-live="polite"`), `#asistente-chips` (9 chips `data-accion="asistente-chip"
+  data-pregunta`), `#asistente-form` / `#asistente-entrada` (Enter envía; se procesa con un oyente `submit` delegado en
+  `document`), acciones `asistente-limpiar` y `asistente-ayuda`. Cada respuesta es `<article class="burbuja
+  burbuja-asistente" data-intent data-ambito>` con el `html` del motor, los enlaces ("Ver detalle · …" el primero, con
+  `href="#/<ruta>"`) y una línea de meta (Motor local / Servidor de IA, ámbito, periodo, nota de respaldo). Con endpoint
+  configurado se muestra una burbuja "Consultando al servidor de IA…" (`aria-busy`) y, si falla, la respuesta local con la
+  nota "El servidor de IA no está disponible / no respondió en 15 s / devolvió error N". Al recibir `'cambio'` repinta la vista
+  sólo si la ruta activa es `asistente`, conservando historial y el borrador del campo.
+- Rutas que el asistente ENVÍA (los módulos destino deberían honrarlas): `cobros`, `proveedores?pestana=cxp|comisiones`,
+  `prestamos`, `reportes`, `panel?ambito=…`, `empresa?cuenta=<id>` / `personal?cuenta=<id>` y
+  `presupuestos?ambito=<ambito>&periodo=YYYY-MM` (parámetros nuevos; presupuestos.js debería preseleccionar ámbito y mes).
+- **Estilos**: css/app.css sólo tiene `.chat` y `.burbuja`; el módulo inyecta `<style id="asistente-estilos">` con sus clases
+  `asistente-*` (barra de entrada pegajosa sobre la barra inferior, tabla compacta, lista de respuesta, chips en fila
+  desplazable en móvil y envueltos en escritorio). **Pendiente para css/app.css**: mover ahí ese bloque.
+- Pruebas: motor en Node con el seed (≥55 formulaciones con/sin acentos, mayúsculas y coloquiales; cifras de las 5 preguntas
+  del brief contra `VF.calc`; separación de ámbitos; escape de nombres; estado vacío) y E2E con Playwright (chips, Enter,
+  `?pregunta=`, `'cambio'`, endpoint caído → respaldo local, bloqueo borra historial, `file://`, 390×844 y 1280×800, claro y
+  oscuro, sin scroll horizontal). Capturas `tests/capturas/asistente-*.png`. Nota: en lunes "esta semana" no tiene
+  movimientos en el seed; la respuesta añade la referencia de los últimos 7 días, que es la cifra que verifica la prueba.
+
+### Módulo Proveedores (js/modules/proveedores.js)
+
+- Registro: `VF.router.registrar('proveedores', { titulo:'Proveedores', icono:'proveedores', nav:'mas', render })`. Pestañas
+  Proveedores | Cuentas por pagar | Comisiones; la activa se recuerda en `sessionStorage['vf.proveedores.pestana']`
+  (valores `proveedores` | `cxp` | `comisiones`, por defecto `proveedores`). Honra `#/proveedores?pestana=…&id=…` como lo
+  envía el Panel: fija la pestaña y abre el detalle del registro (CxP, comisión o proveedor); después limpia el hash a
+  `#/proveedores` con `history.replaceState` para que un re-render no vuelva a abrir el modal. En < 720 px la pestaña
+  "Cuentas por pagar" muestra la etiqueta corta "Por pagar" (`.oculto-movil` / `.oculto-escritorio`) para caber en 390 px.
+- **API pública `VF.proveedores`** (los modales devuelven la api `{ cerrar, elemento }` de `VF.ui.modal`):
+  ```js
+  render(contenedor, params)
+  pestana()                                   // pestaña activa
+  fijarPestana('proveedores'|'cxp'|'comisiones')
+  nuevoProveedor({ id?, alGuardar? })         // alta; con id edita. alGuardar(proveedor) sólo tras un alta
+  verProveedor(id)                            // detalle con sus CxP, Editar / Eliminar / Nueva CxP
+  nuevaCxP({ id?, proveedorId? })             // alta (sin proveedores → abre primero el alta de proveedor); con id edita
+  verCxP(id)                                  // detalle: pagos, Registrar pago, Editar, Eliminar, eliminar pago
+  pagarCxP(id)                                // modal "Registrar pago"
+  registrarPagoCxP(id, { monto, fecha, cuentaId }) // sin modal; → bool. Crea el movimiento y guarda el pago
+  nuevaComision({ id?, facturaId? })          // alta (base = subtotal de la factura elegida o manual); con id edita (sólo pendientes)
+  verComision(id)                             // detalle: Pagar / Editar (pendiente) o Revertir pago (pagada), Eliminar
+  pagarComision(id)                           // modal "Pagar comisión"
+  ```
+- Pagos de CxP: `VF.store.agregar('movimientos', { ambito:'empresa', cuentaId, tipo:'gasto', categoria:'Proveedores',
+  descripcion:'Pago a proveedor — <concepto>', contraparte:<proveedor>, cxpId })` y después `actualizar('cuentasPorPagar',
+  id, { pagos })` con el pago `{ id: uid('pago'), fecha, monto, cuentaId, movimientoId }`. El monto se valida ≤ pendiente
+  (`VF.calc.pendienteCxP`) tanto en el formulario (`max`) como en `registrarPagoCxP`. Eliminar un pago elimina su
+  movimiento y lo quita de `pagos`; eliminar la CxP deja que el store borre los movimientos con `cxpId`. Sólo se ofrecen
+  cuentas de EMPRESA activas (con su saldo `VF.calc.saldoCuenta` en el texto de la opción).
+- Comisiones: `monto = round2(base × porcentaje / 100)` calculado en vivo en el formulario; al elegir factura la base toma
+  `factura.subtotal`. "Pagar" crea el movimiento gasto `Comisiones` (`comisionId`, contraparte = beneficiario) y marca
+  `{ estado:'pagada', movimientoId }`; "Revertir pago" elimina el movimiento y vuelve a `pendiente`. Una comisión pagada
+  no se edita (hay que revertir el pago). Las facturas canceladas no se ofrecen como base.
+- Integridad: antes de eliminar un proveedor el módulo cuenta sus CxP y avisa con toast; si aun así el store lanza
+  `PROVEEDOR_CON_CXP` (u otro código), `mensajeError()` lo traduce a un texto amable.
+- Filtros CxP (todas / pendientes / vencidas / pagadas; por defecto pendientes) y "Agrupar por proveedor" se conservan
+  mientras la app esté abierta (variables del módulo, no persistidas). "Vencidas" usa el criterio de
+  `VF.calc.porPagar().cuentas[].vencida` (vencimiento < hoy y pendiente > 0), por lo que incluye parciales vencidas.
+  Los segmentos de filtro son markup propio (`.segmentos` + `data-accion`), no `VF.ui.segmentos`, para no acumular
+  callbacks en el registro de VF.ui en cada re-render.
+- Cifras: `VF.calc.porPagar`, `pendienteCxP`, `estadoCxP`, `comisionesPendientes`, `saldoCuenta`. El KPI "Pagadas" de
+  comisiones suma `monto` de los registros con `estado:'pagada'` (`VF.util.suma`, dato real, no estimación).
+- Eventos: un oyente de `click` en `document` para `[data-accion^="prov-"]`, uno de `input` para `[data-prov-busqueda]`
+  (re-pinta sólo la tabla, sin perder el foco) y flechas ←/→ entre pestañas. Las acciones lanzadas desde un modal cierran
+  los modales y abren el siguiente tras 60 ms (patrón del panel). `VF.store.on('cambio')` re-pinta `#prov-cuerpo` (30 ms)
+  sólo si `VF.router.actual().ruta === 'proveedores'`. "Ver movimiento" delega en `VF.panel.verMovimiento`.
+- Layout: las celdas con dos líneas (fecha + relativa, nombre + RFC, concepto + "Registrada…") van envueltas en un solo
+  `<span>` porque en < 720 px `td` es `display:flex` y separaría las líneas en columnas. La columna "Acciones" usa
+  `style="flex-wrap:nowrap"` en línea (no hay utilidad CSS para ello).
+- Pruebas E2E (Playwright + `tests/ayuda.js`, `reducedMotion: 'reduce'`): crear proveedor (con `<` y `&` escapados),
+  búsqueda, integridad PROVEEDOR_CON_CXP, KPIs = `VF.calc.porPagar`, filtros y agrupación, crear CxP, pago parcial y
+  total (movimiento con cxpId/categoría/ámbito, saldo de cuenta, estado derivado), verificación en #/empresa, eliminar
+  pago revierte saldo, eliminar CxP borra movimientos, comisión sobre factura (base = subtotal, monto en vivo), pagar y
+  revertir, `?pestana=&id=`, reactividad dentro/fuera de la ruta, estados vacíos, modo oscuro. Capturas
+  `tests/capturas/proveedores-*.png` en 390×844 y 1280×800.

@@ -177,7 +177,7 @@ window.VF = window.VF || {};
   function seccion(ambito, cuerpo) {
     return '<section class="asistente-seccion" data-ambito="' + esc(ambito) + '">' + titulo(badge(ambito)) + cuerpo + '</section>';
   }
-  function mas(n, texto) { return n > 0 ? nota('… y ' + plural(n, texto || 'más')) : ''; }
+  function mas(n, singular, pluralTexto) { return n > 0 ? nota('… y ' + plural(n, singular || 'más', pluralTexto || singular || 'más')) : ''; }
   function enlace(texto, ruta) { return { texto: texto, ruta: ruta }; }
   function respuesta(intent, ambito, texto, html, enlaces, periodo) {
     return { intent: intent, ambito: ambito || null, texto: texto, html: html || parrafo(texto), enlaces: enlaces || [], periodo: periodo || null };
@@ -285,7 +285,7 @@ window.VF = window.VF || {};
     revisar: /\b(revisar|revision|revise|revisa|duplicad[oa]s?|repetid[oa]s?|atipic[oa]s?|rar[oa]s?|sospechos[oa]s?|extran[oa]s?|anomalias?|inconsistencias?|checar|verificar|sin categoria|alertas?|irregular\w*)\b/,
     presupuesto: /\b(presupuest\w*|como voy|voy bien|me pase|me excedi|excedid[oa]s?|exced\w*|limite de gasto|tope de gasto)\b/,
     flujo: /\b(flujo|proyeccion|proyectad[oa]|pronostico|como se ve|como se vera|como pinta|caja proyectada|liquidez futura|saldo proyectado|tendencia|como voy a estar|como voy a quedar)\b/,
-    utilidad: /\b(utilidad|utilidades|ganancia|ganancias|gane|ganamos|ganado|margen|resultado|resultados|rentabilidad|rentable|beneficio|beneficios|perdida|perdidas|perdi|perdimos|estado de resultados)\b/,
+    utilidad: /\b(utilidad|utilidades|balance|balances|ganancia|ganancias|gane|ganamos|ganado|margen|resultado|resultados|rentabilidad|rentable|beneficio|beneficios|perdida|perdidas|perdi|perdimos|estado de resultados)\b/,
     comisiones: /\b(comision|comisiones|comisionista|comisionistas|vendedor|vendedores|referid[oa]s?)\b/,
     metas: /\b(meta|metas|ahorro|ahorros|ahorrar|ahorrado|ahorrando|fondo de emergencia|objetivo de ahorro|viaje)\b/,
     prestamos: /\b(prestamo|prestamos|credito|creditos|deuda|deudas|endeudad[oa]|financiamiento|hipoteca|automotriz|pyme|amortizacion|me prestaron|preste|prestado|prestados)\b/,
@@ -324,11 +324,14 @@ window.VF = window.VF || {};
         var banco = U.normalizar(c.banco || '');
         if (!puntos && banco && contieneFrase(n, banco)) puntos = 2;
       }
-      if (puntos) candidatas.push({ cuenta: c, puntos: puntos });
+      if (puntos) candidatas.push({ cuenta: c, puntos: puntos, tokens: puntos === 3 ? nombre.split(' ').length : nucleoCuenta(c).length });
     });
     if (!candidatas.length) return [];
-    var maximo = Math.max.apply(null, candidatas.map(function (x) { return x.puntos; }));
-    var lista = candidatas.filter(function (x) { return x.puntos === maximo; }).map(function (x) { return x.cuenta; });
+    // "nu empresa" (nombre completo, 2 tokens) descarta a "Nu Cuenta" (núcleo "nu", 1 token); "mercado pago" (2) no
+    // descarta a "Mercado Pago Empresa" (núcleo "mercado pago", 2): la mención es ambigua y se muestran ambas.
+    var completas = candidatas.filter(function (x) { return x.puntos === 3; });
+    var maxTokens = completas.length ? Math.max.apply(null, completas.map(function (x) { return x.tokens; })) : 0;
+    var lista = candidatas.filter(function (x) { return x.puntos === 3 || x.tokens >= maxTokens; }).map(function (x) { return x.cuenta; });
     if (tiene(n, RE.tarjeta)) {
       var tarjetas = lista.filter(function (c) { return c.tipo === 'credito'; });
       if (tarjetas.length) lista = tarjetas;
@@ -378,11 +381,18 @@ window.VF = window.VF || {};
   function cuentasActivas(estado, ambito) {
     return listaDe(estado, 'cuentas').filter(function (c) { return c && c.ambito === ambito && c.activa !== false; });
   }
+  /** "Banco · Tipo" sin repetir cuando coinciden (p. ej. Caja chica: Efectivo). */
+  function descripcionCuenta(c) {
+    var tipo = TIPO_CUENTA[c.tipo] || c.tipo || '';
+    var banco = c.banco || '';
+    if (!banco || U.normalizar(banco) === U.normalizar(tipo)) return tipo || banco;
+    return banco + ' · ' + tipo;
+  }
   function itemCuenta(estado, x) {
     var c = x.cuenta;
     return {
       titulo: c.nombre || 'Cuenta',
-      sub: esc((c.banco ? c.banco + ' · ' : '') + (TIPO_CUENTA[c.tipo] || c.tipo || '')),
+      sub: esc(descripcionCuenta(c)),
       valor: fmt(x.saldo),
       tono: x.saldo < 0 ? 'negativo' : ''
     };
@@ -432,6 +442,15 @@ window.VF = window.VF || {};
   }
 
   // ---- gastos_periodo / ingresos_periodo -------------------------------
+  /** Periodo de referencia cuando el pedido no tiene movimientos (p. ej. "esta semana" en lunes). */
+  function referenciasPeriodo(p) {
+    var h = hoy();
+    var refs = [];
+    if (p.clave === 'este_mes') { var mp = mesRelativo(h, -1); refs.push({ etiqueta: 'el mes pasado (' + mesLargo(U.periodo(mp)) + ')', desde: mp, hasta: U.finMes(mp) }); }
+    if (p.dias <= 7) refs.push({ etiqueta: 'los últimos 7 días', desde: U.sumarDias(h, -7), hasta: h });
+    refs.push({ etiqueta: 'los últimos 30 días', desde: U.sumarDias(h, -30), hasta: h });
+    return refs;
+  }
   function rPeriodo(tipo, estado, ambito, periodo) {
     var p = periodo || per('este_mes', 'este mes (' + mesLargo(U.periodo(hoy())) + ')', U.inicioMes(hoy()), U.finMes(hoy()), false);
     var esGasto = tipo === 'gasto';
@@ -449,7 +468,22 @@ window.VF = window.VF || {};
       var cuerpo;
       if (!movs.length) {
         cuerpo = parrafo('Sin ' + (esGasto ? 'gastos' : 'ingresos') + ' de ' + NOMBRES[a].toLowerCase() + ' ' + p.etiqueta + ' (' + rangoTexto(p.desde, p.hasta) + ').');
-        partes.push(NOMBRES[a] + ': sin ' + (esGasto ? 'gastos' : 'ingresos') + ' ' + p.etiqueta);
+        var textoA = NOMBRES[a] + ': sin ' + (esGasto ? 'gastos' : 'ingresos') + ' ' + p.etiqueta;
+        // Referencia etiquetada (nunca se presenta como el periodo pedido): últimos 7 días, mes pasado o últimos 30 días.
+        var ref = null;
+        var movsRef = [];
+        referenciasPeriodo(p).some(function (cand) {
+          var mv = C.movimientosEn(estado, a, cand.desde, cand.hasta, { tipo: tipo });
+          if (mv.length) { ref = cand; movsRef = mv; return true; }
+          return false;
+        });
+        if (ref) {
+          var totalRef = esGasto ? C.gastos(estado, a, ref.desde, ref.hasta) : C.ingresos(estado, a, ref.desde, ref.hasta);
+          cuerpo += filaKV('Referencia: ' + (esGasto ? 'gastos ' : 'ingresos ') + ref.etiqueta, fmt(totalRef), esGasto ? 'negativo' : 'positivo') +
+            nota('Como referencia, en ' + ref.etiqueta + ' (' + rangoTexto(ref.desde, ref.hasta) + ') hubo ' + plural(movsRef.length, 'movimiento') + '.');
+          textoA += ' (como referencia, ' + ref.etiqueta + ': ' + fmt(totalRef) + ' en ' + plural(movsRef.length, 'movimiento') + ')';
+        }
+        partes.push(textoA);
       } else {
         var cats = (esGasto ? C.gastosPorCategoria : C.ingresosPorCategoria)(estado, a, p.desde, p.hasta);
         cuerpo = filaKV((esGasto ? 'Gastos ' : 'Ingresos ') + p.etiqueta, fmt(total), esGasto ? 'negativo' : 'positivo') +
@@ -659,13 +693,21 @@ window.VF = window.VF || {};
       texto = 'Para ' + cuando + ' tienes ' + plural(lista.length, 'vencimiento') + '. ' + porAmbito.join('. ') + '.';
     }
     if (vencidos.length) {
-      var totalVencido = U.suma(vencidos, function (v) { return v.monto; });
       var vp = vencidos.filter(function (v) { return v.tipo === 'pago'; });
       var vc = vencidos.filter(function (v) { return v.tipo === 'cobro'; });
       var textoV = 'Además hay ' + plural(vencidos.length, 'vencimiento atrasado', 'vencimientos atrasados') + ' que siguen pendientes' +
         (vp.length ? ': por pagar ' + fmt(U.suma(vp, function (v) { return v.monto; })) : '') + (vc.length ? (vp.length ? ', ' : ': ') + 'por cobrar ' + fmt(U.suma(vc, function (v) { return v.monto; })) : '') + '.';
       texto += ' ' + textoV;
-      html += '<section class="asistente-seccion">' + titulo(badgeEstado('Atrasados', 'negativo') + ' ' + esc(fmt(totalVencido))) +
+      var kvAtrasados = '';
+      ambitosDe(ambito).forEach(function (a) {
+        var va = vencidos.filter(function (v) { return v.ambito === a; });
+        if (!va.length) return;
+        var vap = U.suma(va.filter(function (v) { return v.tipo === 'pago'; }), function (v) { return v.monto; });
+        var vac = U.suma(va.filter(function (v) { return v.tipo === 'cobro'; }), function (v) { return v.monto; });
+        if (vap > 0) kvAtrasados += filaKV('Por pagar atrasado · ' + NOMBRES[a], fmt(vap), 'negativo');
+        if (vac > 0) kvAtrasados += filaKV('Por cobrar atrasado · ' + NOMBRES[a], fmt(vac), 'positivo');
+      });
+      html += '<section class="asistente-seccion">' + titulo(badgeEstado('Atrasados', 'negativo') + ' ' + esc(plural(vencidos.length, 'pendiente'))) + kvAtrasados +
         listaHtml(vencidos.slice(0, 5).map(function (v) {
           return { titulo: v.concepto, sub: badge(v.ambito) + ' ' + esc(U.fmtFecha(v.fecha) + ' · hace ' + plural(-v.dias, 'día')), valor: (v.tipo === 'cobro' ? '+' : '−') + fmt(v.monto), tono: v.tipo === 'cobro' ? 'positivo' : 'negativo' };
         })) + mas(vencidos.length - 5, 'atrasados más', 'atrasados más') + '</section>';
@@ -782,25 +824,26 @@ window.VF = window.VF || {};
       html += '<section class="asistente-seccion">' + titulo(esc(tituloTexto) + ' ' + badgeEstado(String(items.length), 'alerta')) + nota(ayuda) + listaHtml(items.slice(0, 5)) + mas(items.length - 5, 'más') + '</section>';
     }
     if (rev.duplicados.length) {
-      partes.push(plural(rev.duplicados.length, 'posible duplicado'));
+      partes.push(plural(rev.duplicados.length, 'posible duplicado') + ' (' + rev.duplicados.map(function (par) { return fmt(par[1].monto); }).join(', ') + ')');
       var vistos = {};
       var dup = [];
       rev.duplicados.forEach(function (par) { par.forEach(function (m) { if (!vistos[m.id]) { vistos[m.id] = true; dup.push(itemMov(estado, m)); } }); });
       bloque('Posibles duplicados', 'Misma cuenta, fecha, monto y tipo. Si uno sobra, elimínalo desde su detalle.', dup);
     }
     if (rev.atipicos.length) {
-      partes.push(plural(rev.atipicos.length, 'gasto atípico'));
+      partes.push(plural(rev.atipicos.length, 'gasto atípico') + ' (' + rev.atipicos.map(function (a) { return fmt(a.mov.monto); }).join(', ') + ')');
       bloque('Gastos atípicos', 'Más de 3 veces la mediana de su categoría.', rev.atipicos.map(function (a) { return itemMov(estado, a.mov, U.fmtNumero(a.veces, 1) + '× la mediana de ' + fmt(a.mediana)); }));
     }
     if (rev.marcados.length) {
-      partes.push(plural(rev.marcados.length, 'movimiento marcado', 'movimientos marcados') + ' para revisar');
+      partes.push(plural(rev.marcados.length, 'movimiento marcado', 'movimientos marcados') + ' para revisar (' + rev.marcados.map(function (m) { return fmt(m.monto); }).join(', ') + ')');
       bloque('Marcados para revisar', 'Guardados con estado “por revisar”.', rev.marcados.map(function (m) { return itemMov(estado, m); }));
     }
     if (rev.sinCategoria.length) {
-      partes.push(rev.sinCategoria.length + ' sin categoría');
+      partes.push(rev.sinCategoria.length + ' sin categoría (' + fmt(U.suma(rev.sinCategoria, function (m) { return m.monto; })) + ')');
       bloque('Sin categoría', 'Asigna una categoría para que cuenten en presupuestos y reportes.', rev.sinCategoria.map(function (m) { return itemMov(estado, m); }));
     }
     var texto = 'Hay ' + plural(rev.total, 'movimiento que revisar', 'movimientos que revisar') + donde + ': ' + partes.join(', ') + '.';
+    html = parrafo('Hay ' + plural(rev.total, 'movimiento que revisar', 'movimientos que revisar') + donde + '. Toca “Ver detalle” para abrirlos desde el panel.') + html;
     if (!ambito) enlaces.push(enlace('Empresa', 'empresa'), enlace('Personal', 'personal'));
     return respuesta('revisar', ambito, texto, html, enlaces);
   }
@@ -862,7 +905,7 @@ window.VF = window.VF || {};
       ambitosVistos[a] = true;
       var items = la.map(function (c) {
         var saldo = C.saldoCuenta(estado, c.id);
-        var sub = (c.banco ? c.banco + ' · ' : '') + (TIPO_CUENTA[c.tipo] || c.tipo || '') + (c.activa === false ? ' · archivada' : '');
+        var sub = descripcionCuenta(c) + (c.activa === false ? ' · archivada' : '');
         var texto;
         if (c.tipo === 'credito') {
           var limite = Number(c.limiteCredito) || 0;
@@ -1076,8 +1119,9 @@ window.VF = window.VF || {};
     '.asistente-seccion{margin:10px 0 0;padding-top:8px;border-top:1px dashed var(--borde)}',
     '.asistente-seccion:first-child{border-top:0;padding-top:0;margin-top:0}',
     '.asistente-subtitulo{font-size:0.9rem;margin:0 0 6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
-    '.asistente-kv{padding:4px 0;font-size:0.95rem}',
-    '.asistente-kv strong{white-space:nowrap}',
+    '.asistente-kv{padding:4px 0;font-size:0.95rem;flex-wrap:nowrap}',
+    '.asistente-kv>span{flex:1;min-width:0}',
+    '.asistente-kv strong{white-space:nowrap;flex:none}',
     '.asistente-nota{font-size:0.8rem;margin:8px 0 0}',
     '.asistente-tabla-env{margin-top:8px}',
     '.asistente-tabla{font-size:0.86rem}',
@@ -1103,8 +1147,8 @@ window.VF = window.VF || {};
     '.asistente-chips[data-vacio="true"]{flex-wrap:wrap;overflow:visible}',
     '.asistente-chips[data-vacio="true"] .chip{white-space:normal;max-width:100%;line-height:1.3}',
     '@media (min-width:900px){.asistente-chips{flex-wrap:wrap;overflow:visible}.asistente-chips .chip{white-space:normal;line-height:1.3}}',
-    '.asistente-form{display:flex;gap:8px;align-items:center;position:sticky;bottom:calc(var(--altura-nav-inferior) + var(--safe-bottom) + 8px);background:var(--superficie);padding:10px 0 2px;margin-top:4px;z-index:2}',
-    '@media (min-width:900px){.asistente-form{bottom:12px}}',
+    '.asistente-form{display:flex;gap:8px;align-items:center;position:sticky;bottom:calc(var(--altura-nav-inferior) + var(--safe-bottom));background:var(--superficie);padding:10px 14px 12px;margin:6px -14px -14px;border-top:1px solid var(--borde);border-radius:0 0 var(--radio) var(--radio);z-index:2}',
+    '@media (min-width:900px){.asistente-form{bottom:0}}',
     '.asistente-form .entrada{flex:1;min-width:0;min-height:48px;border:1px solid var(--borde-2);border-radius:12px;padding:11px 14px;background:var(--superficie);color:var(--texto);font:inherit;font-size:17px;-webkit-appearance:none;appearance:none}',
     '.asistente-form .entrada:focus{border-color:var(--acento);box-shadow:var(--foco);outline:none}',
     '.asistente-form .btn{flex:none;height:48px}',
@@ -1166,7 +1210,7 @@ window.VF = window.VF || {};
     else html += r.html || parrafo(r.texto);
     if (r.enlaces && r.enlaces.length) {
       html += '<p class="asistente-enlaces mb-0">' + r.enlaces.map(function (e, i) {
-        return '<a class="btn ' + (i === 0 ? 'btn-secundario' : 'btn-fantasma') + ' btn-chico" href="#/' + esc(e.ruta) + '">' + esc(i === 0 ? 'Ver detalle · ' + e.texto : e.texto) + '</a>';
+        return '<a class="btn ' + (i === 0 ? 'btn-secundario' : 'btn-fantasma') + ' btn-chico" href="#/' + esc(e.ruta) + '">' + esc(i === 0 ? 'Ver detalle · ' + String(e.texto).replace(/^Ver /, '') : e.texto) + '</a>';
       }).join('') + '</p>';
     }
     html += '<p class="asistente-meta mb-0">' +

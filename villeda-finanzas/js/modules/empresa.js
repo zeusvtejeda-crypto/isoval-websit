@@ -1290,7 +1290,7 @@ window.VF = window.VF || {};
 
   var EXTRAS_EMPRESA = [
     { id: 'facturas', titulo: 'Facturas y cobros', acciones: enlaceChico('cobros', 'Ver todo'), render: extraFacturas },
-    { id: 'proveedores', titulo: 'Proveedores y pagos', acciones: enlaceChico('proveedores', 'Ver todo'), render: extraProveedores },
+    { id: 'proveedores', titulo: 'Proveedores', acciones: enlaceChico('proveedores', 'Ver todo'), render: extraProveedores },
     { id: 'comisiones', titulo: 'Comisiones', acciones: enlaceChico('proveedores', 'Ver todo', { pestana: 'comisiones' }), render: extraComisiones }
   ];
 

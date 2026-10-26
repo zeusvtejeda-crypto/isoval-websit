@@ -35,7 +35,7 @@ window.VF = window.VF || {};
   var CLAVE_PESTANA = 'vf.proveedores.pestana';
   var PESTANAS = [
     { valor: 'proveedores', texto: 'Proveedores' },
-    { valor: 'cxp', texto: 'Cuentas por pagar' },
+    { valor: 'cxp', texto: 'Cuentas por pagar', corto: 'Por pagar' },
     { valor: 'comisiones', texto: 'Comisiones' }
   ];
   var NOMBRE_PESTANA = { proveedores: 'Proveedores', cxp: 'Cuentas por pagar', comisiones: 'Comisiones' };
@@ -142,7 +142,7 @@ window.VF = window.VF || {};
   function fechaConRelativa(iso, tonoVencido) {
     if (!iso) return '<span class="texto-3">—</span>';
     var rel = capitalizar(VF.ui.fechaRelativa(iso));
-    return '<span class="truncar">' + esc(U.fmtFecha(iso)) + '</span><br><small class="truncar ' + esc(tonoVencido || 'texto-2') + '">' + esc(rel) + '</small>';
+    return '<span class="celda-2l"><span class="truncar">' + esc(U.fmtFecha(iso)) + '</span><br><small class="truncar ' + esc(tonoVencido || 'texto-2') + '">' + esc(rel) + '</small></span>';
   }
   function fechaVencimientoPorDefecto() { return U.sumarDias(hoy(), DIAS_VENCIMIENTO); }
   function montoComision(base, porcentaje) {
@@ -220,7 +220,9 @@ window.VF = window.VF || {};
     PESTANAS.forEach(function (p) {
       var sel = p.valor === pestanaActual;
       html += '<button type="button" class="pestana" role="tab" data-accion="prov-pestana" data-valor="' + esc(p.valor) + '"' +
-        ' aria-selected="' + (sel ? 'true' : 'false') + '"' + (sel ? '' : ' tabindex="-1"') + ' id="prov-pestana-' + esc(p.valor) + '">' + esc(p.texto) + '</button>';
+        ' aria-selected="' + (sel ? 'true' : 'false') + '"' + (sel ? '' : ' tabindex="-1"') + ' id="prov-pestana-' + esc(p.valor) + '"' +
+        (p.corto ? ' aria-label="' + esc(p.texto) + '"' : '') + '>' +
+        (p.corto ? '<span class="oculto-movil">' + esc(p.texto) + '</span><span class="oculto-escritorio">' + esc(p.corto) + '</span>' : esc(p.texto)) + '</button>';
     });
     return html + '</div>';
   }
@@ -296,7 +298,7 @@ window.VF = window.VF || {};
     });
     var columnas = [
       { clave: 'nombre', titulo: 'Proveedor', render: function (v, f) {
-        return '<strong>' + esc(v) + '</strong>' + (f.rfc ? '<br><small class="texto-3">' + esc(f.rfc) + '</small>' : '');
+        return '<span><strong>' + esc(v) + '</strong>' + (f.rfc ? '<br><small class="texto-3">' + esc(f.rfc) + '</small>' : '') + '</span>';
       } },
       { clave: 'categoria', titulo: 'Categoría', render: function (v) { return v ? esc(v) : '<span class="texto-3">—</span>'; } },
       { clave: 'contacto', titulo: 'Contacto', render: function (v, f) {
@@ -305,11 +307,11 @@ window.VF = window.VF || {};
       } },
       { clave: 'porPagar', titulo: 'Por pagar', alinear: 'derecha', render: function (v, f) {
         if (!f.cuentas) return '<span class="texto-3">Sin pendientes</span>';
-        return '<strong class="cifra">' + esc(fmt(v)) + '</strong>' +
-          (f.vencido > 0 ? '<br><span class="badge badge-negativo">Vencido ' + esc(fmt(f.vencido)) + '</span>' : '<br><small class="texto-3">' + esc(plural(f.cuentas, 'cuenta')) + '</small>');
+        return '<span><strong class="cifra">' + esc(fmt(v)) + '</strong>' +
+          (f.vencido > 0 ? '<br><span class="badge badge-negativo">Vencido ' + esc(fmt(f.vencido)) + '</span>' : '<br><small class="texto-3">' + esc(plural(f.cuentas, 'cuenta')) + '</small>') + '</span>';
       } },
       { clave: 'id', titulo: 'Acciones', alinear: 'derecha', render: function (id) {
-        return '<span class="fila" style="justify-content:flex-end;gap:2px">' +
+        return '<span class="fila" style="justify-content:flex-end;gap:2px;flex-wrap:nowrap">' +
           btnIcono('prov-nueva-cxp', 'pago', null, 'Nueva cuenta por pagar', ' data-proveedor="' + esc(id) + '"') +
           btnIcono('prov-editar-proveedor', 'editar', id, 'Editar proveedor') +
           btnIcono('prov-eliminar-proveedor', 'eliminar', id, 'Eliminar proveedor') + '</span>';
@@ -537,18 +539,18 @@ window.VF = window.VF || {};
     if (conProveedor) cols.push({ clave: 'proveedor', titulo: 'Proveedor', render: function (v) { return '<strong>' + esc(v) + '</strong>'; } });
     cols.push(
       { clave: 'concepto', titulo: 'Concepto', render: function (v, fila) {
-        return esc(v || 'Cuenta por pagar') + '<br><small class="texto-3">Registrada ' + esc(U.fmtFecha(fila.registro)) + '</small>';
+        return '<span>' + esc(v || 'Cuenta por pagar') + '<br><small class="texto-3">Registrada ' + esc(U.fmtFecha(fila.registro)) + '</small></span>';
       } },
       { clave: 'monto', titulo: 'Monto', alinear: 'derecha', render: function (v) { return '<span class="cifra">' + esc(fmt(v)) + '</span>'; } },
       { clave: 'pendiente', titulo: 'Pendiente', alinear: 'derecha', render: function (v, fila) {
         if (fila.estado === 'cancelada') return '<span class="texto-3">—</span>';
-        return '<strong class="cifra ' + (v > 0 ? (fila.vencida ? 'negativo' : '') : 'positivo') + '">' + esc(fmt(v)) + '</strong>' +
-          (fila.pagado > 0 && v > 0 ? '<br><small class="texto-3">pagado ' + esc(fmt(fila.pagado)) + '</small>' : '');
+        return '<span><strong class="cifra ' + (v > 0 ? (fila.vencida ? 'negativo' : '') : 'positivo') + '">' + esc(fmt(v)) + '</strong>' +
+          (fila.pagado > 0 && v > 0 ? '<br><small class="texto-3">pagado ' + esc(fmt(fila.pagado)) + '</small>' : '') + '</span>';
       } },
       { clave: 'estado', titulo: 'Estado', render: function (v) { return badgeEstadoCxP(v); } },
       { clave: 'id', titulo: 'Acciones', alinear: 'derecha', render: function (id, fila) {
         var puedePagar = fila.pendiente > 0 && fila.estado !== 'cancelada';
-        return '<span class="fila" style="justify-content:flex-end;gap:2px">' +
+        return '<span class="fila" style="justify-content:flex-end;gap:2px;flex-wrap:nowrap">' +
           (puedePagar ? '<button type="button" class="btn btn-secundario btn-chico" data-accion="prov-pagar-cxp" data-id="' + esc(id) + '">' + VF.ui.icono('pago') + 'Pagar</button>' : '') +
           btnIcono('prov-editar-cxp', 'editar', id, 'Editar cuenta por pagar') +
           btnIcono('prov-eliminar-cxp', 'eliminar', id, 'Eliminar cuenta por pagar') + '</span>';
@@ -909,15 +911,15 @@ window.VF = window.VF || {};
       { clave: 'fecha', titulo: 'Fecha', render: function (f, fila) { return fechaConRelativa(f, fila.estado === 'pendiente' && f && f < hoy() ? 'negativo' : 'texto-2'); } },
       { clave: 'beneficiario', titulo: 'Beneficiario', render: function (v) { return '<strong>' + esc(v || '—') + '</strong>'; } },
       { clave: 'factura', titulo: 'Base', render: function (v, fila) {
-        return (v ? esc(v) + (fila.facturaDetalle ? ' · ' + esc(fila.facturaDetalle) : '') : 'Base manual') +
-          '<br><small class="texto-3 cifra">' + esc(fmt(fila.base)) + ' × ' + esc(U.fmtNumero(fila.porcentaje, 2)) + ' %</small>';
+        return '<span>' + (v ? esc(v) + (fila.facturaDetalle ? ' · ' + esc(fila.facturaDetalle) : '') : 'Base manual') +
+          '<br><small class="texto-3 cifra">' + esc(fmt(fila.base)) + ' × ' + esc(U.fmtNumero(fila.porcentaje, 2)) + ' %</small></span>';
       } },
       { clave: 'monto', titulo: 'Monto', alinear: 'derecha', render: function (v) { return '<strong class="cifra">' + esc(fmt(v)) + '</strong>'; } },
       { clave: 'estado', titulo: 'Estado', render: function (v, fila) { return badgeEstadoComision(fila); } },
       { clave: 'id', titulo: 'Acciones', alinear: 'derecha', render: function (id, fila) {
-        return '<span class="fila" style="justify-content:flex-end;gap:2px">' +
+        return '<span class="fila" style="justify-content:flex-end;gap:2px;flex-wrap:nowrap">' +
           (fila.estado === 'pendiente' ? '<button type="button" class="btn btn-secundario btn-chico" data-accion="prov-pagar-comision" data-id="' + esc(id) + '">' + VF.ui.icono('pago') + 'Pagar</button>' : '') +
-          btnIcono('prov-editar-comision', 'editar', id, 'Editar comisión') +
+          (fila.estado === 'pendiente' ? btnIcono('prov-editar-comision', 'editar', id, 'Editar comisión') : '') +
           btnIcono('prov-eliminar-comision', 'eliminar', id, 'Eliminar comisión') + '</span>';
       } }
     ];

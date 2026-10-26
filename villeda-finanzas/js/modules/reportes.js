@@ -436,7 +436,7 @@ window.VF = window.VF || {};
       ? esc(pctTexto.cifra) + (pctTexto.nota ? '<br><small class="texto-3">' + esc(pctTexto.nota) + '</small>' : '')
       : esc(pctTexto);
     return '<tr><td><strong>' + esc(texto) + '</strong></td><td class="num"><strong class="' + esc(clase || '') + '">' + esc(valor) + '</strong></td>' +
-      '<td class="num texto-2">' + pctHtml + '</td></tr>';
+      '<td class="num texto-2" style="white-space:nowrap">' + pctHtml + '</td></tr>';
   }
 
   function tarjetaResultados(est, r) {

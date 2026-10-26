@@ -477,6 +477,20 @@ window.VF = window.VF || {};
   }
 
   /**
+   * Celda de varias líneas. En móvil VF.ui.tabla vuelve cada <td> un contenedor flex (tarjeta con etiqueta), y
+   * sus hijos directos (strong, <br>, small) se convertirían en flex items separados: el folio se partiría en
+   * "F-" / "0008", el concepto quedaría como columna y un span.truncar se volvería bloque con elipsis. Un único
+   * <div> envolvente mantiene las líneas juntas en ambos modos.
+   */
+  function celda(html) {
+    return '<div>' + html + '</div>';
+  }
+  /** Botones de acción de una celda: el <span> vacío inicial los empuja a la derecha en la tarjeta móvil. */
+  function celdaAcciones(botones) {
+    return '<span></span><span class="truncar">' + botones + '</span>';
+  }
+
+  /**
    * Columnas de la tabla de facturas. opciones: { sinCliente (grupos por cliente), compacta (tablas dentro de un
    * modal de 560 px: el vencimiento va bajo el folio y no hay columna "Fechas") }.
    */
@@ -485,9 +499,9 @@ window.VF = window.VF || {};
     var cols = [
       { clave: 'folio', titulo: 'Folio', render: function (v, f) {
         var venc = estaVencida(f);
-        return '<strong>' + esc(v) + '</strong>' +
+        return celda('<strong>' + esc(v) + '</strong>' +
           (f.concepto ? '<br><small class="texto-2">' + esc(recortar(f.concepto, o.compacta ? 40 : MAX_CONCEPTO_TABLA)) + '</small>' : '') +
-          (o.compacta ? '<br><small class="' + (venc ? 'negativo' : 'texto-3') + '">Vence ' + esc(U.fmtFecha(f.fechaVencimiento)) + '</small>' : '');
+          (o.compacta ? '<br><small class="' + (venc ? 'negativo' : 'texto-3') + '">Vence ' + esc(U.fmtFecha(f.fechaVencimiento)) + '</small>' : ''));
       } }
     ];
     if (!o.sinCliente) {
@@ -497,8 +511,8 @@ window.VF = window.VF || {};
       cols.push({ clave: 'fechaVencimiento', titulo: 'Fechas', render: function (v, f) {
         var venc = estaVencida(f);
         var rel = cobrable(f) && v ? ' · ' + capitalizar(VF.ui.fechaRelativa(v)) : '';
-        return '<span class="truncar">Emitida ' + esc(U.fmtFecha(f.fechaEmision)) + '</span><br>' +
-          '<small class="' + (venc ? 'negativo' : 'texto-2') + '">Vence ' + esc(U.fmtFecha(v)) + esc(rel) + '</small>';
+        return celda('Emitida ' + esc(U.fmtFecha(f.fechaEmision)) + '<br>' +
+          '<small class="' + (venc ? 'negativo' : 'texto-2') + '">Vence ' + esc(U.fmtFecha(v)) + esc(rel) + '</small>');
       } });
     }
     cols.push({ clave: 'total', titulo: 'Total', alinear: 'derecha', render: function (v) { return '<span class="cifra">' + esc(fmt(v)) + '</span>'; } });
@@ -630,20 +644,19 @@ window.VF = window.VF || {};
       cuerpo = VF.ui.tabla({
         columnas: [
           { clave: 'nombre', titulo: 'Cliente', render: function (v, fila) {
-            return '<strong>' + esc(v) + '</strong>' + (fila.rfc ? '<br><small class="texto-2">RFC ' + esc(fila.rfc) + '</small>' : '');
+            return celda('<strong>' + esc(v) + '</strong>' + (fila.rfc ? '<br><small class="texto-2">RFC ' + esc(fila.rfc) + '</small>' : ''));
           } },
           { clave: 'contacto', titulo: 'Contacto', render: function (v) { return v ? esc(v) : '<span class="texto-3">—</span>'; } },
           { clave: 'facturas', titulo: 'Facturas', alinear: 'derecha', render: function (v) { return v ? '<span class="cifra">' + v + '</span>' : '<span class="texto-3">Ninguna</span>'; } },
           { clave: 'pendiente', titulo: 'Por cobrar', alinear: 'derecha', render: function (v, fila) {
             if (!(v > 0)) return '<span class="texto-3">Sin saldo</span>';
-            return '<strong class="cifra">' + esc(fmt(v)) + '</strong>' +
-              (fila.vencido > 0 ? '<br><small class="negativo">Vencido ' + esc(fmt(fila.vencido)) + '</small>' : '');
+            return celda('<strong class="cifra">' + esc(fmt(v)) + '</strong>' +
+              (fila.vencido > 0 ? '<br><small class="negativo">Vencido ' + esc(fmt(fila.vencido)) + '</small>' : ''));
           } },
           { clave: 'id', titulo: '', alinear: 'derecha', render: function (id, fila) {
-            return '<span class="truncar">' +
+            return celdaAcciones(
               '<button type="button" class="btn btn-icono" aria-label="Editar cliente ' + esc(fila.nombre) + '" title="Editar" ' + accion('fac-editar-cliente', id) + '>' + VF.ui.icono('editar') + '</button> ' +
-              '<button type="button" class="btn btn-icono" aria-label="Eliminar cliente ' + esc(fila.nombre) + '" title="Eliminar" ' + accion('fac-eliminar-cliente', id) + '>' + VF.ui.icono('eliminar') + '</button>' +
-              '</span>';
+              '<button type="button" class="btn btn-icono" aria-label="Eliminar cliente ' + esc(fila.nombre) + '" title="Eliminar" ' + accion('fac-eliminar-cliente', id) + '>' + VF.ui.icono('eliminar') + '</button>');
           } }
         ],
         filas: filas,
@@ -696,16 +709,15 @@ window.VF = window.VF || {};
     } else {
       html += VF.ui.tabla({
         columnas: [
-          { clave: 'fecha', titulo: 'Fecha', render: function (v) { return '<span class="truncar">' + esc(U.fmtFecha(v)) + '</span>'; } },
+          { clave: 'fecha', titulo: 'Fecha', render: function (v) { return esc(U.fmtFecha(v)); } },
           { clave: 'cuentaId', titulo: 'Cuenta', render: function (v) { return esc(nombreCuenta(est, v)); } },
           { clave: 'monto', titulo: 'Monto', alinear: 'derecha', render: function (v) { return '<strong class="cifra positivo">' + esc('+' + fmt(v)) + '</strong>'; } },
           { clave: 'id', titulo: '', alinear: 'derecha', render: function (id, p) {
             var mov = p.movimientoId ? buscar(est.movimientos, p.movimientoId) : null;
             // .truncar (white-space: nowrap) evita que los dos botones se apilen en celdas angostas.
-            return '<span class="truncar">' +
+            return celdaAcciones(
               (mov ? '<button type="button" class="btn btn-icono" aria-label="Ver movimiento del pago" title="Ver movimiento" ' + accion('fac-ver-movimiento', mov.id) + '>' + VF.ui.icono('ojo') + '</button> ' : '') +
-              '<button type="button" class="btn btn-icono" aria-label="Eliminar pago" title="Eliminar pago" ' + accion('fac-eliminar-pago', f.id, ' data-pago="' + esc(id) + '"') + '>' + VF.ui.icono('eliminar') + '</button>' +
-              '</span>';
+              '<button type="button" class="btn btn-icono" aria-label="Eliminar pago" title="Eliminar pago" ' + accion('fac-eliminar-pago', f.id, ' data-pago="' + esc(id) + '"') + '>' + VF.ui.icono('eliminar') + '</button>');
           } }
         ],
         filas: pagos,
