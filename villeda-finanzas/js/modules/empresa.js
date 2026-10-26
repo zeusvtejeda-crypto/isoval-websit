@@ -304,30 +304,37 @@ window.VF = window.VF || {};
       campoFiltro(ambito, 'hasta', 'Hasta', '<input type="date" id="ambito-filtro-hasta" data-filtro="hasta" data-ambito="' + esc(ambito) + '" value="' + esc(f.hasta) + '" aria-label="Hasta">') +
       '</div>';
     html += campoFiltro(ambito, 'tipo', 'Tipo', '<select id="ambito-filtro-tipo" data-filtro="tipo" data-ambito="' + esc(ambito) + '">' +
-      opciones([{ valor: '', texto: 'Todos los tipos' }, { valor: 'ingreso', texto: 'Ingresos' }, { valor: 'gasto', texto: 'Gastos' }, { valor: 'transferencia', texto: 'Transferencias' }], f.tipo) + '</select>');
+      opciones([{ valor: '', texto: 'Tipo: todos' }, { valor: 'ingreso', texto: 'Ingresos' }, { valor: 'gasto', texto: 'Gastos' }, { valor: 'transferencia', texto: 'Transferencias' }], f.tipo) + '</select>');
     html += campoFiltro(ambito, 'cuentaId', 'Cuenta', '<select id="ambito-filtro-cuentaId" data-filtro="cuentaId" data-ambito="' + esc(ambito) + '">' +
-      opciones([{ valor: '', texto: 'Todas las cuentas' }].concat(cuentas.map(function (c) {
+      opciones([{ valor: '', texto: 'Cuenta: todas' }].concat(cuentas.map(function (c) {
         return { valor: c.id, texto: c.nombre + (c.activa === false ? ' (archivada)' : '') };
       })), f.cuentaId) + '</select>');
     html += campoFiltro(ambito, 'categoria', 'Categoría', '<select id="ambito-filtro-categoria" data-filtro="categoria" data-ambito="' + esc(ambito) + '">' +
-      opciones([{ valor: '', texto: 'Todas las categorías' }].concat(cats.map(function (c) { return { valor: c, texto: c }; })), f.categoria) + '</select>');
+      opciones([{ valor: '', texto: 'Categoría: todas' }].concat(cats.map(function (c) { return { valor: c, texto: c }; })), f.categoria) + '</select>');
     html += campoFiltro(ambito, 'busqueda', 'Buscar', '<input type="search" id="ambito-filtro-busqueda" data-filtro="busqueda" data-ambito="' + esc(ambito) + '" value="' + esc(f.busqueda) + '" placeholder="Buscar descripción, contraparte, monto…" autocomplete="off">');
     html += '</div>';
     return html;
   }
 
-  function celdaConcepto(est, m, compacta) {
-    var titulo = m.descripcion || m.categoria || TIPO_TEXTO[m.tipo] || 'Movimiento';
-    var partes = [];
-    if (compacta) {
-      partes.push(m.tipo === 'transferencia' ? 'Transferencia' : (m.categoria || 'Sin categoría'));
-      partes.push(nombreCuenta(est, m.cuentaId) + (m.tipo === 'transferencia' && m.cuentaDestinoId ? ' → ' + nombreCuenta(est, m.cuentaDestinoId) : ''));
-    } else if (m.contraparte) {
-      partes.push(m.contraparte);
-    }
-    return '<strong>' + esc(titulo) + '</strong>' +
+  function tituloMovimiento(m) {
+    return m.descripcion || m.categoria || TIPO_TEXTO[m.tipo] || 'Movimiento';
+  }
+  function celdaConcepto(est, m) {
+    return '<div><strong>' + esc(tituloMovimiento(m)) + '</strong>' +
       (m.estado === 'revisar' ? ' <span class="badge badge-alerta">Revisar</span>' : '') +
-      (partes.length ? '<br><small class="texto-2">' + esc(partes.join(' · ')) + '</small>' : '');
+      (m.contraparte ? '<br><small class="texto-2">' + esc(m.contraparte) + '</small>' : '') + '</div>';
+  }
+  /** Fila compacta (< 720 px): una sola celda con concepto, fecha · categoría · cuenta, monto y chevron. */
+  function celdaMovil(est, m) {
+    var sub = [U.fmtFecha(m.fecha), m.tipo === 'transferencia' ? 'Transferencia' : (m.categoria || 'Sin categoría'),
+      nombreCuenta(est, m.cuentaId) + (m.tipo === 'transferencia' && m.cuentaDestinoId ? ' → ' + nombreCuenta(est, m.cuentaDestinoId) : '')];
+    return '<div style="flex:1 1 auto;min-width:0;text-align:left;display:flex;align-items:center;gap:10px">' +
+      '<div style="flex:1 1 auto;min-width:0">' +
+      '<p class="mb-0" style="font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + esc(tituloMovimiento(m)) +
+      (m.estado === 'revisar' ? ' <span class="badge badge-alerta">Revisar</span>' : '') + '</p>' +
+      '<p class="lista-sub" style="white-space:normal">' + esc(sub.join(' · ')) + '</p></div>' +
+      '<strong class="cifra ' + tonoTipo(m.tipo) + '" style="white-space:nowrap">' + esc(signo(m.tipo, m.monto)) + '</strong>' +
+      '<span class="texto-3" aria-hidden="true" style="display:inline-flex;margin-right:-6px">' + VF.ui.icono('flecha') + '</span></div>';
   }
   function celdaCuenta(est, m) {
     var html = esc(nombreCuenta(est, m.cuentaId));
@@ -349,21 +356,21 @@ window.VF = window.VF || {};
   }
 
   function columnasPara(est, ambito) {
+    if (esMovil()) {
+      // Una sola celda por fila: la fila completa abre el detalle (editar, eliminar, marcar por revisar).
+      return [{ clave: 'descripcion', titulo: '', render: function (v, m) { return celdaMovil(est, m); } }];
+    }
     var colFecha = { clave: 'fecha', titulo: 'Fecha', render: function (f) {
       var dias = Math.abs(U.diasEntre(f, hoy()));
-      return esc(U.fmtFecha(f)) + (dias < 7 ? '<br><small class="texto-3">' + esc(capitalizar(VF.ui.fechaRelativa(f))) + '</small>' : '');
+      return '<span style="white-space:nowrap">' + esc(U.fmtFecha(f)) + '</span>' +
+        (dias < 7 ? '<br><small class="texto-3">' + esc(capitalizar(VF.ui.fechaRelativa(f))) + '</small>' : '');
     } };
     var colMonto = { clave: 'monto', titulo: 'Monto', alinear: 'derecha', render: function (monto, m) {
-      return '<strong class="cifra ' + tonoTipo(m.tipo) + '">' + esc(signo(m.tipo, monto)) + '</strong>';
+      return '<strong class="cifra ' + tonoTipo(m.tipo) + '" style="white-space:nowrap">' + esc(signo(m.tipo, monto)) + '</strong>';
     } };
     var colAcciones = { clave: '_acciones', titulo: '', alinear: 'derecha', render: function (v, m) { return celdaAcciones(ambito, m); } };
-    if (esMovil()) {
-      return [colFecha,
-        { clave: 'descripcion', titulo: 'Movimiento', render: function (v, m) { return celdaConcepto(est, m, true); } },
-        colMonto, colAcciones];
-    }
     return [colFecha,
-      { clave: 'descripcion', titulo: 'Concepto', render: function (v, m) { return celdaConcepto(est, m, false); } },
+      { clave: 'descripcion', titulo: 'Concepto', render: function (v, m) { return celdaConcepto(est, m); } },
       { clave: 'categoria', titulo: 'Categoría', render: function (c, m) { return esc(m.tipo === 'transferencia' ? (c || 'Transferencia') : (c || 'Sin categoría')); } },
       { clave: 'cuentaId', titulo: 'Cuenta', render: function (v, m) { return celdaCuenta(est, m); } },
       colMonto, colAcciones];
@@ -486,8 +493,11 @@ window.VF = window.VF || {};
     var ambito = inst.ambito;
     var f = filtrosDe(ambito);
     var r = rangoDe(f);
+    var extras = inst.opciones.extras || [];
+    var rejilla = extras.length === 3 ? 'rejilla-3' : extras.length >= 4 ? 'rejilla-4' : 'rejilla-2';
     var html = cabecera(est, ambito) + seccionCuentas(est, ambito) + seccionMovimientos(est, ambito, f, r, inst) +
-      '<div class="rejilla-2">' + tarjetaDona(est, ambito, r) + extrasHTML(inst, est) + '</div>';
+      tarjetaDona(est, ambito, r) +
+      (extras.length ? '<div class="' + rejilla + '">' + extrasHTML(inst, est) + '</div>' : '');
     inst.contenedor.innerHTML = '<div class="vista-ambito" id="ambito-' + esc(ambito) + '" data-vista-ambito="' + esc(ambito) + '">' + html + '</div>';
     inst.raiz = inst.contenedor.firstElementChild;
     pintarExtras(inst, est);
@@ -962,6 +972,7 @@ window.VF = window.VF || {};
     var o = opciones || {};
     var inst = { ruta: VF.router.actual().ruta, ambito: ambito, contenedor: cont, raiz: null, opciones: o };
     instancia = inst;
+    filtrosDe(ambito).pagina = 1;   // los filtros se recuerdan; la paginación "Mostrar más" no
     if (VF.ui.ambitoActivo) VF.ui.ambitoActivo(ambito);
     pintar(inst);
 
@@ -1215,8 +1226,8 @@ window.VF = window.VF || {};
   }
 
   var EXTRAS_EMPRESA = [
-    { id: 'facturas', titulo: 'Facturas y cuentas por cobrar', acciones: enlaceChico('cobros', 'Ver todo'), render: extraFacturas },
-    { id: 'proveedores', titulo: 'Proveedores y cuentas por pagar', acciones: enlaceChico('proveedores', 'Ver todo'), render: extraProveedores },
+    { id: 'facturas', titulo: 'Facturas y cobros', acciones: enlaceChico('cobros', 'Ver todo'), render: extraFacturas },
+    { id: 'proveedores', titulo: 'Proveedores y pagos', acciones: enlaceChico('proveedores', 'Ver todo'), render: extraProveedores },
     { id: 'comisiones', titulo: 'Comisiones', acciones: enlaceChico('proveedores', 'Ver todo', { pestana: 'comisiones' }), render: extraComisiones }
   ];
 

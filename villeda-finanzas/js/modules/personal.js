@@ -70,15 +70,15 @@ window.VF = window.VF || {};
     var completa = p.objetivo > 0 && p.ahorrado >= p.objetivo;
     var vencida = !!m.fechaMeta && m.fechaMeta < hoy() && !completa;
     var partes = [];
-    partes.push(completa ? 'Meta alcanzada' : U.fmtNumero(p.porcentaje, 0) + ' % · faltan ' + fmt(p.faltante));
-    partes.push(cuenta ? 'Cuenta: ' + cuenta.nombre : 'Sin cuenta asignada');
+    if (!cuenta) partes.push('Sin cuenta asignada: asigna una cuenta de ahorro para medir el avance');
+    else partes.push((completa ? 'Meta alcanzada' : U.fmtNumero(p.porcentaje, 0) + ' % · faltan ' + fmt(p.faltante)) + ' · Cuenta: ' + cuenta.nombre);
     if (m.fechaMeta) partes.push((vencida ? 'Fecha meta pasada: ' : 'Para el ') + fechaConRelativa(m.fechaMeta));
     var tono = completa ? 'positivo' : vencida ? 'alerta' : undefined;
     return '<li class="lista-item" data-meta="' + esc(m.id) + '" style="align-items:flex-start">' +
       '<span class="lista-icono">' + VF.ui.icono('meta') + '</span>' +
       '<div class="lista-texto">' +
-      '<div class="fila-entre" style="flex-wrap:nowrap;gap:8px"><p class="lista-titulo" style="flex:1 1 auto;min-width:0">' + esc(m.nombre) + '</p>' +
-      '<strong class="cifra" style="white-space:nowrap" data-meta-progreso>' + esc(fmt(p.ahorrado)) + ' <span class="texto-3">/ ' + esc(fmt(p.objetivo)) + '</span></strong></div>' +
+      '<div class="fila-entre" style="gap:4px 8px"><p class="lista-titulo" style="flex:1 1 auto;min-width:0">' + esc(m.nombre) + '</p>' +
+      '<strong class="cifra" style="white-space:nowrap" data-meta-progreso>' + (cuenta ? esc(fmt(p.ahorrado)) : '<span class="texto-3">Sin cuenta</span>') + ' <span class="texto-3">/ ' + esc(fmt(p.objetivo)) + '</span></strong></div>' +
       '<div class="mt-1 mb-1">' + VF.ui.barraProgreso(p.porcentaje, tono) + '</div>' +
       '<p class="lista-sub" style="white-space:normal">' + esc(partes.join(' · ')) + '</p>' +
       (m.notas ? '<p class="lista-sub" style="white-space:normal">' + esc(m.notas) + '</p>' : '') +
