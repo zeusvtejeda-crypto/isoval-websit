@@ -189,15 +189,15 @@ window.VF = window.VF || {};
     }
 
     // ----- Cuentas: empresa (3) -----
-    cuenta({ id: 'cta_emp_bbva_demo', ambito: 'empresa', nombre: 'BBVA Empresas', banco: 'BBVA', tipo: 'cheques', saldoInicial: 420000, color: '#1D4ED8' });
-    cuenta({ id: 'cta_emp_banorte_demo', ambito: 'empresa', nombre: 'Banorte Nómina y pagos', banco: 'Banorte', tipo: 'cheques', saldoInicial: 62000, color: '#B91C1C' });
+    cuenta({ id: 'cta_emp_bbva_demo', ambito: 'empresa', nombre: 'Mercado Pago Empresa', banco: 'Mercado Pago', tipo: 'billetera', saldoInicial: 420000, color: '#1D4ED8' });
+    cuenta({ id: 'cta_emp_banorte_demo', ambito: 'empresa', nombre: 'Nu Empresa', banco: 'Nu', tipo: 'cheques', saldoInicial: 62000, color: '#B91C1C' });
     cuenta({ id: 'cta_emp_caja_demo', ambito: 'empresa', nombre: 'Caja chica', banco: 'Efectivo', tipo: 'efectivo', saldoInicial: 8500, color: '#B45309' });
 
     // ----- Cuentas: personal (4, una de crédito con deuda) -----
     cuenta({ id: 'cta_per_nu_demo', ambito: 'personal', nombre: 'Nu Cuenta', banco: 'Nu', tipo: 'cheques', saldoInicial: 18000, color: '#7C3AED' });
-    cuenta({ id: 'cta_per_santander_demo', ambito: 'personal', nombre: 'Santander Nómina', banco: 'Santander', tipo: 'cheques', saldoInicial: 48000, color: '#DC2626' });
-    cuenta({ id: 'cta_per_ahorro_demo', ambito: 'personal', nombre: 'Ahorro Hey Banco', banco: 'Hey Banco', tipo: 'ahorro', saldoInicial: 60000, color: '#047857' });
-    cuenta({ id: 'cta_per_tdc_demo', ambito: 'personal', nombre: 'Tarjeta BBVA Oro', banco: 'BBVA', tipo: 'credito', saldoInicial: -12450, limiteCredito: 60000, diaCorte: 12, diaPago: 2, color: '#0F766E' });
+    cuenta({ id: 'cta_per_santander_demo', ambito: 'personal', nombre: 'BBVA Débito', banco: 'BBVA', tipo: 'cheques', saldoInicial: 48000, color: '#DC2626' });
+    cuenta({ id: 'cta_per_ahorro_demo', ambito: 'personal', nombre: 'Mercado Pago', banco: 'Mercado Pago', tipo: 'ahorro', saldoInicial: 60000, color: '#047857' });
+    cuenta({ id: 'cta_per_tdc_demo', ambito: 'personal', nombre: 'Tarjeta Nu', banco: 'Nu', tipo: 'credito', saldoInicial: -12450, limiteCredito: 60000, diaCorte: 12, diaPago: 2, color: '#0F766E' });
 
     var BBVA = 'cta_emp_bbva_demo';
     var BANORTE = 'cta_emp_banorte_demo';
@@ -335,13 +335,13 @@ window.VF = window.VF || {};
     }
 
     prestamo({
-      id: 'pre_emp_pyme_demo', ambito: 'empresa', tipo: 'recibido', contraparte: 'BBVA — Crédito PyME',
+      id: 'pre_emp_pyme_demo', ambito: 'empresa', tipo: 'recibido', contraparte: 'Mercado Crédito — Crédito PyME',
       principal: 500000, tasaAnual: 18, plazoMeses: 36, fechaInicio: d(-100),
-      notas: 'Capital de trabajo para Torre Altavista. El desembolso está incluido en el saldo inicial de BBVA Empresas.'
-    }, 3, BBVA, 'Préstamos', 'gasto', 'Crédito PyME BBVA');
+      notas: 'Capital de trabajo para Torre Altavista. El desembolso está incluido en el saldo inicial de Mercado Pago Empresa.'
+    }, 3, BBVA, 'Préstamos', 'gasto', 'Crédito PyME Mercado Crédito');
 
     prestamo({
-      id: 'pre_per_auto_demo', ambito: 'personal', tipo: 'recibido', contraparte: 'Santander — Crédito automotriz',
+      id: 'pre_per_auto_demo', ambito: 'personal', tipo: 'recibido', contraparte: 'Financiera — Crédito automotriz',
       principal: 280000, tasaAnual: 14.5, plazoMeses: 48, fechaInicio: d(-95),
       notas: 'Camioneta familiar. Desembolso incluido en saldo inicial.'
     }, 3, SANTANDER, 'Préstamos', 'gasto', 'Crédito automotriz');
@@ -391,11 +391,11 @@ window.VF = window.VF || {};
 
     // ----- Movimientos personales -----
     mensual(28, function (fecha) { mov('sueldo', SANTANDER, 'ingreso', 32000, fecha, 'Sueldo', 'Sueldo mensual como director de VILLEDA Inc', { contraparte: 'VILLEDA Inc' }); });
-    mensual(1, function (fecha, k) { mov('intereses', AHORRO, 'ingreso', [481, 474, 468, 455][k], fecha, 'Intereses', 'Rendimiento mensual de cuenta de ahorro', { contraparte: 'Hey Banco' }); });
+    mensual(1, function (fecha, k) { mov('intereses', AHORRO, 'ingreso', [481, 474, 468, 455][k], fecha, 'Intereses', 'Rendimientos mensuales de Mercado Pago', { contraparte: 'Mercado Pago' }); });
     mensual(1, function (fecha) { mov('vivienda', SANTANDER, 'gasto', 14500, fecha, 'Vivienda', 'Renta de departamento Col. Roma', { contraparte: 'Arrendador' }); });
     mensual(5, function (fecha) { mov('educacion', SANTANDER, 'gasto', 9800, fecha, 'Educación', 'Colegiatura mensual', { contraparte: 'Colegio Montessori del Valle' }); });
     mensual(3, function (fecha) { transferencia('ahorro', NU, AHORRO, 5000, fecha, 'Ahorro mensual programado', 'Ahorro'); });
-    mensual(2, function (fecha, k) { transferencia('pagotdc', NU, TDC, [9200, 8750, 9400, 9100][k], fecha, 'Pago de tarjeta de crédito BBVA Oro', 'Tarjeta de crédito'); });
+    mensual(2, function (fecha, k) { transferencia('pagotdc', NU, TDC, [9200, 8750, 9400, 9100][k], fecha, 'Pago de Tarjeta Nu', 'Tarjeta de crédito'); });
     mensual(5, function (fecha) { mov('suscripcion', TDC, 'gasto', 299, fecha, 'Suscripciones', 'Netflix', { contraparte: 'Netflix' }); });
     mensual(9, function (fecha) { mov('suscripcion', TDC, 'gasto', 179, fecha, 'Suscripciones', 'Spotify Familiar', { contraparte: 'Spotify' }); });
     mensual(14, function (fecha) { mov('suscripcion', TDC, 'gasto', 49, fecha, 'Suscripciones', 'iCloud+ 200 GB', { contraparte: 'Apple' }); });
