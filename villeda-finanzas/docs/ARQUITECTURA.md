@@ -1030,3 +1030,71 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
   pago revierte saldo, eliminar CxP borra movimientos, comisión sobre factura (base = subtotal, monto en vivo), pagar y
   revertir, `?pestana=&id=`, reactividad dentro/fuera de la ruta, estados vacíos, modo oscuro. Capturas
   `tests/capturas/proveedores-*.png` en 390×844 y 1280×800.
+
+### Módulo Facturas y cobros (js/modules/facturas.js)
+
+- Registro: `VF.router.registrar('facturas', { titulo:'Facturas y cobros', icono:'facturas', nav:'mas', render })` y
+  `VF.router.registrar('cobros', { titulo:'Cobros', icono:'cobros', nav:false, render })` (misma función `render`; la ruta
+  activa decide el modo). Al pintar llama a `VF.ui.ambitoActivo('empresa')`. Parámetros honrados: `#/facturas?id=<facturaId>`
+  (abre el detalle en modal), `#/facturas?pestana=clientes`, `#/facturas?filtro=todas|pendientes|vencidas|pagadas|borrador`,
+  `#/cobros?cliente=<clienteId>` (filtra el agrupado a ese cliente). `#/cobros` = la misma vista con filtro "pendientes",
+  "Agrupar por cliente" activado (grupos y totales de `VF.calc.porCobrar().porCliente`), sin pestaña Clientes y con h1
+  "Cuentas por cobrar".
+- **API pública `VF.facturas`** (todos los modales devuelven la api `{ cerrar, elemento }` de `VF.ui.modal`):
+  ```js
+  render(contenedor, params)
+  nuevaFactura({ clienteId?, id? })        // modal alta (con `id` edita; una factura cancelada no se edita)
+  verFactura(facturaId)                    // modal de detalle (importes, barra de cobro, historial de pagos, acciones)
+  nuevoCliente(clienteId?)                 // modal alta/edición de cliente
+  verCliente(clienteId)                    // modal de detalle con sus facturas (tabla compacta)
+  registrarPago(facturaId)                 // modal "Registrar pago" (monto ≤ pendiente, fecha, cuenta EMPRESA activa)
+  agregarPago(facturaId, { monto, fecha, cuentaId })  // SIN modal → pago. Crea el movimiento ingreso 'Ventas' (ambito
+                                           //   'empresa', facturaId, contraparte = nombre del cliente, descripcion 'Pago de
+                                           //   factura <folio> — <concepto>') y guarda { id:'pago_…', fecha, monto, cuentaId,
+                                           //   movimientoId } en factura.pagos. Lanza Error('FACTURA_INEXISTENTE' |
+                                           //   'FACTURA_NO_COBRABLE' | 'MONTO_INVALIDO' | 'MONTO_MAYOR_AL_PENDIENTE' |
+                                           //   'CUENTA_EMPRESA_REQUERIDA' | 'BLOQUEADO').
+  quitarPago(facturaId, pagoId)            // SIN modal → true. Elimina el movimiento vinculado (revierte el saldo) y el pago.
+  siguienteFolio()                         // 'F-0009': siguiente al mayor folio con forma F-#### (F-0001 si no hay)
+  calcularImportes(subtotal, sinIva)       // { subtotal, iva (round2(subtotal*0.16) o 0), total } con round2
+  ```
+- Modelo: no se añadió ningún campo; "sin IVA" se guarda como `iva: 0` (al editar se infiere `sinIva = !(iva > 0)`). Estado
+  almacenado `borrador | emitida | cancelada`; acciones del detalle: Emitir (borrador→emitida), Cancelar factura (sólo
+  emitida SIN pagos; con pagos pide eliminarlos primero), Reactivar (cancelada→emitida), Eliminar (el store borra los
+  movimientos vinculados; la confirmación lo avisa). Validaciones: folio único (sin distinguir mayúsculas), vencimiento ≥
+  emisión, subtotal > 0, al editar con pagos el nuevo total no puede ser menor a lo pagado ni volver a borrador; RFC opcional
+  con forma 12/13 caracteres. Eliminar cliente: se intenta `VF.store.eliminar('clientes', id)` y `CLIENTE_CON_FACTURAS` se
+  traduce a un toast amable (6 s); los demás códigos del store también se traducen (`mensajeError`).
+- Cifras: KPIs Por cobrar / Vencido (`porCobrar`), Cobrado este mes (suma de `movimientosEn(est,'empresa',mes,{tipo:'ingreso'})`
+  con `facturaId`), Clientes; tarjeta "Antigüedad de saldos" = `antiguedadCxC` con barras (`VF.ui.barraProgreso`; 0-30 incluye
+  lo vigente, 31-90 tono alerta, 90+ negativo). Sin facturas → "Sin pendientes" / "Sin vencidos" / "Sin cobros" (nunca $0.00);
+  sin facturas ni clientes → `VF.ui.vacio(..., 'Nuevo cliente')`. Estados derivados con `VF.calc.estadoFactura`: borrador
+  (badge neutro), emitida (info), parcial (alerta, "Pago parcial"), vencida (negativo), pagada (positivo), cancelada (neutro).
+- Eventos: un oyente de `click` en `document` para `[data-accion^="fac-"]` (`fac-nueva-factura[data-cliente]`,
+  `fac-nuevo-cliente`, `fac-ver-factura`, `fac-editar-factura`, `fac-eliminar-factura`, `fac-emitir-factura`,
+  `fac-cancelar-factura`, `fac-reactivar-factura`, `fac-registrar-pago`, `fac-eliminar-pago[data-pago]`,
+  `fac-ver-movimiento` (delega en `VF.panel.verMovimiento`), `fac-ver-cliente`, `fac-editar-cliente`, `fac-eliminar-cliente`,
+  `fac-pestana[data-valor]`, `fac-agrupar`, `fac-limpiar-filtros`); `change`/`input` en `#fac-cuerpo [data-filtro]`
+  (cliente, búsqueda con debounce 180 ms). Los filtros sólo repintan `#fac-lista`; `VF.store.on('cambio')` (30 ms) refresca
+  el cuerpo de los modales de detalle abiertos (factura y cliente) y repinta `#fac-cuerpo` sólo si la ruta activa es
+  `facturas` o `cobros`. Al tocar una factura desde el modal de un cliente (o viceversa) se cierran los modales y se abre
+  el nuevo; "Registrar pago" y "Editar" se apilan sobre el detalle, que se refresca al guardar.
+- Layout (sin tocar css/app.css): en móvil `VF.ui.tabla` vuelve cada `<td>` un contenedor flex, y sus hijos directos
+  (`strong`, `<br>`, `small`, `span.truncar`) se convierten en flex items separados: el folio se parte en "F-"/"0008", el
+  concepto queda como columna y `span.truncar` se vuelve bloque con elipsis. El módulo envuelve toda celda multilínea en un
+  `<div>` (auxiliar `celda`) y los botones de icono de acciones en `<span></span><span class="truncar">…</span>` (auxiliar
+  `celdaAcciones`: el span vacío los empuja a la derecha con `justify-content: space-between`). Las tablas dentro de un modal
+  de 560 px usan la variante `compacta` (sin columna "Fechas"; el vencimiento va bajo el folio) para no desbordar.
+  **Pendiente para css/app.css**: una regla `.tabla.tabla-responsiva td > *` que agrupe el contenido (o documentar en
+  `VF.ui.tabla` que los `render` multilínea deben devolver un solo elemento), y un estilo para `.btn[aria-pressed="true"]`
+  (hoy el botón "Agrupar por cliente" alterna `btn-primario`/`btn-secundario`).
+- Pruebas E2E ejecutadas con Playwright + `tests/ayuda.js` (script temporal ya borrado): sin `pageerror` ni `console.error`
+  propios; filtros = `porCobrar`; crear cliente; crear factura con folio F-0009, IVA $1,600 / total $11,600 y casilla
+  "sin IVA" → $0 / $10,000; folio duplicado rechazado; pago > pendiente rechazado; pago parcial (estado `parcial`,
+  movimiento ingreso 'Ventas' empresa con `facturaId`, saldo de la cuenta +5,000 exactos) y total (`pagada`, +11,600); el
+  movimiento aparece en `#/empresa`; eliminar pago revierte (saldo, estado `parcial`); `CLIENTE_CON_FACTURAS` amable;
+  ciclo borrador → emitir (por cobrar +2,900) → cancelar → reactivar → eliminar; editar con total < pagado rechazado;
+  eliminar factura con pagos borra su movimiento y el saldo vuelve al original; `#/cobros` agrupado (= `porCliente`),
+  `?cliente=`, desagrupar; estado vacío. Capturas `tests/capturas/facturas-*.png` y `cobros-*.png` en 390×844 y
+  1280×800, claro y oscuro. Nota: durante la fase paralela, los `pageerror` "Unexpected end of input" provienen de otros
+  módulos a medio escribir (se verificó con `node --check`), no de facturas.js.
