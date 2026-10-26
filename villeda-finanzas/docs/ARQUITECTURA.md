@@ -583,3 +583,50 @@ modal, hoja "Más") en 390×844 y 1280×800, claro y oscuro.
 - `css/app.css` — en pantallas < 480 px, cuando la cabecera muestra un badge de ámbito (`html[data-ambito]` o
   `.cabecera:has(#badge-ambito .badge)`), la marca se abrevia a "VILLEDA" para que el badge quepa entre la
   marca y los dos botones de la cabecera. `.cabecera-acciones` es `flex: none`.
+
+### Módulo Panel (js/modules/panel.js)
+
+- Registro: `VF.router.registrar('panel', { titulo:'Panel', icono:'panel', nav:'principal', render })`. Acepta
+  `#/panel?ambito=empresa|personal|combinado` (fija el segmento). El segmento elegido se recuerda en
+  `sessionStorage['vf.panel.ambito']` (por pestaña, no sensible; por defecto 'empresa'). Al pintar y al cambiar de
+  segmento llama a `VF.ui.ambitoActivo(ambito)` ('combinado' → badge "Combinado" en la cabecera, sin acento).
+- **API pública `VF.panel`** (para otros módulos y pruebas; todos los modales devuelven la api `{ cerrar, elemento }`):
+  ```js
+  render(contenedor, params)          // la misma función registrada en el router
+  ambito()                            // 'empresa' | 'personal' | 'combinado' activo en el panel
+  fijarAmbito(ambito)                 // cambia el segmento (aria-selected) y vuelve a pintar el cuerpo
+  nuevoMovimiento({ ambito?, tipo?, id? }) // modal de alta rápida; con `id` edita (null si está vinculado a factura/CxP/préstamo/comisión)
+  verMovimiento(id)                   // modal de detalle: Eliminar (con confirmación) y Editar sólo si NO está vinculado
+  vencimientos(ambito?)               // modal "Ver todo" con VF.calc.vencimientos(estado, null, null) del ámbito (combinado = ambos)
+  revision(ambito?)                   // modal "Para revisar" con VF.calc.movimientosARevisar(estado, ambito|undefined)
+  ```
+- Alta rápida de movimientos (auxiliar privado del panel, reutilizable vía `VF.panel.nuevoMovimiento`): el ámbito del
+  registro es el de la cuenta origen; transferencia entre ámbitos distintos → categoría 'Retiro de socio' (empresa→personal)
+  o 'Aportación de capital' (personal→empresa) con aviso en el formulario; mismo ámbito → 'Transferencia entre cuentas'.
+  Si el movimiento guardado es de otro ámbito que el segmento visible, el panel cambia al segmento del movimiento.
+- Parámetros de ruta que el panel ENVÍA al tocar un vencimiento, cuenta o cliente (los módulos destino deberían
+  honrarlos): `#/facturas?id=<facturaId>`, `#/proveedores?pestana=cxp&id=<cxpId>`,
+  `#/proveedores?pestana=comisiones&id=<comisionId>`, `#/prestamos?id=<prestamoId>`, `#/empresa?cuenta=<cuentaId>` /
+  `#/personal?cuenta=<cuentaId>`, `#/cobros?cliente=<clienteId>`, `#/asistente?pregunta=<texto>`.
+- Eventos: un solo oyente de `click` en `document` para `[data-accion^="panel-"]` (`panel-nuevo-movimiento`,
+  `panel-ver-movimiento`, `panel-ver-vencimientos`, `panel-ver-revision`, `panel-ir-origen`, `panel-ir-cuenta`,
+  `panel-ir-cliente`); no actúa con la bóveda bloqueada. `VF.store.on('cambio')` re-pinta sólo `#panel-cuerpo` (retardo
+  de 30 ms) y únicamente si `VF.router.actual().ruta === 'panel'`; no se desuscribe nunca (la comprobación basta).
+- Cifras: todo sale de `VF.calc` (ingresos/gastos/balance/utilidadMes/disponibleEmpresa|Personal/vencimientos/
+  serieMensual/porCobrar/saldosPorAmbito/combinado/movimientosARevisar). Sin cuentas ni movimientos en el ámbito →
+  `VF.ui.vacio(..., 'Agregar movimiento')`; con cuentas pero sin movimientos en el mes → KPIs con "—" y "Sin movimientos
+  en <mes>" (nunca ceros falsos). En Combinado no hay KPIs: dos columnas (cuentas + líquido + cifras del mes de cada
+  ámbito) y la tarjeta "Total combinado (solo informativo)" con `combinado().combinadoInformativo`.
+- Layout (defecto corregido): dentro de `.rejilla-2` las columnas con tarjetas apiladas van envueltas en
+  `<div class="tarjeta-cuerpo">`. Un elemento de rejilla tiene `min-width:auto`, y las listas con `.lista-titulo`
+  (`white-space:nowrap`) ensanchaban la pista hasta ~900 px → scroll horizontal en 390 px. `.tarjeta-cuerpo` es la única
+  clase de css/app.css cuyo único efecto es `min-width:0`. **Pendiente para css/app.css**: `.rejilla-2 > *, .rejilla-3 > *,
+  .rejilla-4 > * { min-width: 0 }` (o una utilidad `.columna`); entonces el panel puede volver a `<div>` simples. Los badges
+  de ámbito/estado van al INICIO de `.lista-sub` porque la línea se trunca con elipsis en móvil.
+- Pruebas E2E del panel (Playwright + `tests/ayuda.js`; capturas `tests/capturas/panel-*.png` en 390×844 y 1280×800, claro
+  y oscuro): KPIs = VF.calc en los tres ámbitos, próximos 7 días (tonos), gráfica (tabla gemela = serieMensual), por cobrar
+  top 5 sólo en empresa, recientes (orden y badges), alta con validación → saldo/KPI/lista, detalle, edición, eliminación
+  con confirmación, transferencia cruzada (categoría, saldos, utilidad intacta), vinculados sólo lectura, "Ver todo" y
+  navegación al origen, reactividad a 'cambio' dentro y fuera de la ruta, sessionStorage y `?ambito=`, estados vacíos,
+  `file://`. Nota para quien escriba E2E: con `html { scroll-behavior: smooth }` los clics de Playwright sobre elementos
+  bajo el pliegue fallan por intercepción (el scroll anima); usar `page.emulateMedia({ reducedMotion: 'reduce' })`.

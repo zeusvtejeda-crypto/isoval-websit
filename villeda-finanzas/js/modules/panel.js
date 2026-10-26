@@ -189,14 +189,24 @@ window.VF = window.VF || {};
     var movsMes = VF.calc.movimientosEn(est, ambito, r.desde, r.hasta);
     var html = kpis(est, ambito, r, movsMes, cuentas);
     html += '<div class="rejilla-2">' +
-      '<div>' + tarjetaProximos(est, ambito) + tarjetaRevisar(est, ambito) + '</div>' +
-      '<div>' + tarjetaGrafica(est, ambito, false) + '</div>' +
+      columna(tarjetaProximos(est, ambito) + tarjetaRevisar(est, ambito)) +
+      columna(tarjetaGrafica(est, ambito, false)) +
       '</div>';
     html += '<div class="rejilla-2">' +
-      '<div>' + tarjetaRecientes(est, ambito, movs) + '</div>' +
-      '<div>' + tarjetaCuentas(est, ambito) + (ambito === 'empresa' ? tarjetaPorCobrar(est) : '') + '</div>' +
+      columna(tarjetaRecientes(est, ambito, movs)) +
+      columna(tarjetaCuentas(est, ambito) + (ambito === 'empresa' ? tarjetaPorCobrar(est) : '')) +
       '</div>';
     return html;
+  }
+
+  /**
+   * Columna de tarjetas apiladas dentro de una .rejilla-2. Un elemento de rejilla tiene min-width:auto,
+   * así que las listas con títulos `nowrap` (.lista-titulo) ensancharían la pista hasta el texto más largo
+   * y provocarían scroll horizontal en 390 px. Se usa .tarjeta-cuerpo porque es la única clase utilitaria
+   * de css/app.css cuyo único efecto es `min-width: 0` (pendiente: regla `.rejilla-2 > * { min-width: 0 }`).
+   */
+  function columna(html) {
+    return '<div class="tarjeta-cuerpo">' + html + '</div>';
   }
 
   function kpis(est, ambito, r, movsMes, cuentas) {
@@ -260,9 +270,10 @@ window.VF = window.VF || {};
 
   function itemVencimiento(v, conAmbito) {
     var cobro = v.tipo === 'cobro';
-    var sub = (v.vencido ? '<span class="badge badge-negativo">Vencido</span> ' : '') +
-      esc(capitalizar(VF.ui.fechaRelativa(v.fecha))) + ' · ' + esc(U.fmtFecha(v.fecha)) +
-      (conAmbito ? ' ' + VF.ui.badgeAmbito(v.ambito) : '');
+    // Los badges van al inicio: .lista-sub trunca con elipsis y en 390 px lo del final se pierde.
+    var sub = (conAmbito ? VF.ui.badgeAmbito(v.ambito) + ' ' : '') +
+      (v.vencido ? '<span class="badge badge-negativo">Vencido</span> ' : '') +
+      esc(capitalizar(VF.ui.fechaRelativa(v.fecha))) + ' · ' + esc(U.fmtFecha(v.fecha));
     return '<li class="lista-item clicable" role="button" tabindex="0" data-accion="panel-ir-origen"' +
       ' data-coleccion="' + esc(v.origen.coleccion) + '" data-id="' + esc(v.origen.id) + '" data-ambito="' + esc(v.ambito) + '">' +
       '<span class="lista-icono">' + VF.ui.icono(cobro ? 'ingreso' : 'gasto') + '</span>' +
@@ -325,10 +336,12 @@ window.VF = window.VF || {};
     var titulo = m.descripcion || m.categoria || TIPO_TEXTO[m.tipo] || 'Movimiento';
     var dias = Math.abs(U.diasEntre(m.fecha, hoy()));
     var fecha = dias < 7 ? capitalizar(VF.ui.fechaRelativa(m.fecha)) : U.fmtFecha(m.fecha);
-    var sub = VF.ui.badgeAmbito(m.ambito) + ' ' + esc(fecha) + ' · ' + esc(nombreCuenta(est, m.cuentaId)) +
-      (m.tipo === 'transferencia' && m.cuentaDestinoId ? ' → ' + esc(nombreCuenta(est, m.cuentaDestinoId)) : '') +
-      (m.estado === 'revisar' ? ' <span class="badge badge-alerta">Revisar</span>' : '') +
-      (extra ? ' · ' + esc(extra) : '');
+    // Badges al inicio de la línea secundaria (se trunca con elipsis en pantallas angostas).
+    var sub = VF.ui.badgeAmbito(m.ambito) + ' ' +
+      (m.estado === 'revisar' ? '<span class="badge badge-alerta">Revisar</span> ' : '') +
+      (extra ? esc(extra) + ' · ' : '') +
+      esc(fecha) + ' · ' + esc(nombreCuenta(est, m.cuentaId)) +
+      (m.tipo === 'transferencia' && m.cuentaDestinoId ? ' → ' + esc(nombreCuenta(est, m.cuentaDestinoId)) : '');
     return '<li class="lista-item clicable" role="button" tabindex="0" data-accion="panel-ver-movimiento" data-id="' + esc(m.id) + '">' +
       '<span class="lista-icono">' + VF.ui.icono(TIPO_TEXTO[m.tipo] ? m.tipo : 'info') + '</span>' +
       '<div class="lista-texto"><p class="lista-titulo">' + esc(titulo) + '</p><p class="lista-sub">' + sub + '</p></div>' +
@@ -484,8 +497,8 @@ window.VF = window.VF || {};
         '</div>' +
         '<p class="texto-3 mt-1 mb-0">Suma informativa de ambos ámbitos. Empresa y personal se calculan por separado: ingresos, gastos, utilidad y presupuestos nunca se mezclan.</p>'
     });
-    html += '<div class="rejilla-2"><div>' + tarjetaProximos(est, 'combinado') + '</div><div>' + tarjetaRevisar(est, 'combinado') + '</div></div>';
-    html += '<div class="rejilla-2"><div>' + tarjetaGrafica(est, 'empresa', true) + '</div><div>' + tarjetaGrafica(est, 'personal', true) + '</div></div>';
+    html += '<div class="rejilla-2">' + columna(tarjetaProximos(est, 'combinado')) + columna(tarjetaRevisar(est, 'combinado')) + '</div>';
+    html += '<div class="rejilla-2">' + columna(tarjetaGrafica(est, 'empresa', true)) + columna(tarjetaGrafica(est, 'personal', true)) + '</div>';
     html += tarjetaRecientes(est, 'combinado', recientesCombinados(est));
     return html;
   }
@@ -515,7 +528,8 @@ window.VF = window.VF || {};
     });
     var columnas = [
       { clave: 'fecha', titulo: 'Fecha', render: function (f, fila) {
-        return esc(U.fmtFecha(f)) + '<br><small class="' + (fila.vencido ? 'negativo' : 'texto-2') + '">' + esc(capitalizar(VF.ui.fechaRelativa(f))) + '</small>';
+        // .truncar (nowrap) evita que la columna de fecha se parta en dos líneas en escritorio.
+        return '<span class="truncar">' + esc(U.fmtFecha(f)) + '</span><br><small class="truncar ' + (fila.vencido ? 'negativo' : 'texto-2') + '">' + esc(capitalizar(VF.ui.fechaRelativa(f))) + '</small>';
       } },
       { clave: 'concepto', titulo: 'Concepto', render: function (c, fila) {
         return esc(c) + (ambito === 'combinado' ? ' ' + VF.ui.badgeAmbito(fila.ambito) : '');
