@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>VILLEDA Finanzas</title>
+  <meta name="description" content="Panel financiero privado de VILLEDA Inc y finanzas personales. Los datos viven cifrados en este dispositivo.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#1D4ED8">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0B1120">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VILLEDA Finanzas">
+  <meta name="application-name" content="VILLEDA Finanzas">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon-180.png">
+  <link rel="stylesheet" href="./css/app.css">
+</head>
+<body>
+
+  <!-- ============================================================
+       PANTALLA DE BLOQUEO
+       ============================================================ -->
+  <section id="pantalla-bloqueo" class="bloqueo" aria-labelledby="bloqueo-titulo">
+    <div class="bloqueo-tarjeta">
+      <div class="bloqueo-marca">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 64 64" width="56" height="56" focusable="false">
+            <rect width="64" height="64" rx="16" fill="#1D4ED8"/>
+            <path d="M15 19 L26 46 L37 19" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M42 46 V19 H53 M42 32 H50" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <h1 id="bloqueo-titulo" class="bloqueo-titulo">VILLEDA <span>Finanzas</span></h1>
+        <p class="bloqueo-sub">Empresa y finanzas personales, siempre por separado. Tus datos se guardan cifrados en este dispositivo.</p>
+      </div>
+
+      <p id="bloqueo-aviso" class="aviso aviso-alerta" role="alert" hidden></p>
+
+      <!-- Crear contraseña (primera vez) -->
+      <form id="form-crear" class="form bloqueo-form" autocomplete="off" hidden novalidate>
+        <h2 class="form-titulo">Crear contraseña</h2>
+        <p class="form-intro">Protege tu información con una contraseña. No se puede recuperar si la olvidas, así que guárdala en un lugar seguro.</p>
+
+        <div class="campo">
+          <label for="crear-contrasena">Contraseña</label>
+          <div class="campo-con-boton">
+            <input id="crear-contrasena" name="contrasena" type="password" minlength="8" required
+                   autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Mínimo 8 caracteres">
+            <button type="button" class="btn btn-icono btn-ver" data-ver="crear-contrasena" aria-label="Mostrar contraseña" aria-pressed="false"></button>
+          </div>
+          <div class="fortaleza" aria-hidden="true">
+            <span class="fortaleza-seg"></span><span class="fortaleza-seg"></span><span class="fortaleza-seg"></span><span class="fortaleza-seg"></span>
+          </div>
+          <p id="crear-fortaleza" class="campo-ayuda" aria-live="polite">Fortaleza: —</p>
+        </div>
+
+        <div class="campo">
+          <label for="crear-confirmar">Confirmar contraseña</label>
+          <input id="crear-confirmar" name="confirmar" type="password" minlength="8" required
+                 autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Repite la contraseña">
+          <p id="crear-error" class="campo-error" role="alert" hidden></p>
+        </div>
+
+        <label class="campo-checkbox" for="crear-ejemplo">
+          <input id="crear-ejemplo" name="conEjemplo" type="checkbox" checked>
+          <span>Cargar datos de ejemplo <small>Movimientos ficticios para explorar la aplicación. Podrás borrarlos desde Ajustes.</small></span>
+        </label>
+
+        <button id="btn-crear" type="submit" class="btn btn-primario btn-grande">Crear</button>
+      </form>
+
+      <!-- Desbloquear -->
+      <form id="form-desbloquear" class="form bloqueo-form" autocomplete="off" hidden novalidate>
+        <h2 class="form-titulo">Desbloquear</h2>
+        <div class="campo">
+          <label for="desbloquear-contrasena">Contraseña</label>
+          <div class="campo-con-boton">
+            <input id="desbloquear-contrasena" name="contrasena" type="password" required
+                   autocomplete="current-password" autocapitalize="off" spellcheck="false" placeholder="Tu contraseña">
+            <button type="button" class="btn btn-icono btn-ver" data-ver="desbloquear-contrasena" aria-label="Mostrar contraseña" aria-pressed="false"></button>
+          </div>
+          <p id="desbloquear-error" class="campo-error" role="alert" hidden></p>
+        </div>
+        <button id="btn-desbloquear" type="submit" class="btn btn-primario btn-grande">Desbloquear</button>
+        <p class="bloqueo-enlaces">
+          <a href="#" id="enlace-olvide" class="enlace">Olvidé mi contraseña</a>
+        </p>
+      </form>
+
+      <p class="bloqueo-pie">Prototipo local · No es asesoría financiera ni contable · Nada sale de tu dispositivo</p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SHELL DE LA APLICACIÓN
+       ============================================================ -->
+  <div id="app" class="app" hidden>
+    <header class="cabecera" id="cabecera">
+      <a href="#/panel" class="marca" aria-label="VILLEDA Finanzas, ir al panel">
+        <span class="marca-logo" aria-hidden="true">
+          <svg viewBox="0 0 64 64" width="28" height="28" focusable="false">
+            <rect width="64" height="64" rx="16" fill="currentColor"/>
+            <path d="M15 19 L26 46 L37 19" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M42 46 V19 H53 M42 32 H50" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="marca-texto">VILLEDA <strong>Finanzas</strong></span>
+      </a>
+      <div class="cabecera-centro" id="badge-ambito" aria-live="polite"></div>
+      <div class="cabecera-acciones">
+        <button type="button" id="btn-tema" class="btn btn-icono" aria-label="Cambiar tema claro u oscuro" title="Tema"></button>
+        <button type="button" id="btn-bloquear" class="btn btn-icono" aria-label="Bloquear la aplicación" title="Bloquear"></button>
+      </div>
+    </header>
+
+    <nav id="nav-lateral" class="nav-lateral" aria-label="Navegación principal"></nav>
+
+    <div class="contenido">
+      <div id="banner-ejemplo" class="banner" role="note" hidden>
+        <span class="banner-icono" aria-hidden="true"></span>
+        <span class="banner-texto">Estás viendo <strong>datos de ejemplo</strong>. Son ficticios: bórralos cuando empieces a capturar tus movimientos reales.</span>
+        <a href="#/ajustes" class="btn btn-secundario btn-chico">Ir a Ajustes</a>
+      </div>
+      <main id="vista" class="vista" tabindex="-1"></main>
+    </div>
+
+    <nav id="nav-inferior" class="nav-inferior" aria-label="Navegación principal (móvil)"></nav>
+  </div>
+
+  <!-- Contenedores globales -->
+  <div id="modales" class="modales"></div>
+  <div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- Scripts clásicos, orden fijo (ver docs/ARQUITECTURA.md §1) -->
+  <script src="./js/core/util.js"></script>
+  <script src="./js/core/crypto.js"></script>
+  <script src="./js/core/store.js"></script>
+  <script src="./js/core/seed.js"></script>
+  <script src="./js/core/calc.js"></script>
+  <script src="./js/core/ui.js"></script>
+  <script src="./js/core/router.js"></script>
+  <script src="./js/modules/panel.js"></script>
+  <script src="./js/modules/empresa.js"></script>
+  <script src="./js/modules/personal.js"></script>
+  <script src="./js/modules/facturas.js"></script>
+  <script src="./js/modules/proveedores.js"></script>
+  <script src="./js/modules/prestamos.js"></script>
+  <script src="./js/modules/presupuestos.js"></script>
+  <script src="./js/modules/reportes.js"></script>
+  <script src="./js/modules/asistente.js"></script>
+  <script src="./js/modules/ajustes.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
