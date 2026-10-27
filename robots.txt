@@ -1,6 +1,5 @@
 User-agent: *
 Allow: /
-Disallow: /villeda-finanzas/
 
 # AI / LLM crawlers — allowed (brand discoverability)
 User-agent: GPTBot
